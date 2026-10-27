@@ -199,10 +199,13 @@ export class Car {
       vLat = state.velocity.x * rightX + state.velocity.z * rightZ;
 
       // --- Longitudinal ---
+      const brakeInput = clamp(input.brake, 0, 1);
+      // Frear corta o motor: o jogador não consegue "acelerar e frear" juntos.
       let accelerationLong =
         tuning.engineAcceleration *
         accelerationMultiplier *
         (input.throttle ? 1 : 0) *
+        (1 - brakeInput) *
         surface.acceleration;
       accelerationLong -= tuning.dragCoefficient * vLong * Math.abs(vLong) * surface.drag;
 
@@ -212,14 +215,17 @@ export class Car {
       const rolling = signOrZero(vLong, 0.05);
       accelerationLong -= tuning.rollingResistance * rolling;
 
-      if (input.brake) {
-        brakeDeceleration = tuning.brakeMax;
+      if (brakeInput > 0.01) {
+        // Freio analógico do arrasto vertical (0..1).
+        brakeDeceleration = tuning.brakeMax * brakeInput;
       } else if (!input.throttle && vLong > 0.01) {
+        // Esquema antigo e soltura do dedo: rampa de freio.
         const ramp = clamp(this.state.releaseTime / tuning.brakeRampDuration, 0, 1);
         brakeDeceleration = lerp(tuning.brakeRampStart, tuning.brakeMax, ramp);
       }
 
-      this.state.releaseTime = input.throttle ? 0 : this.state.releaseTime + dt;
+      this.state.releaseTime =
+        input.throttle || brakeInput > 0.01 ? 0 : this.state.releaseTime + dt;
 
       if (brakeDeceleration > 0) {
         accelerationLong -= brakeDeceleration;
@@ -245,10 +251,20 @@ export class Car {
       }
 
       // --- Lateral ---
+      // Três efeitos somados:
+      // 1. handbrake solta a traseira;
+      // 2. frear dentro da curva reduz o grip e ajuda a rotacionar;
+      // 3. quanto maior o ângulo de escorregamento, menos grip sobra — a
+      //    derrapagem começa mais cedo e se sustenta, em vez de "colar".
+      const slip = Math.atan2(Math.abs(vLat), Math.abs(vLong) + 0.1);
+      const slipFalloff = 1 - tuning.slipGripFalloff * clamp(slip / 0.7, 0, 1);
+      const brakeGrip = 1 - tuning.brakeGripReduction * brakeInput;
       const gripRate = Math.max(
         surface.grip *
           gripMultiplier *
-          (input.handbrake ? tuning.handbrakeGripMultiplier : 1),
+          (input.handbrake ? tuning.handbrakeGripMultiplier : 1) *
+          slipFalloff *
+          brakeGrip,
         MIN_GRIP_RATE,
       );
       nextVLat = vLat * Math.exp(-gripRate * dt);

@@ -343,6 +343,11 @@ export class Game {
     this.input.notifyTuningChanged();
   }
 
+  /** Reaplica mudanças do painel que afetam o estado do Input (modo/guia). */
+  notifyInputTuningChanged(): void {
+    this.input.notifyTuningChanged();
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;

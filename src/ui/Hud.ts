@@ -695,6 +695,7 @@ export class Hud {
     this.debugValues.input.textContent =
       `${telemetry.throttle ? 'T' : '—'} ` +
       `S${telemetry.steer >= 0 ? '+' : ''}${formatNumber(telemetry.steer, 2)} ` +
+      `B${formatNumber(telemetry.brake, 1)} ` +
       `${telemetry.handbrake ? 'HB' : '—'}`;
     this.debugValues.position.textContent = this.lastPosition
       ? `${formatNumber(this.lastPosition.x, 1)}, ${formatNumber(this.lastPosition.z, 1)}`

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { Spring } from '../core/Spring';
 import { clamp, dampAlpha } from '../core/math';
+import { BODY_TUNING } from '../game/config';
+import type { BodyTuning } from '../game/types';
 
 export interface CarViewState {
   speed: number;
@@ -27,12 +29,10 @@ interface WheelVisual {
 
 const WHEEL_RADIUS = 0.38;
 const MAX_VISUAL_STEER = 0.5;
-const MAX_ROLL = THREE.MathUtils.degToRad(8);
-const MAX_PITCH = THREE.MathUtils.degToRad(4);
 const MAX_AIR_PITCH = THREE.MathUtils.degToRad(11);
 const AIR_PITCH_PER_VY = 0.018;
-const ROLL_PER_ACCEL = 0.009;
-const PITCH_PER_ACCEL = 0.006;
+/** Limite físico das molas; o alvo é clampado pelo tuning visual. */
+const SPRING_MAX_ANGLE = 0.5;
 const BODY_HEIGHT = 0.55;
 /** Converte o impacto (negativo) em velocidade da mola de heave. */
 const LANDING_KICK_PER_IMPACT = 0.22;
@@ -55,8 +55,9 @@ export class CarView {
 
   private readonly bodyPivot = new THREE.Group();
   private readonly wheels: WheelVisual[] = [];
-  private readonly rollSpring = new Spring(90, 14, MAX_ROLL);
-  private readonly pitchSpring = new Spring(90, 14, MAX_PITCH);
+  private readonly bodyTuning: BodyTuning;
+  private readonly rollSpring = new Spring(90, 14, SPRING_MAX_ANGLE);
+  private readonly pitchSpring = new Spring(90, 14, SPRING_MAX_ANGLE);
   private readonly heaveSpring = new Spring(110, 16, 0.3);
   private readonly shadowMesh: THREE.Mesh;
 
@@ -66,7 +67,8 @@ export class CarView {
   private shadowPitch = 0;
   private shadowRoll = 0;
 
-  constructor() {
+  constructor(bodyTuning: BodyTuning = BODY_TUNING) {
+    this.bodyTuning = bodyTuning;
     this.root.name = 'car';
     this.bodyPivot.name = 'car-body-pivot';
     this.bodyPivot.position.y = BODY_HEIGHT;
@@ -157,15 +159,21 @@ export class CarView {
     const heave = this.heaveSpring.update(0, dt);
 
     // Roll/pitch visuais via mola: só reagem à dinâmica, não alteram a física.
+    // O termo de esterço dá vida em curvas lentas, quando a aceleração lateral
+    // ainda é pequena; em velocidade, o termo lateral domina.
+    const maxRoll = THREE.MathUtils.degToRad(this.bodyTuning.maxRollDeg);
+    const maxPitch = THREE.MathUtils.degToRad(this.bodyTuning.maxPitchDeg);
+    const speedInfluence = clamp(state.speed / 8, 0, 1);
     const rollTarget = clamp(
-      state.lateralAccel * ROLL_PER_ACCEL,
-      -MAX_ROLL,
-      MAX_ROLL,
+      state.lateralAccel * this.bodyTuning.rollPerLateralAccel +
+        state.steer * this.bodyTuning.rollPerSteer * speedInfluence,
+      -maxRoll,
+      maxRoll,
     );
     const pitchTarget = clamp(
-      -state.longAccel * PITCH_PER_ACCEL,
-      -MAX_PITCH,
-      MAX_PITCH,
+      -state.longAccel * this.bodyTuning.pitchPerLongAccel,
+      -maxPitch,
+      maxPitch,
     );
 
     // No ar o nariz acompanha a velocidade vertical (subindo = para cima).

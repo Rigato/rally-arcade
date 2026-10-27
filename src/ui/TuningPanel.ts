@@ -1,6 +1,7 @@
 import GUI from 'lil-gui';
 import type { Controller } from 'lil-gui';
 import {
+  BODY_TUNING,
   CAMERA_TUNING,
   CAR_TUNING,
   INPUT_TUNING,
@@ -72,6 +73,7 @@ export class TuningPanel {
     this.gui.domElement.dataset.uiPanel = 'tuning';
 
     this.buildCarFolder();
+    this.buildBodyFolder();
     this.buildCameraFolder();
     this.buildInputFolder();
     this.buildSurfaceFolder();
@@ -113,6 +115,34 @@ export class TuningPanel {
     this.addNumber(folder, CAR_TUNING, 'handbrakeGripMultiplier', 'HB grip ×', 0.05, 1, 0.01);
     this.addNumber(folder, CAR_TUNING, 'handbrakeBrake', 'HB frenagem', 0, 20, 0.5);
     this.addNumber(folder, CAR_TUNING, 'airGravity', 'Gravidade no ar', 0, 50, 0.5);
+    this.addNumber(folder, CAR_TUNING, 'slipGripFalloff', 'Grip × derrape', 0, 1, 0.01);
+    this.addNumber(folder, CAR_TUNING, 'brakeGripReduction', 'Grip ao frear', 0, 1, 0.01);
+  }
+
+  private buildBodyFolder(): void {
+    const folder = this.gui.addFolder('Carroceria');
+
+    this.addNumber(folder, BODY_TUNING, 'maxRollDeg', 'Roll máx. (°)', 0, 25, 1);
+    this.addNumber(folder, BODY_TUNING, 'maxPitchDeg', 'Pitch máx. (°)', 0, 15, 1);
+    this.addNumber(
+      folder,
+      BODY_TUNING,
+      'rollPerLateralAccel',
+      'Roll por acel.',
+      0,
+      0.05,
+      0.001,
+    );
+    this.addNumber(
+      folder,
+      BODY_TUNING,
+      'pitchPerLongAccel',
+      'Pitch por acel.',
+      0,
+      0.03,
+      0.001,
+    );
+    this.addNumber(folder, BODY_TUNING, 'rollPerSteer', 'Roll por esterço', 0, 0.1, 0.005);
   }
 
   private buildCameraFolder(): void {
@@ -141,6 +171,18 @@ export class TuningPanel {
   private buildInputFolder(): void {
     const folder = this.gui.addFolder('Input');
 
+    const controlController = folder
+      .add(INPUT_TUNING, 'controlMode', {
+        'Arrastar 2D (novo)': 'drag2d',
+        'Soltar para frear': 'release',
+      })
+      .name('Esquema de toque');
+    controlController.onChange(() => {
+      this.game.notifyInputTuningChanged();
+      this.scheduleSave();
+    });
+    this.controllers.push(controlController);
+
     this.addNumber(
       folder,
       INPUT_TUNING,
@@ -151,6 +193,7 @@ export class TuningPanel {
       0.01,
     );
     this.addNumber(folder, INPUT_TUNING, 'steerDeadzonePx', 'Deadzone (px)', 0, 40, 1);
+    this.addNumber(folder, INPUT_TUNING, 'steerExponent', 'Curva esterço', 1, 3, 0.05);
     this.addNumber(
       folder,
       INPUT_TUNING,
@@ -169,6 +212,25 @@ export class TuningPanel {
       2,
       0.05,
     );
+    this.addNumber(folder, INPUT_TUNING, 'brakeDeadzonePx', 'Freio deadzone', 0, 40, 1);
+    this.addNumber(folder, INPUT_TUNING, 'brakeTravelPx', 'Freio curso', 20, 140, 5);
+    this.addNumber(folder, INPUT_TUNING, 'brakeExponent', 'Freio curva', 1, 3, 0.05);
+    this.addNumber(
+      folder,
+      INPUT_TUNING,
+      'brakeSmoothingTau',
+      'Freio tau',
+      0.01,
+      0.4,
+      0.01,
+    );
+
+    const guideController = folder.add(INPUT_TUNING, 'touchGuide').name('Guia de toque');
+    guideController.onChange(() => {
+      this.game.notifyInputTuningChanged();
+      this.scheduleSave();
+    });
+    this.controllers.push(guideController);
 
     const modeController = folder
       .add(INPUT_TUNING, 'handbrakeMode', {

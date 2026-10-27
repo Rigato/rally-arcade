@@ -1,6 +1,7 @@
 import { clamp, dampAlpha } from '../core/math';
 import { INPUT_TUNING } from '../game/config';
 import type { InputState, InputTuning } from '../game/types';
+import { TouchGuide } from './TouchGuide';
 
 export interface InputOptions {
   /** Tuning mutável; o painel do M1b pode alterar os campos ao vivo. */
@@ -62,10 +63,15 @@ export class Input {
 
   private pointerId: number | null = null;
   private pointerStartX = 0;
+  private pointerStartY = 0;
   private pointerSteer = 0;
   private pointerHandbrake = false;
+  private pointerBrakeTarget = 0;
+  private pointerBrake = 0;
+  private keyBrake = false;
 
   private readonly pressedKeys = new Set<string>();
+  private readonly guide = new TouchGuide();
 
   private buttonHandbrake = false;
 
@@ -80,7 +86,7 @@ export class Input {
     this.inputState = {
       throttle: false,
       steer: 0,
-      brake: false,
+      brake: 0,
       handbrake: false,
     };
 
@@ -101,13 +107,45 @@ export class Input {
     window.addEventListener('blur', this.handleBlur);
   }
 
-  /** Suaviza o esterço na direção do alvo. Chamar uma vez por passo fixo. */
+  /**
+   * Suaviza esterço/freio na direção do alvo. Chamar uma vez por passo fixo.
+   *
+   * O freio é analógico no modo `drag2d`; no modo `release` ele fica em 0 e o
+   * carro usa a rampa de frenagem ao soltar o acelerador.
+   */
   update(dt: number): void {
-    const alpha = dampAlpha(this.tuning.steerSmoothingTau, dt);
-    this.inputState.steer += (this.steerTarget - this.inputState.steer) * alpha;
+    const steerAlpha = dampAlpha(this.tuning.steerSmoothingTau, dt);
+    this.inputState.steer += (this.steerTarget - this.inputState.steer) * steerAlpha;
 
     if (this.steerTarget === 0 && Math.abs(this.inputState.steer) < 0.001) {
       this.inputState.steer = 0;
+    }
+
+    const pointerActive = this.pointerId !== null;
+    const targetBrake =
+      pointerActive && this.tuning.controlMode === 'drag2d'
+        ? this.pointerBrakeTarget
+        : 0;
+    const brakeAlpha = dampAlpha(this.tuning.brakeSmoothingTau, dt);
+    this.pointerBrake += (targetBrake - this.pointerBrake) * brakeAlpha;
+
+    if (Math.abs(this.pointerBrake) < 0.002) {
+      this.pointerBrake = 0;
+    }
+
+    this.inputState.brake = this.keyBrake
+      ? 1
+      : pointerActive && this.tuning.controlMode === 'drag2d'
+        ? this.pointerBrake
+        : 0;
+
+    if (this.pointerId !== null && this.tuning.touchGuide) {
+      this.guide.update(
+        this.pointerSteer,
+        this.pointerBrake,
+        this.inputState.handbrake,
+        this.tuning.controlMode === 'drag2d',
+      );
     }
   }
 
@@ -118,18 +156,24 @@ export class Input {
     this.releasePointerCapture(pointerId);
     this.pointerSteer = 0;
     this.pointerHandbrake = false;
+    this.pointerBrakeTarget = 0;
+    this.pointerBrake = 0;
+    this.keyBrake = false;
+    this.guide.hide();
 
     this.pressedKeys.clear();
 
     this.buttonHandbrake = false;
     this.steerTarget = 0;
     this.refreshState();
+    this.inputState.brake = 0;
   }
 
   /** Reset total: também zera o esterço suavizado imediatamente. */
   reset(): void {
     this.cancelAll();
     this.inputState.steer = 0;
+    this.inputState.brake = 0;
   }
 
   /**
@@ -146,7 +190,17 @@ export class Input {
       this.pointerHandbrake = false;
     }
 
+    if (this.tuning.controlMode !== 'drag2d') {
+      this.pointerBrakeTarget = 0;
+      this.pointerBrake = 0;
+    }
+
+    if (!this.tuning.touchGuide) {
+      this.guide.hide();
+    }
+
     this.refreshState();
+    this.inputState.brake = 0;
   }
 
   dispose(): void {
@@ -167,6 +221,7 @@ export class Input {
     window.removeEventListener('blur', this.handleBlur);
 
     this.cancelAll();
+    this.guide.dispose();
   }
 
   private get lockPx(): number {
@@ -176,19 +231,34 @@ export class Input {
     );
   }
 
-  private applyPointerSteer(clientX: number): void {
+  private applyPointerPosition(clientX: number, clientY: number): void {
     const dx = clientX - this.pointerStartX;
+    const dy = clientY - this.pointerStartY;
     const deadzone = this.tuning.steerDeadzonePx;
     const magnitude = Math.abs(dx);
     const usable = Math.max(this.lockPx - deadzone, 1);
 
+    // Curva exponencial: pequenos deslocamentos mexem pouco o carro; o lock
+    // completo continua no mesmo lugar. É o principal remédio contra o chicote.
     this.pointerSteer =
       magnitude <= deadzone
         ? 0
-        : clamp(((magnitude - deadzone) / usable) * Math.sign(dx), -1, 1);
+        : clamp(
+            Math.pow(clamp((magnitude - deadzone) / usable, 0, 1), this.tuning.steerExponent),
+            0,
+            1,
+          ) * Math.sign(dx);
 
     if (this.tuning.handbrakeMode === 'drag') {
       this.pointerHandbrake = magnitude > this.lockPx * this.tuning.handbrakeScreenRatio;
+    }
+
+    if (this.tuning.controlMode === 'drag2d') {
+      const down = Math.max(0, dy - this.tuning.brakeDeadzonePx);
+      const brakeNormalized = clamp(down / Math.max(this.tuning.brakeTravelPx, 1), 0, 1);
+      this.pointerBrakeTarget = Math.pow(brakeNormalized, this.tuning.brakeExponent);
+    } else {
+      this.pointerBrakeTarget = 0;
     }
   }
 
@@ -216,7 +286,12 @@ export class Input {
     }
 
     this.inputState.throttle = pointerActive || keyThrottle;
-    this.inputState.brake = keyBrake;
+    this.keyBrake = keyBrake;
+    // O freio suavizado é aplicado em update(); aqui só guardamos o estado das
+    // teclas. No modo drag2d, o freio vem do deslocamento vertical do dedo.
+    if (keyBrake) {
+      this.inputState.brake = 1;
+    }
     // O valor suavizado é aplicado em update(); aqui só definimos o alvo.
     this.steerTarget = pointerActive ? this.pointerSteer : clamp(keySteer, -1, 1);
     this.inputState.handbrake =
@@ -261,8 +336,20 @@ export class Input {
 
     this.pointerId = event.pointerId;
     this.pointerStartX = event.clientX;
+    this.pointerStartY = event.clientY;
     this.pointerSteer = 0;
     this.pointerHandbrake = false;
+    this.pointerBrakeTarget = 0;
+    this.pointerBrake = 0;
+
+    if (this.tuning.touchGuide) {
+      this.guide.show(
+        event.clientX,
+        event.clientY,
+        this.lockPx,
+        this.tuning.controlMode === 'drag2d',
+      );
+    }
 
     try {
       this.canvas.setPointerCapture?.(event.pointerId);
@@ -284,7 +371,15 @@ export class Input {
       return;
     }
 
-    this.applyPointerSteer(event.clientX);
+    this.applyPointerPosition(event.clientX, event.clientY);
+    if (this.tuning.touchGuide) {
+      this.guide.update(
+        this.pointerSteer,
+        this.pointerBrakeTarget,
+        this.pointerHandbrake,
+        this.tuning.controlMode === 'drag2d',
+      );
+    }
     this.refreshState();
   };
 
@@ -302,6 +397,9 @@ export class Input {
     this.releasePointerCapture(pointerId);
     this.pointerSteer = 0;
     this.pointerHandbrake = false;
+    this.pointerBrakeTarget = 0;
+    this.pointerBrake = 0;
+    this.guide.hide();
     this.refreshState();
   }
 

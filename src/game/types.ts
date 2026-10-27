@@ -32,6 +32,14 @@ export interface SurfaceDef {
 
 export type HandbrakeMode = 'drag' | 'button';
 
+/**
+ * Esquema de freio no toque:
+ * - `drag2d`: segurar acelera; arrastar na horizontal esterça; arrastar para
+ *   baixo freia sem soltar o dedo (permite frear e virar ao mesmo tempo).
+ * - `release`: esquema antigo; soltar o dedo aplica a rampa de freio.
+ */
+export type ControlMode = 'drag2d' | 'release';
+
 /** Powerups do MVP: turbo (velocidade) e grip extra (derrapagem). */
 export type PowerupType = 'turbo' | 'grip';
 
@@ -54,7 +62,8 @@ export type ForcedSurface = SurfaceId | 'auto';
 export interface InputState {
   throttle: boolean;
   steer: number;
-  brake: boolean;
+  /** Freio analógico 0..1 (0 = solto, 1 = freio máximo). */
+  brake: number;
   handbrake: boolean;
 }
 
@@ -139,6 +148,23 @@ export interface CarTuning {
   airGravity: number;
   handbrakeGripMultiplier: number;
   handbrakeBrake: number;
+  /**
+   * Queda de grip conforme o ângulo de escorregamento (0..1). Ajuda a iniciar
+   * e sustentar a derrapagem sem deixar o carro "no trilho".
+   */
+  slipGripFalloff: number;
+  /** Redução de grip ao frear dentro da curva (0..1); ajuda a rotacionar. */
+  brakeGripReduction: number;
+}
+
+/** Ajustes visuais da carroceria (não participam da física). */
+export interface BodyTuning {
+  maxRollDeg: number;
+  maxPitchDeg: number;
+  rollPerLateralAccel: number;
+  pitchPerLongAccel: number;
+  /** Rolagem extra proporcional ao esterço, para dar vida em baixa velocidade. */
+  rollPerSteer: number;
 }
 
 export interface CameraTuning {
@@ -159,13 +185,25 @@ export interface CameraTuning {
 }
 
 export interface InputTuning {
+  /** Esquema de freio no toque: `drag2d` (novo) ou `release` (antigo). */
+  controlMode: ControlMode;
   /** Fração de min(innerWidth, innerHeight) para atingir o esterço máximo. */
   steerLockScreenRatio: number;
   steerDeadzonePx: number;
   steerSmoothingTau: number;
+  /** Expoente do esterço: >1 deixa o centro mais dócil e o fim mais forte. */
+  steerExponent: number;
   /** Deslocamento (em múltiplos do lock) para acionar o freio de mão no modo drag. */
   handbrakeScreenRatio: number;
   handbrakeMode: HandbrakeMode;
+  /** Zona morta vertical antes de começar a frear no modo drag2d. */
+  brakeDeadzonePx: number;
+  /** Deslocamento vertical (px) para freio máximo. */
+  brakeTravelPx: number;
+  brakeExponent: number;
+  brakeSmoothingTau: number;
+  /** Mostra o guia visual do toque (anel + ponto). */
+  touchGuide: boolean;
 }
 
 export interface PowerupTuning {

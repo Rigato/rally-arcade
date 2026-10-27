@@ -1,4 +1,5 @@
 import {
+  BODY_TUNING,
   CAMERA_TUNING,
   CAR_TUNING,
   INPUT_TUNING,
@@ -7,6 +8,7 @@ import {
   SURFACES,
 } from './config';
 import type {
+  BodyTuning,
   CameraTuning,
   CarTuning,
   InputTuning,
@@ -17,10 +19,11 @@ import type {
 } from './types';
 
 /** Chave única no localStorage. O sufixo permite migrar o formato no futuro. */
-export const TUNING_STORAGE_KEY = 'rally.tuning.v1';
+export const TUNING_STORAGE_KEY = 'rally.tuning.v2';
 
 interface TuningSnapshot {
   car: CarTuning;
+  body: BodyTuning;
   camera: CameraTuning;
   input: InputTuning;
   surfaces: Record<SurfaceId, SurfaceDef>;
@@ -40,6 +43,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 const DEFAULTS: TuningSnapshot = structuredClone({
   car: CAR_TUNING,
+  body: BODY_TUNING,
   camera: CAMERA_TUNING,
   input: INPUT_TUNING,
   surfaces: SURFACES,
@@ -51,6 +55,7 @@ const DEFAULTS: TuningSnapshot = structuredClone({
 function currentSnapshot(): TuningSnapshot {
   return structuredClone({
     car: CAR_TUNING,
+    body: BODY_TUNING,
     camera: CAMERA_TUNING,
     input: INPUT_TUNING,
     surfaces: SURFACES,
@@ -93,6 +98,7 @@ function applySnapshot(data: unknown): void {
   const root = isRecord(data) ? data : {};
 
   applyNumericFields(CAR_TUNING, DEFAULTS.car, root.car);
+  applyNumericFields(BODY_TUNING, DEFAULTS.body, root.body);
   applyNumericFields(CAMERA_TUNING, DEFAULTS.camera, root.camera);
   applyNumericFields(INPUT_TUNING, DEFAULTS.input, root.input);
   applyNumericFields(POWERUP_TUNING, DEFAULTS.powerups, root.powerups);
@@ -113,6 +119,14 @@ function applySnapshot(data: unknown): void {
     inputData.handbrakeMode === 'button' || inputData.handbrakeMode === 'drag'
       ? inputData.handbrakeMode
       : DEFAULTS.input.handbrakeMode;
+  INPUT_TUNING.controlMode =
+    inputData.controlMode === 'release' || inputData.controlMode === 'drag2d'
+      ? inputData.controlMode
+      : DEFAULTS.input.controlMode;
+  INPUT_TUNING.touchGuide =
+    typeof inputData.touchGuide === 'boolean'
+      ? inputData.touchGuide
+      : DEFAULTS.input.touchGuide;
 }
 
 function readStorage(): string | null {

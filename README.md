@@ -31,12 +31,15 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 | Ação | Touch (uma mão) | PC |
 | --- | --- | --- |
 | Acelerar | Tocar e segurar na tela | Mouse pressionado / W / ↑ |
-| Esterçar / derrapar | Arrastar o dedo na horizontal | Mover o mouse / A, D / ←, → |
-| Frear | Soltar o dedo (rampa progressiva) | Soltar o mouse / S / ↓ |
+| Esterçar / derrapar | Arrastar o dedo na horizontal (deadzone + curva exponencial) | Mover o mouse / A, D / ←, → |
+| Frear | Arrastar o dedo para baixo (novo padrão: freia sem soltar e continua esterçando) | Arrastar o mouse para baixo / S / ↓ |
+| Frear soltando | Soltar o dedo aplica a rampa de freio | Soltar o mouse |
 | Freio de mão | Arrastar além do limite de esterço (padrão) ou botão dedicado | Espaço |
 | Reiniciar | Botão no topo da tela | R |
 | Telemetria (debug) | — | H |
 | Pausa | Auto-pause ao trocar de aba | — |
+
+O esquema padrão é o **drag2d**: o mesmo dedo acelera ao encostar, esterça no eixo X e freia no eixo Y para baixo. Assim dá para frear e virar ao mesmo tempo sem tirar o dedo. O esquema antigo **release** (soltar para frear) continua disponível no painel de debug, em **Input → Esquema de toque**. O guia visual (anel no ponto de encosto) pode ser desligado em **Input → Guia de toque**.
 
 O freio de mão pode alternar entre **deslocamento** e **botão** no painel de debug. No modo botão, o alvo aparece no canto inferior direito do HUD.
 
@@ -79,7 +82,7 @@ https://rigato.github.io/rally-arcade/?debug=1&s=780
 - **H** alterna a telemetria no desktop; no painel, a pasta **Debug** também controla piso forçado, colisores, reposicionar e ir para um `s`.
 - O painel cobre **Carro**, **Câmera**, **Input**, **Pisos**, **Powerups / Corrida** e **Debug**. Os tempos-alvo de medalha, o alvo da parcial e os multiplicadores/durações dos powerups são editáveis ao vivo.
 - Todo ajuste vale na hora porque física, câmera, input e corrida leem os mesmos objetos mutáveis de `src/game/config.ts`.
-- Alterações são salvas em `localStorage['rally.tuning.v1']` com debounce de ~200 ms. **Resetar tuning** volta aos defaults e apaga a chave.
+- Alterações são salvas em `localStorage['rally.tuning.v2']` com debounce de ~200 ms. **Resetar tuning** volta aos defaults e apaga a chave.
 - **Copiar JSON** exporta o tuning atual; se o clipboard for bloqueado, abre um textarea para copiar manualmente.
 
 ## Comandos

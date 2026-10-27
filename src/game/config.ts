@@ -1,4 +1,5 @@
 import type {
+  BodyTuning,
   CameraTuning,
   CarTuning,
   InputTuning,
@@ -24,16 +25,20 @@ export const CAR_TUNING: CarTuning = {
   maxSpeed: 34,
   dragCoefficient: 0.003,
   rollingResistance: 0.5,
-  maxYawRate: 2.0,
-  steerResponseTau: 0.1,
-  steerSpeedReference: 6,
-  steerHighSpeedReduction: 0.4,
+  maxYawRate: 2.15,
+  // Mais lento para entrar na curva: evita o efeito chicote no toque.
+  steerResponseTau: 0.16,
+  steerSpeedReference: 9,
+  steerHighSpeedReduction: 0.38,
   brakeMax: 12,
   brakeRampStart: 3.5,
   brakeRampDuration: 0.55,
   airGravity: 24,
-  handbrakeGripMultiplier: 0.28,
-  handbrakeBrake: 4.0,
+  // Carro mais solto de traseira, mas ainda recuperável no contra-esterço.
+  handbrakeGripMultiplier: 0.24,
+  handbrakeBrake: 3.5,
+  slipGripFalloff: 0.18,
+  brakeGripReduction: 0.12,
 };
 
 /** Pisos da seção 4: grip (1/s), multiplicadores de aceleração/arrasto e bump. */
@@ -41,7 +46,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
   gravel: {
     id: 'gravel',
     label: 'Cascalho',
-    grip: 6.5,
+    grip: 5.6,
     acceleration: 1.0,
     drag: 1.0,
     bump: 0.6,
@@ -50,7 +55,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
   sand: {
     id: 'sand',
     label: 'Areia',
-    grip: 3.8,
+    grip: 3.4,
     acceleration: 0.85,
     drag: 1.25,
     bump: 0.9,
@@ -59,7 +64,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
   'forest-offroad': {
     id: 'forest-offroad',
     label: 'Fora da pista — floresta',
-    grip: 3.4,
+    grip: 2.9,
     acceleration: 0.8,
     drag: 1.7,
     bump: 1.4,
@@ -68,7 +73,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
   'desert-offroad': {
     id: 'desert-offroad',
     label: 'Fora da pista — deserto',
-    grip: 2.7,
+    grip: 2.3,
     acceleration: 0.7,
     drag: 2.0,
     bump: 1.8,
@@ -88,7 +93,8 @@ export const CAMERA_TUNING: CameraTuning = {
   lookHeight: 0.8,
   pitchDeg: 44.0,
   positionTau: 0.12,
-  yawTau: 0.35,
+  // Um pouco mais de folga no yaw: a derrapagem fica legível, sem chicote.
+  yawTau: 0.42,
   fov: 60,
   speedFovBoost: 3,
   turboFovBoost: 6,
@@ -96,11 +102,27 @@ export const CAMERA_TUNING: CameraTuning = {
 };
 
 export const INPUT_TUNING: InputTuning = {
-  steerLockScreenRatio: 0.32,
-  steerDeadzonePx: 5,
-  steerSmoothingTau: 0.08,
-  handbrakeScreenRatio: 1.1,
+  controlMode: 'drag2d',
+  steerLockScreenRatio: 0.34,
+  steerDeadzonePx: 12,
+  steerSmoothingTau: 0.16,
+  steerExponent: 1.35,
+  handbrakeScreenRatio: 1.15,
   handbrakeMode: 'drag',
+  brakeDeadzonePx: 10,
+  brakeTravelPx: 70,
+  brakeExponent: 1.2,
+  brakeSmoothingTau: 0.1,
+  touchGuide: true,
+};
+
+/** Rolagem/pitch apenas visuais da carroceria. */
+export const BODY_TUNING: BodyTuning = {
+  maxRollDeg: 12,
+  maxPitchDeg: 5,
+  rollPerLateralAccel: 0.014,
+  pitchPerLongAccel: 0.007,
+  rollPerSteer: 0.03,
 };
 
 export const POWERUP_TUNING: PowerupTuning = {
