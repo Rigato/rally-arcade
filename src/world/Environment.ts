@@ -1,13 +1,18 @@
 import * as THREE from 'three';
-import { clamp, lerp } from '../core/math';
-
-const TRANSITION_RANGE = 15;
+import { lerp } from '../core/math';
+import type { TrackZone } from '../game/types';
+import { zoneBlendAt, type ZoneId } from '../track/zones';
 
 interface EnvironmentPalette {
   hemiIntensity: number;
   sunIntensity: number;
   fogNear: number;
   fogFar: number;
+  sky: THREE.Color;
+  fog: THREE.Color;
+  hemiSky: THREE.Color;
+  hemiGround: THREE.Color;
+  sun: THREE.Color;
   sunPosition: THREE.Vector3;
 }
 
@@ -16,6 +21,11 @@ const FOREST: EnvironmentPalette = {
   sunIntensity: 2.0,
   fogNear: 55,
   fogFar: 235,
+  sky: new THREE.Color(0xb5c3bf),
+  fog: new THREE.Color(0xb5c3bf),
+  hemiSky: new THREE.Color(0xdce9ee),
+  hemiGround: new THREE.Color(0x36452f),
+  sun: new THREE.Color(0xfff0d0),
   sunPosition: new THREE.Vector3(28, 42, 18),
 };
 
@@ -24,23 +34,30 @@ const DESERT: EnvironmentPalette = {
   sunIntensity: 2.25,
   fogNear: 50,
   fogFar: 220,
+  sky: new THREE.Color(0xe9d0a5),
+  fog: new THREE.Color(0xe6cda5),
+  hemiSky: new THREE.Color(0xffe5bd),
+  hemiGround: new THREE.Color(0x9c7a4a),
+  sun: new THREE.Color(0xffd39a),
   sunPosition: new THREE.Vector3(45, 34, -16),
 };
 
-const FOREST_SKY = new THREE.Color(0xb5c3bf);
-const DESERT_SKY = new THREE.Color(0xe9d0a5);
-const FOREST_FOG = new THREE.Color(0xb5c3bf);
-const DESERT_FOG = new THREE.Color(0xe6cda5);
-const FOREST_HEMI_SKY = new THREE.Color(0xdce9ee);
-const DESERT_HEMI_SKY = new THREE.Color(0xffe5bd);
-const FOREST_HEMI_GROUND = new THREE.Color(0x36452f);
-const DESERT_HEMI_GROUND = new THREE.Color(0x9c7a4a);
-const FOREST_SUN = new THREE.Color(0xfff0d0);
-const DESERT_SUN = new THREE.Color(0xffd39a);
+const PALETTES: Record<ZoneId, EnvironmentPalette> = {
+  forest: FOREST,
+  desert: DESERT,
+};
+
+const DEFAULT_ZONES: readonly TrackZone[] = [
+  { start: 0, end: 250, id: 'forest', surface: 'gravel' },
+  { start: 250, end: 500, id: 'desert', surface: 'sand' },
+  { start: 500, end: 750, id: 'forest', surface: 'gravel' },
+  { start: 750, end: 1000, id: 'desert', surface: 'sand' },
+];
 
 /**
- * Céu, névoa e luzes da pista. A transição floresta→deserto acontece em
- * ~30 m ao redor da troca de zona (s ≈ 300 m), sem skybox e sem shadow maps.
+ * Céu, névoa e luzes da pista. As paletas acompanham as quatro zonas
+ * intercaladas e misturam perto de cada limite de setor (floresta ↔ deserto),
+ * sem skybox e sem shadow maps.
  */
 export class Environment {
   readonly hemisphere: THREE.HemisphereLight;
@@ -48,7 +65,7 @@ export class Environment {
   readonly fog: THREE.Fog;
 
   private readonly scene: THREE.Scene;
-  private readonly transitionS: number;
+  private readonly zones: readonly TrackZone[];
 
   private readonly skyColor = new THREE.Color();
   private readonly fogColor = new THREE.Color();
@@ -57,55 +74,52 @@ export class Environment {
   private readonly sunColor = new THREE.Color();
   private readonly sunPosition = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, transitionS = 300) {
+  constructor(scene: THREE.Scene, zones: readonly TrackZone[] = DEFAULT_ZONES) {
     this.scene = scene;
-    this.transitionS = transitionS;
+    this.zones = zones;
 
     this.scene.background = this.skyColor;
-    this.fog = new THREE.Fog(FOREST_FOG.getHex(), FOREST.fogNear, FOREST.fogFar);
+    this.fog = new THREE.Fog(FOREST.fog.getHex(), FOREST.fogNear, FOREST.fogFar);
     this.scene.fog = this.fog;
 
     this.hemisphere = new THREE.HemisphereLight(
-      FOREST_HEMI_SKY.getHex(),
-      FOREST_HEMI_GROUND.getHex(),
+      FOREST.hemiSky.getHex(),
+      FOREST.hemiGround.getHex(),
       FOREST.hemiIntensity,
     );
     this.hemisphere.name = 'environment-hemisphere';
-    this.sun = new THREE.DirectionalLight(FOREST_SUN.getHex(), FOREST.sunIntensity);
+    this.sun = new THREE.DirectionalLight(FOREST.sun.getHex(), FOREST.sunIntensity);
     this.sun.name = 'environment-sun';
     this.sun.position.copy(FOREST.sunPosition);
 
     this.scene.add(this.hemisphere, this.sun);
-    this.update(0, 1);
+    this.update(0);
   }
 
-  /** `s` posição na pista; `length` evita que a transição passe do fim. */
-  update(s: number, length: number): void {
-    const center = Math.min(this.transitionS, length * 0.5);
-    const raw = clamp(
-      (s - (center - TRANSITION_RANGE)) / (TRANSITION_RANGE * 2),
-      0,
-      1,
-    );
-    const t = raw * raw * (3 - 2 * raw);
+  /** `s` posição na pista. A paleta mistura suavemente em cada limite de setor. */
+  update(s: number): void {
+    const blend = zoneBlendAt(this.zones, s);
+    const from = PALETTES[this.zones[blend.from]?.id ?? 'forest'];
+    const to = PALETTES[this.zones[blend.to]?.id ?? 'forest'];
+    const t = blend.t;
 
-    this.skyColor.copy(FOREST_SKY).lerp(DESERT_SKY, t);
-    this.fogColor.copy(FOREST_FOG).lerp(DESERT_FOG, t);
-    this.hemiSky.copy(FOREST_HEMI_SKY).lerp(DESERT_HEMI_SKY, t);
-    this.hemiGround.copy(FOREST_HEMI_GROUND).lerp(DESERT_HEMI_GROUND, t);
-    this.sunColor.copy(FOREST_SUN).lerp(DESERT_SUN, t);
-    this.sunPosition.copy(FOREST.sunPosition).lerp(DESERT.sunPosition, t);
+    this.skyColor.copy(from.sky).lerp(to.sky, t);
+    this.fogColor.copy(from.fog).lerp(to.fog, t);
+    this.hemiSky.copy(from.hemiSky).lerp(to.hemiSky, t);
+    this.hemiGround.copy(from.hemiGround).lerp(to.hemiGround, t);
+    this.sunColor.copy(from.sun).lerp(to.sun, t);
+    this.sunPosition.copy(from.sunPosition).lerp(to.sunPosition, t);
 
     this.hemisphere.color.copy(this.hemiSky);
     this.hemisphere.groundColor.copy(this.hemiGround);
-    this.hemisphere.intensity = lerp(FOREST.hemiIntensity, DESERT.hemiIntensity, t);
+    this.hemisphere.intensity = lerp(from.hemiIntensity, to.hemiIntensity, t);
 
     this.sun.color.copy(this.sunColor);
-    this.sun.intensity = lerp(FOREST.sunIntensity, DESERT.sunIntensity, t);
+    this.sun.intensity = lerp(from.sunIntensity, to.sunIntensity, t);
     this.sun.position.copy(this.sunPosition);
 
     this.fog.color.copy(this.fogColor);
-    this.fog.near = lerp(FOREST.fogNear, DESERT.fogNear, t);
-    this.fog.far = lerp(FOREST.fogFar, DESERT.fogFar, t);
+    this.fog.near = lerp(from.fogNear, to.fogNear, t);
+    this.fog.far = lerp(from.fogFar, to.fogFar, t);
   }
 }

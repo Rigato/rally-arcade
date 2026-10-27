@@ -1,4 +1,4 @@
-import type { MedalTargets, RaceTuning } from './types';
+import type { MedalTargets, RaceTuning, TrackSplit } from './types';
 
 export type MedalId = 'gold' | 'silver' | 'bronze';
 
@@ -10,14 +10,20 @@ export interface RaceSplit {
   delta: number;
 }
 
+/** Estado de uma parcial no snapshot (pulada = `done` sem `time`). */
+export interface RaceSplitResult {
+  name: string;
+  s: number;
+  target: number;
+  time: number | null;
+  delta: number | null;
+  done: boolean;
+}
+
 /** Snapshot imutável consumido pelo HUD e pela tela de resultado. */
 export interface RaceResult {
   elapsed: number;
-  splitName: string;
-  splitTime: number | null;
-  splitTarget: number;
-  splitDelta: number | null;
-  splitDone: boolean;
+  splits: RaceSplitResult[];
   finished: boolean;
   finishedTime: number | null;
   medal: MedalId | null;
@@ -29,8 +35,8 @@ export interface RaceResult {
 export interface RaceOptions {
   trackId: string;
   finishS: number;
-  splitS: number | null;
-  splitName: string;
+  /** Parciais autoradas na pista (nome, s e alvo). */
+  splits: readonly TrackSplit[];
   /** Objeto mutável de config.ts: o painel pode editar alvo e medalhas ao vivo. */
   tuning: RaceTuning;
 }
@@ -47,17 +53,16 @@ const BEST_KEY_SUFFIX = '.v1';
  */
 export class Race {
   readonly finishS: number;
-  readonly splitS: number | null;
-  readonly splitName: string;
+  readonly splits: readonly TrackSplit[];
   readonly tuning: RaceTuning;
 
   private readonly bestKey: string;
   private best: number | null;
 
   private elapsedTime = 0;
-  private splitTimeValue: number | null = null;
-  private splitDeltaValue: number | null = null;
-  private splitDoneValue = false;
+  private readonly splitTimes: Array<number | null>;
+  private readonly splitDeltas: Array<number | null>;
+  private readonly splitDone: boolean[];
   private finishedValue = false;
   private finishedTimeValue: number | null = null;
   private medalValue: MedalId | null = null;
@@ -66,8 +71,10 @@ export class Race {
   constructor(options: RaceOptions) {
     this.tuning = options.tuning;
     this.finishS = options.finishS;
-    this.splitS = options.splitS;
-    this.splitName = options.splitName;
+    this.splits = options.splits;
+    this.splitTimes = this.splits.map(() => null);
+    this.splitDeltas = this.splits.map(() => null);
+    this.splitDone = this.splits.map(() => false);
     this.bestKey = `${BEST_KEY_PREFIX}${options.trackId}${BEST_KEY_SUFFIX}`;
     this.best = this.loadBest();
   }
@@ -94,34 +101,40 @@ export class Race {
   }
 
   /**
-   * Registra a parcial uma única vez ao cruzar `splitS`.
-   * Retorna o evento para o HUD mostrar o banner; `null` se já passou.
+   * Registra a próxima parcial ainda não cruzada. Cada parcial é registrada
+   * uma única vez; retorna o evento para o HUD mostrar o banner, ou `null`.
    */
   checkSplit(s: number): RaceSplit | null {
-    if (
-      this.finishedValue ||
-      this.splitDoneValue ||
-      this.splitS === null ||
-      s < this.splitS
-    ) {
+    if (this.finishedValue) {
       return null;
     }
 
-    const target = Number.isFinite(this.tuning.splitTarget)
-      ? this.tuning.splitTarget
-      : 0;
+    for (let i = 0; i < this.splits.length; i += 1) {
+      const split = this.splits[i];
+      if (this.splitDone[i] || s < split.s) {
+        continue;
+      }
 
-    this.splitDoneValue = true;
-    this.splitTimeValue = this.elapsedTime;
-    this.splitDeltaValue = this.elapsedTime - target;
+      const target = Number.isFinite(split.target)
+        ? split.target
+        : Number.isFinite(this.tuning.splitTarget)
+          ? this.tuning.splitTarget
+          : 0;
 
-    return {
-      name: this.splitName,
-      s: this.splitS,
-      time: this.splitTimeValue,
-      target,
-      delta: this.splitDeltaValue,
-    };
+      this.splitDone[i] = true;
+      this.splitTimes[i] = this.elapsedTime;
+      this.splitDeltas[i] = this.elapsedTime - target;
+
+      return {
+        name: split.name,
+        s: split.s,
+        time: this.elapsedTime,
+        target,
+        delta: this.splitDeltas[i] ?? 0,
+      };
+    }
+
+    return null;
   }
 
   /**
@@ -148,14 +161,15 @@ export class Race {
 
   /**
    * Volta para READY. Preserva o melhor tempo. Ao reposicionar em debug, um
-   * `s` além da parcial marca a parcial como pulada (sem tempo inventado).
+   * `s` além de uma parcial marca a parcial como pulada (sem tempo inventado).
    */
   reset(atS?: number): void {
     this.elapsedTime = 0;
-    this.splitTimeValue = null;
-    this.splitDeltaValue = null;
-    this.splitDoneValue =
-      atS !== undefined && this.splitS !== null && atS >= this.splitS;
+    for (let i = 0; i < this.splits.length; i += 1) {
+      this.splitTimes[i] = null;
+      this.splitDeltas[i] = null;
+      this.splitDone[i] = atS !== undefined && atS >= this.splits[i].s;
+    }
     this.finishedValue = false;
     this.finishedTimeValue = null;
     this.medalValue = null;
@@ -166,11 +180,16 @@ export class Race {
   snapshot(): RaceResult {
     return {
       elapsed: this.elapsedTime,
-      splitName: this.splitName,
-      splitTime: this.splitTimeValue,
-      splitTarget: this.tuning.splitTarget,
-      splitDelta: this.splitDeltaValue,
-      splitDone: this.splitDoneValue,
+      splits: this.splits.map((split, index) => ({
+        name: split.name,
+        s: split.s,
+        target: Number.isFinite(split.target)
+          ? split.target
+          : this.tuning.splitTarget,
+        time: this.splitTimes[index],
+        delta: this.splitDeltas[index],
+        done: this.splitDone[index],
+      })),
       finished: this.finishedValue,
       finishedTime: this.finishedTimeValue,
       medal: this.medalValue,

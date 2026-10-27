@@ -1,22 +1,31 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math';
 import type { Track } from './Track';
+import { zoneBlendAt, type ZoneId } from './zones';
 
-/** Offsets laterais do ombro (além da borda), do mais externo ao mais interno. */
-const SHOULDER_OFFSETS: readonly number[] = [6, 4.5, 3, 1.5];
+/**
+ * Offsets laterais do ombro (além da borda), do mais externo ao mais interno.
+ * O ombro tem 12 m por lado, com cinco colunas para o relevo de 2–5 m em `u`.
+ */
+const SHOULDER_OFFSETS: readonly number[] = [12, 9.6, 7.2, 4.8, 2.4];
 /** Pista (borda esquerda, centro, borda direita) + ombros dos dois lados. */
 const COLUMNS = SHOULDER_OFFSETS.length * 2 + 3;
-const TRANSITION_RANGE = 15;
 const EDGE_RIBBON_WIDTH = 0.45;
 const EDGE_LIFT = 0.025;
 const BAND_LIFT = 0.04;
 
-const FOREST_ROAD = new THREE.Color(0x57534a);
-const DESERT_ROAD = new THREE.Color(0xd4b173);
-const FOREST_SHOULDER = new THREE.Color(0x4c6436);
-const DESERT_SHOULDER = new THREE.Color(0xd6ba85);
-const FOREST_EDGE = new THREE.Color(0xdfe3cc);
-const DESERT_EDGE = new THREE.Color(0xf4e7c3);
+const ROAD_COLORS: Record<ZoneId, THREE.Color> = {
+  forest: new THREE.Color(0x57534a),
+  desert: new THREE.Color(0xd4b173),
+};
+const SHOULDER_COLORS: Record<ZoneId, THREE.Color> = {
+  forest: new THREE.Color(0x4c6436),
+  desert: new THREE.Color(0xd6ba85),
+};
+const EDGE_COLORS: Record<ZoneId, THREE.Color> = {
+  forest: new THREE.Color(0xdfe3cc),
+  desert: new THREE.Color(0xf4e7c3),
+};
 const BAND_DARK = new THREE.Color(0x232825);
 const BAND_LIGHT = new THREE.Color(0xf2eee0);
 const BAND_FINISH = new THREE.Color(0xc94f3b);
@@ -66,17 +75,19 @@ export class TrackMesh {
     const colors = new Float32Array(rows * columns * 3);
     const uvs = new Float32Array(rows * columns * 2);
     const indices: number[] = [];
-    const transitionS = findDesertStart(track);
+    const zones = track.def.zones;
     const lateral = new Array<number>(columns);
 
     for (let i = 0; i < rows; i += 1) {
       const s = Math.min(i * track.step, track.length);
       const sample = track.sampleAt(s);
       const half = sample.width * 0.5;
-      const blend = transitionBlend(s, transitionS);
+      const blend = zoneBlendAt(zones, s);
+      const fromZone = zones[blend.from].id;
+      const toZone = zones[blend.to].id;
       const centerY = track.heightAt(s, 0);
 
-      // Ombros com 4 faixas por lado: resolução suficiente para as ondulações
+      // Ombros com 5 faixas por lado: resolução suficiente para as ondulações
       // de 2–5 m em u. A pista continua com 3 colunas e fica lisa.
       for (let k = 0; k < SHOULDER_OFFSETS.length; k += 1) {
         lateral[k] = -half - SHOULDER_OFFSETS[k];
@@ -101,9 +112,13 @@ export class TrackMesh {
         uvs[vertex * 2 + 1] = s / 8;
 
         if (isRoad) {
-          tempColor.copy(FOREST_ROAD).lerp(DESERT_ROAD, blend);
+          tempColor
+            .copy(ROAD_COLORS[fromZone])
+            .lerp(ROAD_COLORS[toZone], blend.t);
         } else {
-          tempColor.copy(FOREST_SHOULDER).lerp(DESERT_SHOULDER, blend);
+          tempColor
+            .copy(SHOULDER_COLORS[fromZone])
+            .lerp(SHOULDER_COLORS[toZone], blend.t);
         }
 
         let grain = 0.94 + 0.12 * hash2(i, k);
@@ -162,15 +177,19 @@ export class TrackMesh {
     const positions = new Float32Array(rows * verticesPerRow * 3);
     const colors = new Float32Array(rows * verticesPerRow * 3);
     const indices: number[] = [];
-    const transitionS = findDesertStart(track);
+    const zones = track.def.zones;
 
     for (let i = 0; i < rows; i += 1) {
       const s = Math.min(i * track.step, track.length);
       const sample = track.sampleAt(s);
       const half = sample.width * 0.5;
-      const blend = transitionBlend(s, transitionS);
+      const blend = zoneBlendAt(zones, s);
+      const fromZone = zones[blend.from].id;
+      const toZone = zones[blend.to].id;
 
-      tempColor.copy(FOREST_EDGE).lerp(DESERT_EDGE, blend);
+      tempColor
+        .copy(EDGE_COLORS[fromZone])
+        .lerp(EDGE_COLORS[toZone], blend.t);
       for (let sideIndex = 0; sideIndex < sides; sideIndex += 1) {
         const side = sideIndex === 0 ? -1 : 1;
         for (let innerIndex = 0; innerIndex < 2; innerIndex += 1) {
@@ -325,20 +344,6 @@ function pushBandVertex(
   );
 }
 
-function findDesertStart(track: Track): number {
-  return track.def.zones.find((zone) => zone.id === 'desert')?.start ?? track.length * 0.5;
-}
-
-function transitionBlend(s: number, transitionS: number): number {
-  const raw = clamp(
-    (s - (transitionS - TRANSITION_RANGE)) / (TRANSITION_RANGE * 2),
-    0,
-    1,
-  );
-  return raw * raw * (3 - 2 * raw);
-}
-
-/** Ruído determinístico por vértice, só para quebrar a uniformidade da cor. */
 function hash2(a: number, b: number): number {
   const value = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
   return value - Math.floor(value);

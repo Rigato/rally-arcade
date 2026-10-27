@@ -234,7 +234,15 @@ export class TuningPanel {
     this.addNumber(powerups, POWERUP_TUNING, 'gripMultiplier', 'Grip extra ×', 1, 3, 0.1);
     this.addNumber(powerups, POWERUP_TUNING, 'gripDuration', 'Grip duração', 1, 30, 0.5);
 
-    this.addNumber(race, RACE_TUNING, 'splitTarget', 'Parcial alvo (s)', 5, 120, 0.5);
+    this.addNumber(
+      race,
+      RACE_TUNING,
+      'splitTarget',
+      'Parcial alvo reserva (s)',
+      5,
+      120,
+      0.5,
+    );
     this.addNumber(race, RACE_TUNING.medals, 'gold', 'Ouro (s)', 20, 180, 1);
     this.addNumber(race, RACE_TUNING.medals, 'silver', 'Prata (s)', 20, 180, 1);
     this.addNumber(race, RACE_TUNING.medals, 'bronze', 'Bronze (s)', 20, 180, 1);

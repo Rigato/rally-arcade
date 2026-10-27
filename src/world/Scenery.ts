@@ -1,24 +1,26 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math';
 import type { Track, TrackZoneId } from '../track/Track';
+import type { TrackZone } from '../game/types';
+import { zoneBlendAt, type ZoneId } from '../track/zones';
 import { createBannerTexture } from './canvasText';
 
-const SHOULDER_INNER = 2.0;
-const SHOULDER_OUTER = 5.5;
-/** Trechos de hairpin: sem pinheiros altos, para não bloquear a câmera. */
-const HAIRPIN_RANGES: ReadonlyArray<readonly [number, number]> = [
-  [215, 295],
-  [440, 515],
-];
+const SHOULDER_INNER = 3.0;
+const SHOULDER_OUTER = 11.5;
+/** Objetos altos (pinheiros/cactos) só a partir desta distância da borda. */
+const TALL_CLEARANCE = 6.0;
 const START_CLEARANCE = 10;
 const FINISH_CLEARANCE = 12;
 const PORTAL_CLEARANCE = 9;
+const KICKER_CLEARANCE = 12;
 const EDGE_POST_SPACING = 20;
 const EDGE_POST_CLEARANCE = 0.55;
 
 const UP = new THREE.Vector3(0, 1, 0);
-const FOREST_TERRAIN = new THREE.Color(0x465f33);
-const DESERT_TERRAIN = new THREE.Color(0xc9ac75);
+const TERRAIN_COLORS: Record<ZoneId, THREE.Color> = {
+  forest: new THREE.Color(0x465f33),
+  desert: new THREE.Color(0xc9ac75),
+};
 const tempTerrainColor = new THREE.Color();
 
 type SceneryKind = 'pine' | 'rock' | 'bush' | 'cactus' | 'drybush';
@@ -56,24 +58,43 @@ export class Scenery {
 
   private readonly items: SceneryItem[] = [];
   private readonly kickers: ReadonlyArray<{ readonly s: number; readonly length: number }>;
-  private readonly desertStart: number;
+  private readonly zones: readonly TrackZone[];
+  private readonly portalSs: readonly number[];
 
   constructor(track: Track) {
     this.group.name = 'scenery';
-    this.desertStart =
-      track.def.zones.find((zone) => zone.id === 'desert')?.start ??
-      track.length * 0.5;
+    this.zones = track.def.zones;
+    this.portalSs = this.zones.slice(1).map((zone) => zone.start);
     this.kickers = track.def.kickers;
 
-    const forestRng = mulberry32(0x5eedf00d);
-    const desertRng = mulberry32(0x5eed0f1d);
-    const forestFrom = track.startS + START_CLEARANCE;
-    const forestTo = this.desertStart - 2;
-    const desertFrom = this.desertStart + 2;
-    const desertTo = track.length - FINISH_CLEARANCE;
+    // Cada setor tem seu próprio PRNG: o cenário de cada zona é estável mesmo
+    // que outro setor mude de extensão.
+    for (let i = 0; i < this.zones.length; i += 1) {
+      const zone = this.zones[i];
+      const rng = mulberry32(0x5eedf00d + i * 0x9e3779b1);
+      const from = i === 0
+        ? track.startS + START_CLEARANCE
+        : zone.start + 2;
+      const to = Math.min(
+        i === this.zones.length - 1 ? track.length - FINISH_CLEARANCE : zone.end - 2,
+        track.length - FINISH_CLEARANCE,
+      );
 
-    this.scatter(track, forestRng, forestFrom, forestTo, 'forest', 3.7, 6.3);
-    this.scatter(track, desertRng, desertFrom, desertTo, 'desert', 6.1, 9.4);
+      if (to <= from) {
+        continue;
+      }
+
+      const forest = zone.id === 'forest';
+      this.scatter(
+        track,
+        rng,
+        from,
+        to,
+        zone.id,
+        forest ? 3.7 : 6.1,
+        forest ? 6.3 : 9.4,
+      );
+    }
 
     this.group.add(this.buildTerrainBackdrop(track));
     this.group.add(this.buildPines());
@@ -139,7 +160,7 @@ export class Scenery {
           const y = track.heightAt(ss, u) - 0.02;
 
           this.items.push(
-            this.makeItem(zone, x, y, z, rng, this.isHairpin(ss), Math.abs(u) - half),
+            this.makeItem(zone, x, y, z, rng, Math.abs(u) - half),
           );
         }
       }
@@ -148,17 +169,18 @@ export class Scenery {
     }
   }
 
-  private isHairpin(s: number): boolean {
-    return HAIRPIN_RANGES.some(([from, to]) => s >= from && s <= to);
-  }
-
   private isClear(s: number): boolean {
-    if (Math.abs(s - this.desertStart) < PORTAL_CLEARANCE) {
-      return false;
+    for (const portalS of this.portalSs) {
+      if (Math.abs(s - portalS) < PORTAL_CLEARANCE) {
+        return false;
+      }
     }
 
     for (const kicker of this.kickers) {
-      if (Math.abs(s - (kicker.s + 1)) < 4) {
+      if (
+        s >= kicker.s - KICKER_CLEARANCE &&
+        s <= kicker.s + kicker.length + KICKER_CLEARANCE
+      ) {
         return false;
       }
     }
@@ -172,7 +194,6 @@ export class Scenery {
     y: number,
     z: number,
     rng: () => number,
-    inHairpin: boolean,
     distanceFromEdge: number,
   ): SceneryItem {
     const roll = rng();
@@ -180,12 +201,12 @@ export class Scenery {
 
     if (zone === 'forest') {
       kind = roll < 0.5 ? 'pine' : roll < 0.78 ? 'rock' : 'bush';
-      if ((inHairpin || distanceFromEdge < 3.5) && kind === 'pine') {
+      if (distanceFromEdge < TALL_CLEARANCE && kind === 'pine') {
         kind = rng() < 0.55 ? 'rock' : 'bush';
       }
     } else {
       kind = roll < 0.42 ? 'cactus' : roll < 0.72 ? 'rock' : 'drybush';
-      if (distanceFromEdge < 3.5 && kind === 'cactus') {
+      if (distanceFromEdge < TALL_CLEARANCE && kind === 'cactus') {
         kind = rng() < 0.5 ? 'rock' : 'drybush';
       }
     }
@@ -319,7 +340,7 @@ export class Scenery {
 
         const lateral = Math.sqrt(nearestDistanceSq);
         const half = track.widthAt(nearestS) * 0.5;
-        const inner = half + 5.9;
+        const inner = half + 11.9;
         const outside = Math.max(0, lateral - inner);
         const slope = Math.min(Math.max(0, outside - 2) * 0.12, 5.0);
         const ripple =
@@ -329,7 +350,7 @@ export class Scenery {
         // No corredor da pista o relevo fica rebaixado: a malha de fundo tem
         // células de 6 m e a corda entre vértices passa por cima da rampa
         // convexa dos kickers. Sem essa folga o terreno cobre a pista.
-        const nearDepression = 0.18 + 0.26 * (1 - clamp(outside / 10, 0, 1));
+        const nearDepression = 0.18 + 0.26 * (1 - clamp(outside / 14, 0, 1));
         const y = blendedY - nearDepression - slope + ripple;
 
         const vertex = row * cols + col;
@@ -337,10 +358,13 @@ export class Scenery {
         positions[vertex * 3 + 1] = y;
         positions[vertex * 3 + 2] = z;
 
-        const raw = clamp((nearestS - (this.desertStart - 15)) / 30, 0, 1);
-        const blend = raw * raw * (3 - 2 * raw);
+        const blend = zoneBlendAt(this.zones, nearestS);
+        const fromZone = this.zones[blend.from]?.id ?? 'forest';
+        const toZone = this.zones[blend.to]?.id ?? 'forest';
         const grain = 0.9 + hash2(col, row) * 0.18;
-        tempTerrainColor.copy(FOREST_TERRAIN).lerp(DESERT_TERRAIN, blend);
+        tempTerrainColor
+          .copy(TERRAIN_COLORS[fromZone])
+          .lerp(TERRAIN_COLORS[toZone], blend.t);
         colors[vertex * 3] = tempTerrainColor.r * grain;
         colors[vertex * 3 + 1] = tempTerrainColor.g * grain;
         colors[vertex * 3 + 2] = tempTerrainColor.b * grain;

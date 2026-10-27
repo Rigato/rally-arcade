@@ -150,15 +150,13 @@ export class Game {
     this.scene.add(this.obstacles.group);
     this.powerups = new Powerups(this.track);
     this.scene.add(this.powerups.group);
-    this.environment = new Environment(this.scene, desertStart(this.track));
-    this.environment.update(this.track.startS, this.track.length);
+    this.environment = new Environment(this.scene, this.track.def.zones);
+    this.environment.update(this.track.startS);
 
-    const split = this.track.def.splits[0] ?? null;
     this.race = new Race({
       trackId: this.track.def.id,
       finishS: this.track.length - FINISH_LINE_FROM_END,
-      splitS: split?.s ?? null,
-      splitName: split?.name ?? 'Parcial 1',
+      splits: this.track.def.splits,
       tuning: RACE_TUNING,
     });
 
@@ -183,8 +181,7 @@ export class Game {
       track: {
         startS: this.track.startS,
         finishS: this.race.finishS,
-        splitS: this.race.splitS,
-        splitName: this.race.splitName,
+        splits: this.race.splits,
       },
     });
     this.hud.setState(this.state);
@@ -313,7 +310,7 @@ export class Game {
     this.carView.reset();
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
-    this.environment.update(target, this.track.length);
+    this.environment.update(target);
     this.powerups.reset();
     this.chaseCamera.setFovBoost(0);
     this.hud.clearPowerups();
@@ -400,7 +397,7 @@ export class Game {
     this.carView.reset();
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
-    this.environment.update(this.track.startS, this.track.length);
+    this.environment.update(this.track.startS);
     this.powerups.reset();
     this.chaseCamera.setFovBoost(0);
     this.hud.clearPowerups();
@@ -488,13 +485,14 @@ export class Game {
     state.trackS = after.s;
     state.trackU = after.u;
 
-    this.environment.update(state.trackS, this.track.length);
+    this.environment.update(state.trackS);
     this.updateRumble();
 
     if (this.state === 'RUNNING') {
-      const split = this.race.checkSplit(after.s);
-      if (split) {
+      let split = this.race.checkSplit(after.s);
+      while (split) {
         this.hud.showSplit(split);
+        split = this.race.checkSplit(after.s);
       }
 
       if (this.race.checkFinish(after.s)) {
@@ -666,7 +664,7 @@ export class Game {
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.chaseCamera.setRumble(0);
-    this.environment.update(target, this.track.length);
+    this.environment.update(target);
     this.hud.setTelemetry(this.car.telemetry, this.car.state.position, this.debugInfo);
 
     this.recoveryTeleported = true;
@@ -687,7 +685,7 @@ export class Game {
   }
 
   /**
-   * Limite do mundo baseado na borda (ombro de 6 m) e auto-unstick: acelerar
+   * Limite do mundo baseado na borda (ombro de 12 m) e auto-unstick: acelerar
    * contra algo por 2,5 s sem sair de ~0,8 m/s também dispara a recuperação.
    */
   private updateRecoveryTriggers(dt: number): void {
@@ -876,11 +874,4 @@ export class Game {
     this.renderer.setSize(width, height, false);
     this.chaseCamera.resize(width / height);
   };
-}
-
-function desertStart(track: Track): number {
-  return (
-    track.def.zones.find((zone) => zone.id === 'desert')?.start ??
-    track.length * 0.5
-  );
 }

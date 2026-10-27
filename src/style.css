@@ -775,6 +775,12 @@ body {
   border-top: 1px solid rgba(226, 238, 230, 0.1);
 }
 
+.results__splits {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
 .results__stat {
   display: flex;
   align-items: baseline;

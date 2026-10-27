@@ -11,7 +11,8 @@
     "dev": "vite --host",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "validate:track": "rolldown scripts/validate-track.ts --format esm --platform node --file dist/validate-track.mjs && node dist/validate-track.mjs"
   },
   "dependencies": {
     "lil-gui": "^0.21.0",
