@@ -1,5 +1,7 @@
 /** Tipos compartilhados do jogo. Unidades em metros e segundos. */
 
+import type * as THREE from 'three';
+
 export interface Vec2 {
   x: number;
   z: number;
@@ -9,75 +11,144 @@ export type RaceState = 'READY' | 'RUNNING' | 'RECOVERING' | 'FINISHED';
 
 export type SurfaceId = 'gravel' | 'sand' | 'forest-offroad' | 'desert-offroad';
 
+/**
+ * Piso do terreno. Todos os campos são mutáveis: o painel de tuning do M1b
+ * edita estes valores ao vivo e a física lê a mesma referência.
+ */
 export interface SurfaceDef {
-  readonly id: SurfaceId;
-  readonly label: string;
+  id: SurfaceId;
+  label: string;
   /** Grip lateral (1/s): quanto maior, mais rápido a velocidade se alinha ao heading. */
-  readonly grip: number;
+  grip: number;
   /** Multiplicador de aceleração do motor. */
-  readonly acceleration: number;
+  acceleration: number;
   /** Multiplicador do arrasto do piso. */
-  readonly drag: number;
+  drag: number;
   /** Intensidade da trepidação visual/física fora de estrada. */
-  readonly bump: number;
+  bump: number;
+  /** Multiplicador da resposta de esterço (1.0 no M1; ajustado no M2). */
+  steerMultiplier: number;
+}
+
+export type HandbrakeMode = 'drag' | 'button';
+
+/**
+ * Piso escolhido no painel de debug. `auto` fica reservado para o M2, quando a
+ * pista informar a superfície; até lá também resolve para cascalho.
+ */
+export type ForcedSurface = SurfaceId | 'auto';
+
+/** Entrada normalizada do jogador. `steer` vai de -1 (esquerda) a +1 (direita). */
+export interface InputState {
+  throttle: boolean;
+  steer: number;
+  brake: boolean;
+  handbrake: boolean;
+}
+
+/** Estado físico exposto pelo carro (posição no mundo + referencial do carro). */
+export interface CarState {
+  position: THREE.Vector3;
+  /** Yaw em radianos. 0 = +Z, positivo gira para +X (direita). */
+  heading: number;
+  velocity: THREE.Vector3;
+  yawRate: number;
+  grounded: boolean;
+  /** Tempo desde que o acelerador foi solto; alimenta a rampa de freio. */
+  releaseTime: number;
+  /** Velocidade planar (m/s). */
+  speed: number;
+}
+
+/** Telemetria pronta para HUD, painel de tuning e animação visual. */
+export interface CarTelemetry {
+  /** Velocidade planar (m/s). */
+  speed: number;
+  /** Velocidade longitudinal no referencial do carro (m/s). */
+  longitudinalSpeed: number;
+  /** Velocidade lateral no referencial do carro (m/s, positivo = direita). */
+  lateralSpeed: number;
+  /** Ângulo entre o heading e a direção do movimento (rad). */
+  slipAngle: number;
+  yawRate: number;
+  /** Esterço aplicado neste passo (-1..1). */
+  steer: number;
+  /** Intensidade da rampa de freio aplicada neste passo (m/s²). */
+  brake: number;
+  throttle: number;
+  handbrake: boolean;
+  grounded: boolean;
+  /** Aceleração longitudinal no referencial do carro (m/s²). */
+  longitudinalAcceleration: number;
+  /** Aceleração lateral/centrípeta (m/s², positivo = direita). */
+  lateralAcceleration: number;
 }
 
 export interface CarTuning {
-  readonly engineAcceleration: number;
-  readonly maxSpeed: number;
-  readonly dragCoefficient: number;
-  readonly rollingResistance: number;
-  readonly maxYawRate: number;
-  readonly steerResponseTau: number;
-  readonly brakeMax: number;
-  readonly brakeRampStart: number;
-  readonly brakeRampDuration: number;
-  readonly airGravity: number;
-  readonly handbrakeGripMultiplier: number;
-  readonly handbrakeBrake: number;
+  engineAcceleration: number;
+  maxSpeed: number;
+  dragCoefficient: number;
+  rollingResistance: number;
+  maxYawRate: number;
+  steerResponseTau: number;
+  /** Velocidade (m/s) em que o esterço atinge resposta máxima em baixa. */
+  steerSpeedReference: number;
+  /** Redução da guinada em velocidade máxima (0..1). */
+  steerHighSpeedReduction: number;
+  brakeMax: number;
+  brakeRampStart: number;
+  brakeRampDuration: number;
+  airGravity: number;
+  handbrakeGripMultiplier: number;
+  handbrakeBrake: number;
 }
 
 export interface CameraTuning {
-  readonly distance: number;
-  readonly height: number;
-  readonly lookAhead: number;
-  readonly lookHeight: number;
-  readonly pitchDeg: number;
-  readonly positionTau: number;
-  readonly yawTau: number;
-  readonly fov: number;
-  readonly turboFovBoost: number;
-  readonly minGroundClearance: number;
+  distance: number;
+  height: number;
+  lookAhead: number;
+  lookHeight: number;
+  /** Referência de ângulo da câmera (informativo/painel). */
+  pitchDeg: number;
+  positionTau: number;
+  yawTau: number;
+  fov: number;
+  /** Ganho de FOV proporcional à velocidade (graus no topo). */
+  speedFovBoost: number;
+  /** Ganho extra de FOV para o turbo futuro. */
+  turboFovBoost: number;
+  minGroundClearance: number;
 }
 
 export interface InputTuning {
-  /** Fração da largura da tela para atingir o esterço máximo. */
-  readonly steerLockScreenRatio: number;
-  readonly steerDeadzonePx: number;
-  readonly steerSmoothingTau: number;
-  /** Deslocamento (em múltiplos do lock) para acionar o freio de mão. */
-  readonly handbrakeScreenRatio: number;
+  /** Fração de min(innerWidth, innerHeight) para atingir o esterço máximo. */
+  steerLockScreenRatio: number;
+  steerDeadzonePx: number;
+  steerSmoothingTau: number;
+  /** Deslocamento (em múltiplos do lock) para acionar o freio de mão no modo drag. */
+  handbrakeScreenRatio: number;
+  handbrakeMode: HandbrakeMode;
 }
 
 export interface PowerupTuning {
-  readonly turboSpeedMultiplier: number;
-  readonly turboAccelerationMultiplier: number;
-  readonly turboDuration: number;
-  readonly gripMultiplier: number;
-  readonly gripDuration: number;
+  turboSpeedMultiplier: number;
+  turboAccelerationMultiplier: number;
+  turboDuration: number;
+  gripMultiplier: number;
+  gripDuration: number;
 }
 
 export interface MedalTargets {
-  readonly gold: number;
-  readonly silver: number;
-  readonly bronze: number;
+  gold: number;
+  silver: number;
+  bronze: number;
 }
 
 export interface RaceTuning {
-  readonly splitTarget: number;
-  readonly medals: MedalTargets;
-  readonly worldLimit: number;
-  readonly recoveryPenalty: number;
+  splitTarget: number;
+  medals: MedalTargets;
+  worldLimit: number;
+  recoveryPenalty: number;
 }
 
 /* Estruturas previstas para a pista autorada (M3). */

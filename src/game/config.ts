@@ -6,6 +6,7 @@ import type {
   RaceTuning,
   SurfaceDef,
   SurfaceId,
+  Vec2,
 } from './types';
 
 /** Loop de simulação e orçamento de renderização. */
@@ -22,9 +23,15 @@ export const RENDER_SETTINGS = {
   fogFar: 190,
   groundSize: 600,
   groundColor: 0x39463d,
-  gridColor: 0x536157,
+  gridColor: 0x84968a,
   gridDivisions: 120,
 } as const;
+
+/** Largada da arena de teste do M1a. Heading 0 = +Z. */
+export const CAR_START: { position: Vec2; heading: number } = {
+  position: { x: 0, z: 0 },
+  heading: 0,
+};
 
 /** Valores iniciais da seção 4 do plano. Nenhum é definitivo. */
 export const CAR_TUNING: CarTuning = {
@@ -34,6 +41,8 @@ export const CAR_TUNING: CarTuning = {
   rollingResistance: 0.5,
   maxYawRate: 2.0,
   steerResponseTau: 0.1,
+  steerSpeedReference: 6,
+  steerHighSpeedReduction: 0.4,
   brakeMax: 12,
   brakeRampStart: 3.5,
   brakeRampDuration: 0.55,
@@ -51,6 +60,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     acceleration: 1.0,
     drag: 1.0,
     bump: 0.6,
+    steerMultiplier: 1.0,
   },
   sand: {
     id: 'sand',
@@ -59,6 +69,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     acceleration: 0.85,
     drag: 1.25,
     bump: 0.9,
+    steerMultiplier: 0.95,
   },
   'forest-offroad': {
     id: 'forest-offroad',
@@ -67,6 +78,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     acceleration: 0.8,
     drag: 1.7,
     bump: 1.4,
+    steerMultiplier: 0.9,
   },
   'desert-offroad': {
     id: 'desert-offroad',
@@ -75,18 +87,24 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     acceleration: 0.7,
     drag: 2.0,
     bump: 1.8,
+    steerMultiplier: 0.85,
   },
 };
 
+/**
+ * Câmera calibrada para portrait: mantém o carro a ~67% da altura da tela.
+ * A altura alta compensa o lookAhead curto e ainda mostra bastante pista à frente.
+ */
 export const CAMERA_TUNING: CameraTuning = {
-  distance: 8.0,
-  height: 9.0,
-  lookAhead: 6.0,
-  lookHeight: 1.2,
-  pitchDeg: 48.4,
+  distance: 12,
+  height: 12.8,
+  lookAhead: 5.2,
+  lookHeight: 1.0,
+  pitchDeg: 48.1,
   positionTau: 0.12,
   yawTau: 0.35,
   fov: 60,
+  speedFovBoost: 3,
   turboFovBoost: 6,
   minGroundClearance: 2.0,
 };
@@ -96,6 +114,7 @@ export const INPUT_TUNING: InputTuning = {
   steerDeadzonePx: 5,
   steerSmoothingTau: 0.08,
   handbrakeScreenRatio: 1.1,
+  handbrakeMode: 'drag',
 };
 
 export const POWERUP_TUNING: PowerupTuning = {

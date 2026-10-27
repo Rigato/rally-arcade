@@ -4,7 +4,7 @@ Protótipo de corrida arcade de rally para celular em **portrait**, jogável com
 
 Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), UI em DOM/CSS sobre o canvas.
 
-> Status: **M0 — Fundação**. Nesta etapa existem apenas a cena, o chão provisório, o carro placeholder, a câmera de perseguição provisória, o loop fixo de 120 Hz e o HUD com cronômetro zerado e botão de reinício.
+> Status: **M1b — Carro, feeling e painel de ajuste**. Já existem física de derrapagem, touch/mouse/teclado, freio de mão, câmera de perseguição, carro low poly com suspensão visual, HUD com cronômetro/telemetria e painel de tuning persistente (`?debug=1`).
 
 ## Documentação
 
@@ -18,10 +18,48 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 | Acelerar | Tocar e segurar na tela | Mouse pressionado |
 | Esterçar / derrapar | Arrastar o dedo na horizontal | Mover o mouse / WASD e setas |
 | Frear | Soltar o dedo (rampa progressiva) | Soltar o mouse / S |
-| Freio de mão | Arrastar além do limite de esterço | Espaço |
+| Freio de mão | Arrastar além do limite de esterço (padrão) ou botão dedicado | Espaço |
 | Reiniciar | Botão no topo da tela | R |
+| Telemetria (debug) | — | H |
+| Pausa | Auto-pause ao trocar de aba | — |
 
-O esquema touch será implementado no M1. Nesta etapa a dica **TOQUE E ARRASTE** é apenas visual.
+O freio de mão pode alternar entre **deslocamento** e **botão** no painel de debug. No modo botão, o alvo aparece no canto inferior direito do HUD.
+
+## Painel de ajuste e debug
+
+O painel só existe quando a URL pede debug: **`?debug=1`** ou **`#debug`**. Em produção normal (`/`) nada é renderizado e a telemetria fica oculta.
+
+```text
+https://rigato.github.io/rally-arcade/?debug=1
+```
+
+Pastas disponíveis:
+
+- **Carro** — aceleração, velocidade máxima, arrasto, rolamento, guinada, resposta de esterço, freio/rampa, freio de mão e gravidade no ar.
+- **Câmera** — distância, altura, look-ahead, lags, FOV e boosts.
+- **Input** — lock de esterço, deadzone, suavização, limiar do freio de mão e modo (`drag`/`button`).
+- **Pisos** — grip, aceleração, arrasto, bump e multiplicador de esterço de cascalho, areia e fora de pista.
+- **Powerups / Corrida** — durações/intensidades e tempos-alvo de medalha (ainda não usados no M1b, já editáveis).
+- **Debug** — telemetria, piso forçado (`auto`, cascalho, areia, fora), reposicionar carro, copiar JSON e resetar tuning.
+
+Comportamento:
+
+- O painel abre no canto inferior esquerdo, sobre o jogo, já expandido; as pastas começam fechadas para não cobrir a direção. Toque no título do painel para recolhê-lo.
+- Todo ajuste vale **ao vivo** — física, câmera e input leem os mesmos objetos mutáveis de `src/game/config.ts`.
+- Alterações são salvas em `localStorage['rally.tuning.v1']` com debounce de ~200 ms. Recarregar a página preserva os valores. Em modo privado/storage bloqueado, o jogo continua funcionando só em memória.
+- **Resetar tuning** restaura os defaults e apaga a chave salva.
+- **Copiar JSON** exporta o tuning atual; se o clipboard for bloqueado, abre um textarea para copiar manualmente.
+- O piso forçado do seletor vale na hora. `auto` ainda resolve para cascalho até o M2 implementar as zonas da pista.
+- Toques e teclas dentro do painel não dirigem o carro nem iniciam o cronômetro; só o canvas recebe input de jogo.
+- A telemetria mostra estado, FPS (média móvel), piso, CHÃO/AR, velocidade, derrape, guinada, input e posição. A tecla **H** alterna a telemetria no desktop.
+
+### Fluxo de tuning no celular
+
+1. Abra a URL do Pages com `?debug=1` no Chrome Android ou Safari iOS.
+2. Recolha o painel e dirija para sentir o baseline.
+3. Abra uma pasta, ajuste um parâmetro, recolha o painel e teste de novo. O valor já está ativo e salvo.
+4. Ao encontrar um setup bom, use **Copiar JSON** e envie o conteúdo para o desenvolvimento (issue, chat ou arquivo).
+5. Antes de fechar o marco, congele os valores aprovados em `src/game/config.ts` e rode `npm run build`.
 
 ## Comandos
 
@@ -39,27 +77,34 @@ Requer Node 24+.
 
 ```text
 src/
-├── main.ts              # bootstrap do Game
-├── style.css            # reset mobile, HUD e safe areas
+├── main.ts              # bootstrap: loadTuning() antes do Game
+├── style.css            # reset mobile, HUD, painel e safe areas
 ├── game/
-│   ├── Game.ts          # renderer, cena, luzes, chão, loop e orquestração
-│   ├── config.ts        # tuning inicial tipado (seção 4 do plano)
-│   └── types.ts         # tipos compartilhados (estado, tuning, pista)
+│   ├── Game.ts          # renderer, cena, loop, piso forçado e orquestração
+│   ├── config.ts        # defaults tipados de tuning (objetos mutáveis)
+│   ├── types.ts         # tipos compartilhados (estado, tuning, pista)
+│   ├── tuningStore.ts   # localStorage, merge, reset e export JSON
+│   └── debug.ts         # detecção de ?debug=1 / #debug
 ├── core/
 │   ├── Loop.ts          # passo fixo 120 Hz + acumulador + alpha
+│   ├── Spring.ts        # mola/amortecedor da suspensão visual
 │   └── math.ts          # clamp, lerp e suavização exponencial
 ├── car/
-│   └── CarView.ts       # carro placeholder low poly + sombra blob
+│   ├── Car.ts           # física de derrapagem
+│   └── CarView.ts       # carro low poly + rodas + sombra blob
 ├── camera/
-│   └── ChaseCamera.ts   # câmera de perseguição provisória
-├── input/               # reservado para M1: touch, mouse e teclado
+│   └── ChaseCamera.ts   # câmera de perseguição
+├── input/
+│   └── Input.ts         # touch, mouse e teclado
 ├── track/               # reservado para M3: spline, malha e sampler
-├── world/               # reservado para M3: cenário e ambiente
+├── world/
+│   └── Arena.ts         # chão e grade provisórios do M1
 └── ui/
-    └── Hud.ts           # cronômetro, reinício e dica
+    ├── Hud.ts           # cronômetro, reinício, freio de mão e telemetria
+    └── TuningPanel.ts   # lil-gui em ?debug=1
 ```
 
-Os demais módulos de `game/`, `car/`, `camera/`, `core/` e `ui/` descritos no plano entram nos marcos seguintes.
+Os demais módulos de `game/`, `track/` e `world/` descritos no plano entram nos marcos seguintes.
 
 ## Deploy
 
@@ -71,9 +116,10 @@ O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages.
 
 ## Roadmap
 
-- **M0 — Fundação** (atual): Vite + TS + Three, canvas portrait, loop fixo, chão liso, câmera provisória, HUD shell, Actions/Pages.
-- **M1 — Carro e feeling**: física de derrapagem, touch/mouse/teclado, freio, freio de mão, câmera e carro low poly com rodas.
-- **M2 — Pisos**: cascalho e areia.
+- **M0 — Fundação** (concluído): Vite + TS + Three, canvas portrait, loop fixo, chão liso, câmera provisória, HUD shell, Actions/Pages.
+- **M1a — Carro e feeling** (concluído): física de derrapagem, touch/mouse/teclado, freio, freio de mão, câmera e carro low poly com rodas.
+- **M1b — Painel e persistência** (atual): lil-gui em `?debug=1`, tuning ao vivo, localStorage, export JSON, telemetria com FPS/piso/CHÃO-AR e piso forçado.
+- **M2 — Pisos**: cascalho e areia, troca por zona.
 - **M3 — Pista**: spline, elevação, largura, saltos, cenário.
 - **M4 — Fora da pista**: terreno acidentado, obstáculos, colisão e recuperação.
 - **M5 — Corrida completa**: powerups, cronômetro, parciais, medalhas, resultado e reinício.
