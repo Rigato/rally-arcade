@@ -248,6 +248,7 @@ export class TuningPanel {
     const debugState = {
       telemetry: this.hud.isDebugVisible(),
       surface: this.game.getForcedSurface() as string,
+      s: Number(this.game.getTrackS().toFixed(1)),
     };
 
     folder
@@ -270,6 +271,23 @@ export class TuningPanel {
     folder
       .add({ reposition: () => this.game.repositionCar() }, 'reposition')
       .name('↺ Reposicionar carro');
+
+    const sController = folder
+      .add(debugState, 's', 0, this.game.getTrackLength(), 1)
+      .name('s (m)');
+
+    folder
+      .add(
+        {
+          goToS: () => {
+            this.game.teleportToS(debugState.s);
+            debugState.s = Number(this.game.getTrackS().toFixed(1));
+            sController.updateDisplay();
+          },
+        },
+        'goToS',
+      )
+      .name('Ir para s');
 
     this.copyController = folder
       .add({ copy: () => void this.copyJson() }, 'copy')

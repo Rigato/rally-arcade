@@ -5,8 +5,6 @@ import type { CameraTuning, CarState } from '../game/types';
 
 const HEADING_FALLBACK_SPEED = 2;
 const FOV_TAU = 0.25;
-/** TODO(M3): substituir pela altura do terreno em `heightAt`. */
-const GROUND_Y = 0;
 
 /**
  * Câmera de perseguição em portrait.
@@ -30,9 +28,14 @@ export class ChaseCamera {
 
   private fovBoost = 0;
   private currentFov: number;
+  private readonly groundHeightAt: ((x: number, z: number) => number) | null;
 
-  constructor(tuning: CameraTuning = CAMERA_TUNING) {
+  constructor(
+    tuning: CameraTuning = CAMERA_TUNING,
+    groundHeightAt: ((x: number, z: number) => number) | null = null,
+  ) {
     this.tuning = tuning;
+    this.groundHeightAt = groundHeightAt;
     this.currentFov = tuning.fov;
     this.camera = new THREE.PerspectiveCamera(tuning.fov, 1, 0.1, 600);
     this.camera.position.set(0, tuning.height, -tuning.distance);
@@ -99,10 +102,15 @@ export class ChaseCamera {
     this.desiredPosition
       .copy(carPosition)
       .addScaledVector(this.direction, -this.tuning.distance);
-    // Enquanto o chão é plano (y=0), basta garantir a folga mínima.
+
+    // A câmera fica atrás do carro; ali o terreno pode estar mais alto.
+    // Amostrar o chão na posição desejada evita que ela entre na pista.
+    const groundY = this.groundHeightAt
+      ? this.groundHeightAt(this.desiredPosition.x, this.desiredPosition.z)
+      : 0;
     this.desiredPosition.y = Math.max(
       carPosition.y + this.tuning.height,
-      GROUND_Y + this.tuning.minGroundClearance,
+      groundY + this.tuning.minGroundClearance,
     );
 
     this.desiredLookAt

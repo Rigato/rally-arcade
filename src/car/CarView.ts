@@ -10,6 +10,13 @@ export interface CarViewState {
   longAccel: number;
   handbrake: boolean;
   grounded: boolean;
+  /** Altura do chão sob o carro (mundo). */
+  groundY: number;
+  /** Velocidade vertical da física (m/s). */
+  verticalVelocity: number;
+  airborne: boolean;
+  /** Impacto do pouso a consumir neste frame (m/s, negativo). */
+  landingImpact: number;
 }
 
 interface WheelVisual {
@@ -22,54 +29,78 @@ const WHEEL_RADIUS = 0.38;
 const MAX_VISUAL_STEER = 0.5;
 const MAX_ROLL = THREE.MathUtils.degToRad(8);
 const MAX_PITCH = THREE.MathUtils.degToRad(4);
+const MAX_AIR_PITCH = THREE.MathUtils.degToRad(11);
+const AIR_PITCH_PER_VY = 0.018;
 const ROLL_PER_ACCEL = 0.009;
 const PITCH_PER_ACCEL = 0.006;
+const BODY_HEIGHT = 0.55;
+/** Converte o impacto (negativo) em velocidade da mola de heave. */
+const LANDING_KICK_PER_IMPACT = 0.22;
+const MAX_LANDING_KICK = 4.5;
 
 /**
  * Carro low poly com hierarquia para animação visual:
  *
- * `root` (posição + heading)
- *   ├── `bodyPivot` (roll/pitch) → carroceria
- *   ├── rodas (pivot de esterço → grupo de giro → pneu)
- *   └── sombra blob
+ * `root` (posição + heading + atitude do terreno)
+ *   ├── `bodyPivot` (roll/pitch + heave) → carroceria
+ *   └── rodas (pivot de esterço → grupo de giro → pneu)
  *
+ * `shadow` é um grupo separado, no chão, adicionado à cena pelo Game.
  * Nenhuma dessas animações participa da física.
  */
 export class CarView {
   readonly root = new THREE.Group();
+  /** Blob shadow projetada no chão (o Game adiciona à cena). */
+  readonly shadow = new THREE.Group();
 
   private readonly bodyPivot = new THREE.Group();
   private readonly wheels: WheelVisual[] = [];
   private readonly rollSpring = new Spring(90, 14, MAX_ROLL);
   private readonly pitchSpring = new Spring(90, 14, MAX_PITCH);
-  private readonly shadow: THREE.Mesh;
+  private readonly heaveSpring = new Spring(110, 16, 0.3);
+  private readonly shadowMesh: THREE.Mesh;
 
   private spinAngle = 0;
   private steerAngle = 0;
+  private airPitch = 0;
+  private shadowPitch = 0;
+  private shadowRoll = 0;
 
   constructor() {
     this.root.name = 'car';
     this.bodyPivot.name = 'car-body-pivot';
-    this.bodyPivot.position.y = 0.55;
+    this.bodyPivot.position.y = BODY_HEIGHT;
     this.root.add(this.bodyPivot);
 
     this.buildBody();
     this.buildWheels();
-    this.shadow = this.buildShadow();
+    this.shadowMesh = this.buildShadow();
   }
 
-  setPose(position: THREE.Vector3, heading: number): void {
+  setPose(position: THREE.Vector3, heading: number, terrainPitch = 0, terrainRoll = 0): void {
     this.root.position.copy(position);
-    this.root.rotation.y = heading;
+    this.root.rotation.set(terrainPitch, heading, terrainRoll, 'YXZ');
   }
 
-  /** Zera roll, pitch, esterço e giro das rodas (reset da corrida). */
+  /** Zera roll, pitch, heave, ar e sombra (reset / teleporte). */
   reset(): void {
     this.spinAngle = 0;
     this.steerAngle = 0;
     this.rollSpring.reset();
     this.pitchSpring.reset();
+    this.heaveSpring.reset();
     this.bodyPivot.rotation.set(0, 0, 0);
+    this.bodyPivot.position.y = BODY_HEIGHT;
+    this.airPitch = 0;
+    this.shadowPitch = 0;
+    this.shadowRoll = 0;
+
+    const shadowMaterial = this.shadowMesh.material as THREE.MeshBasicMaterial;
+    shadowMaterial.opacity = 0.32;
+    this.shadowMesh.scale.set(1.1, 1.9, 1);
+    this.shadow.position.copy(this.root.position);
+    this.shadow.position.y += 0.025;
+    this.shadow.rotation.set(0, this.root.rotation.y, 0, 'YXZ');
 
     for (const wheel of this.wheels) {
       wheel.steerPivot.rotation.y = 0;
@@ -83,7 +114,7 @@ export class CarView {
     }
 
     // Rodas dianteiras esterçam; todas giram com a velocidade; traseiras
-    // travam no freio de mão.
+    // travam no freio de mão. No ar o giro continua.
     const steerTarget = clamp(state.steer, -1, 1) * MAX_VISUAL_STEER;
     this.steerAngle += (steerTarget - this.steerAngle) * dampAlpha(0.06, dt);
 
@@ -100,6 +131,19 @@ export class CarView {
       wheel.spinGroup.rotation.x = this.spinAngle;
     }
 
+    // Impacto de pouso: injeta velocidade negativa na mola de heave, que
+    // afunda a carroceria e volta amortecida.
+    if (state.landingImpact < 0) {
+      this.heaveSpring.kick(
+        clamp(
+          state.landingImpact * LANDING_KICK_PER_IMPACT,
+          -MAX_LANDING_KICK,
+          0,
+        ),
+      );
+    }
+    const heave = this.heaveSpring.update(0, dt);
+
     // Roll/pitch visuais via mola: só reagem à dinâmica, não alteram a física.
     const rollTarget = clamp(
       state.lateralAccel * ROLL_PER_ACCEL,
@@ -112,11 +156,48 @@ export class CarView {
       MAX_PITCH,
     );
 
-    this.bodyPivot.rotation.z = this.rollSpring.update(rollTarget, dt);
-    this.bodyPivot.rotation.x = this.pitchSpring.update(pitchTarget, dt);
+    // No ar o nariz acompanha a velocidade vertical (subindo = para cima).
+    const airPitchTarget = state.airborne
+      ? clamp(-state.verticalVelocity * AIR_PITCH_PER_VY, -MAX_AIR_PITCH, MAX_AIR_PITCH)
+      : 0;
+    this.airPitch += (airPitchTarget - this.airPitch) * dampAlpha(0.12, dt);
 
-    const shadowMaterial = this.shadow.material as THREE.MeshBasicMaterial;
-    shadowMaterial.opacity = state.grounded ? 0.32 : 0.16;
+    this.bodyPivot.position.y = BODY_HEIGHT + heave;
+    this.bodyPivot.rotation.z = this.rollSpring.update(rollTarget, dt);
+    this.bodyPivot.rotation.x =
+      this.pitchSpring.update(pitchTarget, dt) + this.airPitch;
+
+    this.updateShadow(dt, state);
+  }
+
+  private updateShadow(dt: number, state: CarViewState): void {
+    const heightAboveGround = Math.max(0, this.root.position.y - state.groundY);
+
+    // A sombra fica no chão, não no carro. Quanto mais alto, menor e mais
+    // clara; no chão ela acompanha pitch/roll do terreno.
+    const scaleFactor = clamp(1 - heightAboveGround * 0.06, 0.55, 1);
+    this.shadowMesh.scale.set(1.1 * scaleFactor, 1.9 * scaleFactor, 1);
+
+    const shadowMaterial = this.shadowMesh.material as THREE.MeshBasicMaterial;
+    shadowMaterial.opacity = 0.32 * clamp(1 - heightAboveGround * 0.09, 0.2, 1);
+
+    const pitchTarget = state.airborne ? 0 : this.root.rotation.x;
+    const rollTarget = state.airborne ? 0 : this.root.rotation.z;
+    const alpha = dampAlpha(0.12, dt);
+    this.shadowPitch += (pitchTarget - this.shadowPitch) * alpha;
+    this.shadowRoll += (rollTarget - this.shadowRoll) * alpha;
+
+    this.shadow.position.set(
+      this.root.position.x,
+      state.groundY + 0.025,
+      this.root.position.z,
+    );
+    this.shadow.rotation.set(
+      this.shadowPitch,
+      this.root.rotation.y,
+      this.shadowRoll,
+      'YXZ',
+    );
   }
 
   private buildBody(): void {
@@ -221,21 +302,24 @@ export class CarView {
   }
 
   private buildShadow(): THREE.Mesh {
-    const shadow = new THREE.Mesh(
+    const mesh = new THREE.Mesh(
       new THREE.CircleGeometry(1, 20),
       new THREE.MeshBasicMaterial({
         color: 0x000000,
         transparent: true,
         opacity: 0.32,
         depthWrite: false,
+        toneMapped: false,
       }),
     );
-    shadow.name = 'car-blob-shadow';
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = 0.015;
-    shadow.scale.set(1.1, 1.9, 1);
-    shadow.renderOrder = -1;
-    this.root.add(shadow);
-    return shadow;
+    mesh.name = 'car-blob-shadow';
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.scale.set(1.1, 1.9, 1);
+    mesh.renderOrder = -1;
+
+    this.shadow.name = 'car-blob-shadow-root';
+    this.shadow.rotation.order = 'YXZ';
+    this.shadow.add(mesh);
+    return mesh;
   }
 }

@@ -6,7 +6,6 @@ import type {
   RaceTuning,
   SurfaceDef,
   SurfaceId,
-  Vec2,
 } from './types';
 
 /** Loop de simulação e orçamento de renderização. */
@@ -17,21 +16,7 @@ export const SIMULATION = {
 
 export const RENDER_SETTINGS = {
   maxPixelRatio: 2,
-  background: 0x0e1418,
-  fogColor: 0x0e1418,
-  fogNear: 45,
-  fogFar: 190,
-  groundSize: 600,
-  groundColor: 0x39463d,
-  gridColor: 0x84968a,
-  gridDivisions: 120,
 } as const;
-
-/** Largada da arena de teste do M1a. Heading 0 = +Z. */
-export const CAR_START: { position: Vec2; heading: number } = {
-  position: { x: 0, z: 0 },
-  heading: 0,
-};
 
 /** Valores iniciais da seção 4 do plano. Nenhum é definitivo. */
 export const CAR_TUNING: CarTuning = {
@@ -92,21 +77,22 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
 };
 
 /**
- * Câmera calibrada para portrait: mantém o carro a ~67% da altura da tela.
- * A altura alta compensa o lookAhead curto e ainda mostra bastante pista à frente.
+ * Câmera calibrada para portrait: mantém o carro a ~67–69% da altura da tela.
+ * M3b: distância/altura/look-ahead maiores para enquadrar o cenário novo e
+ * ler os saltos, mantendo a pista no centro.
  */
 export const CAMERA_TUNING: CameraTuning = {
-  distance: 12,
-  height: 12.8,
-  lookAhead: 5.2,
-  lookHeight: 1.0,
-  pitchDeg: 48.1,
+  distance: 15.5,
+  height: 15.2,
+  lookAhead: 7.5,
+  lookHeight: 0.8,
+  pitchDeg: 44.0,
   positionTau: 0.12,
   yawTau: 0.35,
   fov: 60,
   speedFovBoost: 3,
   turboFovBoost: 6,
-  minGroundClearance: 2.0,
+  minGroundClearance: 2.2,
 };
 
 export const INPUT_TUNING: InputTuning = {

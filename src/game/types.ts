@@ -33,8 +33,8 @@ export interface SurfaceDef {
 export type HandbrakeMode = 'drag' | 'button';
 
 /**
- * Piso escolhido no painel de debug. `auto` fica reservado para o M2, quando a
- * pista informar a superfície; até lá também resolve para cascalho.
+ * Piso escolhido no painel de debug. `auto` usa o piso da zona da pista
+ * (cascalho na floresta, areia no deserto; fora da pista, o piso da zona).
  */
 export type ForcedSurface = SurfaceId | 'auto';
 
@@ -58,6 +58,26 @@ export interface CarState {
   releaseTime: number;
   /** Velocidade planar (m/s). */
   speed: number;
+  /** Normal do terreno no espaço do mundo (aproximada por amostras). */
+  groundNormal: THREE.Vector3;
+  /** Inclinação do terreno no eixo do carro (rad; positivo = frente para baixo). */
+  terrainPitch: number;
+  /** Inclinação lateral do terreno (rad; positivo = direita para cima). */
+  terrainRoll: number;
+  /** Em voo (M3b): sem esterço, grip ou motor até pousar. */
+  airborne: boolean;
+  /** Velocidade vertical (m/s); positiva subindo. */
+  verticalVelocity: number;
+  /** Tempo de voo acumulado no salto atual (s). */
+  airTime: number;
+  /** Duração do último voo concluído (s). */
+  lastAirTime: number;
+  /** Velocidade vertical do último pouso (m/s, negativa na descida). */
+  landingImpact: number;
+  /** Coordenada longitudinal na pista (m), preenchida pelo Game. */
+  trackS: number;
+  /** Coordenada lateral na pista (m, positivo à direita), preenchida pelo Game. */
+  trackU: number;
 }
 
 /** Telemetria pronta para HUD, painel de tuning e animação visual. */
@@ -78,6 +98,12 @@ export interface CarTelemetry {
   throttle: number;
   handbrake: boolean;
   grounded: boolean;
+  /** Tempo de voo acumulado no salto atual (s). */
+  airTime: number;
+  /** Duração do último voo concluído (s). */
+  lastAirTime: number;
+  /** Impacto vertical do último pouso (m/s, negativo). */
+  landingImpact: number;
   /** Aceleração longitudinal no referencial do carro (m/s²). */
   longitudinalAcceleration: number;
   /** Aceleração lateral/centrípeta (m/s², positivo = direita). */

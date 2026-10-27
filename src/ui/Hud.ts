@@ -26,6 +26,14 @@ export interface HudDebugInfo {
   fps: number;
   /** Label do piso atual (ex.: "Cascalho"). */
   surface: string;
+  /** Coordenada longitudinal na pista (m). */
+  s: number;
+  /** Coordenada lateral na pista (m; positivo à direita). */
+  u: number;
+  /** Altura do carro no mundo (m). */
+  y: number;
+  /** Zona da pista já formatada (FLORESTA/DESERTO). */
+  zone: string;
 }
 
 /**
@@ -106,7 +114,11 @@ export class Hud {
     this.addDebugRow('state', 'ESTADO');
     this.addDebugRow('fps', 'FPS');
     this.addDebugRow('surface', 'PISO');
+    this.addDebugRow('zone', 'ZONA');
+    this.addDebugRow('track', 'S / U');
+    this.addDebugRow('height', 'Y');
     this.addDebugRow('grounded', 'CHÃO');
+    this.addDebugRow('jump', 'SALTO');
     this.addDebugRow('speed', 'VEL');
     this.addDebugRow('slip', 'DERRAPE');
     this.addDebugRow('lateral', 'LATERAL');
@@ -208,7 +220,21 @@ export class Hud {
       ? `${formatNumber(debugInfo.fps, 0)} fps`
       : '—';
     this.debugValues.surface.textContent = debugInfo?.surface ?? '—';
-    this.debugValues.grounded.textContent = telemetry.grounded ? 'CHÃO' : 'AR';
+    this.debugValues.zone.textContent = debugInfo?.zone ?? '—';
+    this.debugValues.track.textContent = debugInfo
+      ? `${formatNumber(debugInfo.s, 1)} / ${formatNumber(debugInfo.u, 1)} m`
+      : '—';
+    this.debugValues.height.textContent = debugInfo
+      ? `${formatNumber(debugInfo.y, 1)} m`
+      : '—';
+    this.debugValues.grounded.textContent = telemetry.grounded
+      ? 'CHÃO'
+      : `AR ${formatNumber(telemetry.airTime, 2)} s`;
+    this.debugValues.jump.textContent =
+      telemetry.lastAirTime > 0.02
+        ? `${formatNumber(telemetry.lastAirTime, 2)} s / ` +
+          `${formatNumber(Math.abs(telemetry.landingImpact), 1)} m/s`
+        : '—';
     this.debugValues.speed.textContent = `${formatNumber(telemetry.speed * 3.6)} km/h`;
     this.debugValues.slip.textContent = `${formatNumber(slipDeg, 1)}°`;
     this.debugValues.lateral.textContent = `${formatNumber(telemetry.lateralSpeed, 1)} m/s`;
