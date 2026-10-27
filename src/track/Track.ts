@@ -9,16 +9,16 @@ const MAX_WIDTH = 14;
 /** Margem lateral que ainda conta como pista para a física. */
 const TRACK_MARGIN = 0.35;
 const PROJECT_HINT_RADIUS = 20;
-/** Acima disso a busca local é considerada perdida (pernas paralelas ficam a 28 m). */
+/** Acima disso a busca local é considerada perdida (pernas paralelas ficam a 270 m). */
 const PROJECT_GLOBAL_FALLBACK = 24;
 const VALIDATION_SELF_INTERSECTION_WINDOW = 40;
 const KICKER_LANDING_CHECK = 20;
 const KICKER_STRAIGHT_LIMIT = 0.35;
 const DEFAULT_START_S = 22;
 /** Distância em que o relevo fora da pista aparece (transição suave). */
-const OFFROAD_BLEND_RANGE = 1.5;
+const OFFROAD_BLEND_RANGE = 2;
 /** Distância em que a amplitude do fora de pista atinge o máximo (ombro). */
-const OFFROAD_FULL_DISTANCE = 6;
+const OFFROAD_FULL_DISTANCE = 12;
 
 export type TrackZoneId = 'forest' | 'desert';
 
@@ -303,11 +303,16 @@ export class Track {
   }
 
   private buildControlWidths(): void {
+    // Os pontos são autorados na ordem da spline. A busca anda para a frente
+    // para o ponto final (que fecha o circuito no mesmo x/z da largada) não
+    // ser mapeado de volta para s = 0.
+    let from = 0;
+
     for (const point of this.def.points) {
-      let bestIndex = 0;
+      let bestIndex = from;
       let bestDistance = Infinity;
 
-      for (let i = 0; i <= this.sampleCount; i += 1) {
+      for (let i = from; i <= this.sampleCount; i += 1) {
         const dx = this.px[i] - point.x;
         const dz = this.pz[i] - point.z;
         const distance = dx * dx + dz * dz;
@@ -319,6 +324,7 @@ export class Track {
 
       this.controlS.push(bestIndex * this.step);
       this.controlWidth.push(clamp(point.width, MIN_WIDTH, MAX_WIDTH));
+      from = bestIndex;
     }
   }
 

@@ -25,8 +25,7 @@ function formatNumber(value: number, digits = 0): string {
 export interface HudTrackInfo {
   startS: number;
   finishS: number;
-  splitS: number | null;
-  splitName: string;
+  splits: ReadonlyArray<{ s: number; name: string }>;
 }
 
 export interface HudOptions {
@@ -64,8 +63,7 @@ export type RecoveryPhase = 'in' | 'returning' | 'out';
 const DEFAULT_TRACK_INFO: HudTrackInfo = {
   startS: 0,
   finishS: 1,
-  splitS: null,
-  splitName: 'Parcial 1',
+  splits: [],
 };
 
 /**
@@ -196,16 +194,18 @@ export class Hud {
     this.progressFill.className = 'hud__progress-fill';
     this.progressTrack.append(this.progressFill);
 
-    if (track.splitS !== null) {
-      const ratio = (track.splitS - this.trackStartS) / (this.trackFinishS - this.trackStartS);
-      if (ratio >= 0 && ratio <= 1) {
-        const marker = document.createElement('span');
-        marker.className = 'hud__progress-split';
-        marker.style.left = `${(ratio * 100).toFixed(2)}%`;
-        marker.title = track.splitName;
-        marker.setAttribute('aria-hidden', 'true');
-        this.progressTrack.append(marker);
+    for (const split of track.splits) {
+      const ratio = (split.s - this.trackStartS) / (this.trackFinishS - this.trackStartS);
+      if (ratio < 0 || ratio > 1) {
+        continue;
       }
+
+      const marker = document.createElement('span');
+      marker.className = 'hud__progress-split';
+      marker.style.left = `${(ratio * 100).toFixed(2)}%`;
+      marker.title = split.name;
+      marker.setAttribute('aria-hidden', 'true');
+      this.progressTrack.append(marker);
     }
 
     progress.append(progressMeta, this.progressTrack);

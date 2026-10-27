@@ -134,15 +134,16 @@ export const POWERUP_TUNING: PowerupTuning = {
 };
 
 export const RACE_TUNING: RaceTuning = {
-  splitTarget: 21.0,
+  // Reserva: os alvos reais vêm de `TrackDef.splits` (autorados na pista).
+  splitTarget: 13.5,
   medals: {
-    gold: 43.0,
-    silver: 49.0,
-    bronze: 57.0,
+    gold: 55.0,
+    silver: 62.0,
+    bronze: 72.0,
   },
   // Reservado: o plano previa 24 m fixos. O limite real é medido a partir da
-  // borda da pista (ombro visual de 6 m) e fica em `offTrackLimit`.
+  // borda da pista (ombro visual de 12 m) e fica em `offTrackLimit`.
   worldLimit: 24,
-  offTrackLimit: 5.5,
+  offTrackLimit: 12,
   recoveryPenalty: 1.2,
 };

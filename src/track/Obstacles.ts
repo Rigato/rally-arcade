@@ -45,22 +45,24 @@ const RESTITUTION = 0.25;
 const IMPACT_SPEED_KEEP = 0.5;
 const COLLISION_ITERATIONS = 2;
 /** Margem mínima entre a borda da pista e o colisor. */
-const EDGE_CLEARANCE = 1.0;
-const EDGE_MAX_OFFSET = 4.5;
-const MIN_OBSTACLE_GAP = 3.0;
-/** Evita obstáculos em cima do portal, da chegada, da largada e dos kickers. */
-const PORTAL_CLEARANCE = 10;
+const EDGE_CLEARANCE = 5.0;
+const EDGE_MAX_OFFSET = 10.0;
+const MIN_OBSTACLE_GAP = 4.0;
+/** Evita obstáculos em cima dos portais, da chegada, da largada e dos kickers. */
+const PORTAL_CLEARANCE = 12;
 const FINISH_CLEARANCE = 14;
 const START_CLEARANCE = 10;
 const KICKER_CLEARANCE = 10;
+/** Zona de pouso/run-out depois da rampa, livre de obstáculos. */
+const LANDING_CLEARANCE = 40;
 /** Faixa de geração: começa depois da largada e termina antes da chegada. */
 const GENERATION_START_OFFSET = 15;
 const GENERATION_END_OFFSET = 15;
-const TARGET_MIN = 45;
-const TARGET_MAX = 60;
-const S_STEP_MIN = 10.5;
-const S_STEP_MAX = 14.5;
-const MAX_PLACEMENT_ATTEMPTS = 240;
+const TARGET_MIN = 44;
+const TARGET_MAX = 50;
+const S_STEP_MIN = 9.5;
+const S_STEP_MAX = 13.0;
+const MAX_PLACEMENT_ATTEMPTS = 320;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const ROCK_RADIUS = 0.9;
@@ -87,15 +89,14 @@ export class Obstacles {
   private colliderDebugGroup: THREE.Group | null = null;
   private colliderDebugVisible = false;
 
-  readonly portalS: number;
+  readonly portalSs: readonly number[];
   readonly finishS: number;
 
   constructor(track: Track) {
     this.track = track;
     this.group.name = 'obstacles';
 
-    this.portalS =
-      track.def.zones.find((zone) => zone.id === 'desert')?.start ?? track.length * 0.5;
+    this.portalSs = track.def.zones.slice(1).map((zone) => zone.start);
     this.finishS = track.length - 5;
 
     this.generate();
@@ -349,9 +350,9 @@ export class Obstacles {
       const half = this.track.widthAt(obstacle.s) * 0.5;
       const edgeDistance = Math.abs(obstacle.u) - half;
 
-      if (edgeDistance < EDGE_CLEARANCE + obstacle.radius - 1e-6) {
+      if (edgeDistance - obstacle.radius < EDGE_CLEARANCE - 1e-6) {
         issues.push(
-          `#${obstacle.index} (${obstacle.type}) invade a pista: ` +
+          `#${obstacle.index} (${obstacle.type}) invade o ombro: ` +
             `${edgeDistance.toFixed(2)} m da borda, raio ${obstacle.radius.toFixed(2)}.`,
         );
       }
@@ -362,8 +363,12 @@ export class Obstacles {
         );
       }
 
-      if (Math.abs(obstacle.s - this.portalS) < PORTAL_CLEARANCE - 1e-6) {
-        issues.push(`#${obstacle.index} perto do portal: s=${obstacle.s.toFixed(1)}.`);
+      for (const portalS of this.portalSs) {
+        if (Math.abs(obstacle.s - portalS) < PORTAL_CLEARANCE - 1e-6) {
+          issues.push(
+            `#${obstacle.index} perto do portal de s=${portalS}: s=${obstacle.s.toFixed(1)}.`,
+          );
+        }
       }
 
       if (obstacle.s > this.track.length - FINISH_CLEARANCE + 1e-6) {
@@ -373,10 +378,11 @@ export class Obstacles {
       for (const kicker of this.track.def.kickers) {
         if (
           obstacle.s >= kicker.s - KICKER_CLEARANCE &&
-          obstacle.s <= kicker.s + kicker.length + KICKER_CLEARANCE
+          obstacle.s <=
+            kicker.s + kicker.length + KICKER_CLEARANCE + LANDING_CLEARANCE
         ) {
           issues.push(
-            `#${obstacle.index} na faixa do kicker de s=${kicker.s} m: ` +
+            `#${obstacle.index} na faixa da rampa/pouso de s=${kicker.s} m: ` +
               `s=${obstacle.s.toFixed(1)}.`,
           );
         }
@@ -516,14 +522,16 @@ export class Obstacles {
     if (s > this.track.length - FINISH_CLEARANCE) {
       return false;
     }
-    if (Math.abs(s - this.portalS) < PORTAL_CLEARANCE) {
-      return false;
+    for (const portalS of this.portalSs) {
+      if (Math.abs(s - portalS) < PORTAL_CLEARANCE) {
+        return false;
+      }
     }
 
     for (const kicker of this.track.def.kickers) {
       if (
         s >= kicker.s - KICKER_CLEARANCE &&
-        s <= kicker.s + kicker.length + KICKER_CLEARANCE
+        s <= kicker.s + kicker.length + KICKER_CLEARANCE + LANDING_CLEARANCE
       ) {
         return false;
       }

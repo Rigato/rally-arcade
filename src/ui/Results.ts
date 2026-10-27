@@ -18,9 +18,7 @@ export class Results {
   private readonly timeEl: HTMLElement;
   private readonly medalEl: HTMLElement;
   private readonly gapEl: HTMLElement;
-  private readonly splitLabelEl: HTMLElement;
-  private readonly splitTimeEl: HTMLElement;
-  private readonly splitDeltaEl: HTMLElement;
+  private readonly splitsEl: HTMLElement;
   private readonly bestTimeEl: HTMLElement;
   private readonly newBestEl: HTMLElement;
   private readonly targetValues = new Map<MedalId, HTMLElement>();
@@ -80,13 +78,8 @@ export class Results {
     const stats = document.createElement('div');
     stats.className = 'results__stats';
 
-    const splitRow = this.createStat('PARCIAL');
-    this.splitLabelEl = splitRow.label;
-    this.splitTimeEl = document.createElement('span');
-    this.splitTimeEl.className = 'results__stat-time';
-    this.splitDeltaEl = document.createElement('em');
-    this.splitDeltaEl.className = 'results__delta';
-    splitRow.value.append(this.splitTimeEl, this.splitDeltaEl);
+    this.splitsEl = document.createElement('div');
+    this.splitsEl.className = 'results__splits';
 
     const bestRow = this.createStat('MELHOR');
     this.bestTimeEl = document.createElement('span');
@@ -97,7 +90,7 @@ export class Results {
     this.newBestEl.hidden = true;
     bestRow.value.append(this.bestTimeEl, this.newBestEl);
 
-    stats.append(splitRow.row, bestRow.row);
+    stats.append(this.splitsEl, bestRow.row);
 
     this.retryButton = document.createElement('button');
     this.retryButton.className = 'results__retry';
@@ -149,16 +142,29 @@ export class Results {
       }
     }
 
-    this.splitLabelEl.textContent = result.splitName.toUpperCase();
+    this.splitsEl.replaceChildren();
+    for (const split of result.splits) {
+      const row = this.createStat(split.name.toUpperCase());
+      const time = document.createElement('span');
+      time.className = 'results__stat-time';
+      const delta = document.createElement('em');
+      delta.className = 'results__delta';
 
-    if (result.splitTime !== null) {
-      this.splitTimeEl.textContent = formatTime(result.splitTime);
-      this.splitDeltaEl.hidden = false;
-      this.splitDeltaEl.textContent = formatDelta(result.splitDelta ?? 0);
-      this.splitDeltaEl.dataset.sign = deltaSign(result.splitDelta ?? 0);
-    } else {
-      this.splitTimeEl.textContent = '--:--.---';
-      this.splitDeltaEl.hidden = true;
+      if (split.time !== null) {
+        time.textContent = formatTime(split.time);
+        delta.hidden = false;
+        delta.textContent = formatDelta(split.delta ?? 0);
+        delta.dataset.sign = deltaSign(split.delta ?? 0);
+      } else {
+        time.textContent = '--:--.---';
+        delta.hidden = true;
+      }
+
+      row.value.append(time, delta);
+      if (!split.done) {
+        row.row.dataset.skipped = 'true';
+      }
+      this.splitsEl.append(row.row);
     }
 
     this.bestTimeEl.textContent =

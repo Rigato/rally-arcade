@@ -24,6 +24,13 @@ const DESERT_STYLE: PortalStyle = {
   border: '#d3a765',
 };
 
+const FOREST_STYLE: PortalStyle = {
+  text: 'FLORESTA',
+  background: '#1f3326',
+  foreground: '#dceccd',
+  border: '#7fa06a',
+};
+
 const FINISH_STYLE: PortalStyle = {
   text: 'CHEGADA',
   background: '#202624',
@@ -33,7 +40,8 @@ const FINISH_STYLE: PortalStyle = {
 };
 
 /**
- * Portais visuais sem colisão: troca de cenário (s ≈ 300) e chegada.
+ * Portais visuais sem colisão: um em cada troca de setor (floresta ↔ deserto)
+ * e outro na chegada.
  *
  * Os postes ficam fora da pista e o banner aponta para o carro que chega
  * (normal no sentido contrário à tangente), com material DoubleSide. O texto
@@ -49,12 +57,22 @@ export class Gates {
   constructor(track: Track) {
     this.group.name = 'gates';
 
-    const desertS =
-      track.def.zones.find((zone) => zone.id === 'desert')?.start ??
-      track.length * 0.5;
-    const finishS = Math.max(0, track.length - 5);
+    let transitionIndex = 0;
+    for (let i = 1; i < track.def.zones.length; i += 1) {
+      const zone = track.def.zones[i];
+      transitionIndex += 1;
+      const style = zone.id === 'desert' ? DESERT_STYLE : FOREST_STYLE;
+      this.group.add(
+        this.buildPortal(
+          track,
+          zone.start,
+          `gate-${zone.id}-${transitionIndex}`,
+          style,
+        ),
+      );
+    }
 
-    this.group.add(this.buildPortal(track, desertS, 'gate-desert', DESERT_STYLE));
+    const finishS = Math.max(0, track.length - 5);
     this.group.add(this.buildPortal(track, finishS, 'gate-finish', FINISH_STYLE));
   }
 
