@@ -138,6 +138,23 @@ src/
     └── TuningPanel.ts   # lil-gui em ?debug=1
 ```
 
+## Protótipo procedural
+
+A base do gerador de pistas por seed está em `src/track/procedural/`:
+
+- `generateProceduralTrack(seed)` monta um `TrackDef` completo com 4 zonas alternadas, 3 parciais, largura/elevação variadas, 1–2 rampas baixas, powerups na pista e obstáculos fora dela.
+- `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, rampas, splits, powerups e obstáculos.
+
+Teste 20 seeds e gere um preview top-down:
+
+```bash
+npx --yes tsx scripts/proc-validate.ts
+npx --yes tsx scripts/proc-validate.ts --count 100 --start 1
+npx --yes tsx scripts/proc-validate.ts --svg /tmp/opencode/pista.svg
+```
+
+O protótipo ainda não tem menu nem integração no `Game`; a integração virá junto com a generalização multi-zona da pista fixa v2.
+
 ## Deploy
 
 O workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) publica o build no GitHub Pages a cada push na `main` (ou manualmente via `workflow_dispatch`). O Pages já está configurado com **Source: GitHub Actions**.

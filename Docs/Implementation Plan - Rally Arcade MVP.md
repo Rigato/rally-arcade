@@ -425,3 +425,41 @@ Para publicar novas mudanças, basta `git push` na `main`. A URL de debug é
 - `npm run typecheck` passa.
 - `npm run build` passa; único aviso é o tamanho do chunk (>650 kB, ~688 kB minificado / ~178 kB gzip), aceitável para o protótipo.
 - Validações headless: saltos, colisões, recuperação, parcial, resultado, retry e powerups sem erros de console.
+
+## 21. Revisão pós-playtest — controles (Oct 27, 2026)
+
+O primeiro teste em celular rodou estável, mas o feeling reprovou: o carro demorava a entrar na derrapagem, o centro do esterço era sensível demais (chicote) e não era possível frear e virar ao mesmo tempo.
+
+### O que foi implementado
+
+- **Esquema `drag2d` (novo padrão):** segurar acelera; arrastar na horizontal esterça; arrastar para baixo freia sem soltar o dedo. O freio é analógico (0..1) e corta o motor; o carro continua esterçando.
+- **Esquema `release` (antigo):** continua disponível no painel para comparação; soltar o dedo aplica a rampa.
+- **Guia de toque:** anel + ponto no encosto do dedo, mostrando X (esterço) e Y (freio); pode ser desligado no painel.
+- **Sensibilidade:** deadzone de 12 px, curva exponencial 1,35, lock em 34% da tela, suavização de 0,16 s e resposta de guinada mais lenta (tau 0,16 s, referência 9 m/s).
+- **Carro mais solto:** grip de cascalho 5,6 / areia 3,4; queda de grip conforme o slip (`slipGripFalloff` 0,18); redução de grip ao frear na curva (0,12); handbrake 0,24.
+- **Carroceria:** roll máximo 12°, 0,014 rad por m/s² lateral + 0,03 rad por esterço; pitch 5°.
+- **Câmera:** yaw tau 0,42 para reduzir o efeito de chicote visual.
+- **Tuning v2:** `localStorage['rally.tuning.v2']`; novos campos de Input/Carroceria; o v1 é ignorado para não carregar valores antigos.
+
+### O que ainda depende do teste
+
+- Validar no celular se o carro entra na derrapagem cedo o suficiente e se o centro ficou dócil.
+- Comparar `drag2d` e `release`; escolher o padrão final.
+- Ajustar grip, slip falloff, deadzone, lock e a força do freio vertical com o painel `?debug=1`.
+- Aumentar a rolagem se 12° ainda parecer pouco (ou reduzir se exagerar).
+
+## 22. Protótipo procedural — primeiro passo (Oct 27, 2026)
+
+A primeira versão independente está em:
+
+- `src/track/procedural/ProceduralTrack.ts` — `generateProceduralTrack(seed)` e `validateProceduralTrack`.
+- `src/track/procedural/rng.ts` — PRNG determinístico.
+- `scripts/proc-validate.ts` — 20/100 seeds, estatísticas e preview SVG.
+
+Características: serpentina de 4 pernas e 3 hairpins (raio 25,5–34 m), 4 zonas alternadas, 3 parciais, 1–2 kickers baixos (1,0–1,5 m), 30–60 obstáculos a ≥5 m da borda, 4–6 powerups, 979–1112 m. Validação: **100/100 seeds válidas**, determinismo OK.
+
+Ainda **não está integrado ao jogo**: falta generalizar as visuais/HUD para multi-zona (em andamento na pista fixa v2) e adicionar um carregador de debug tipo `?track=proc&seed=1`. O objetivo é um protótipo, não o sistema final.
+
+## 23. Pista fixa v2 — em andamento
+
+Em uma worktree separada, um subagente está refazendo a pista fixa com 4 setores alternados, ~1 km, curvas de 30–70 m, ombros de 12 m, obstáculos a 5–10 m da borda, rampas de 1,0–1,5 m com 40 m de pouso, 3 parciais e ambientes multi-zona. A integração será feita depois do retorno desse trabalho, junto com o gerador procedural.
