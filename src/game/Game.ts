@@ -7,14 +7,17 @@ import { clamp } from '../core/math';
 import { Input } from '../input/Input';
 import { Gates } from '../track/Gates';
 import { Obstacles } from '../track/Obstacles';
+import { Powerups } from '../track/Powerups';
 import { Track } from '../track/Track';
 import { TrackMesh } from '../track/TrackMesh';
 import { TRACK_01 } from '../track/track01';
 import { Hud, type HudDebugInfo } from '../ui/Hud';
+import { Results } from '../ui/Results';
 import { TuningPanel } from '../ui/TuningPanel';
 import { Environment } from '../world/Environment';
 import { Scenery } from '../world/Scenery';
 import {
+  CAMERA_TUNING,
   CAR_TUNING,
   INPUT_TUNING,
   RACE_TUNING,
@@ -23,9 +26,14 @@ import {
   SURFACES,
 } from './config';
 import { isDebugMode } from './debug';
+import { Race } from './Race';
 import type { CarState, ForcedSurface, HandbrakeMode, RaceState, SurfaceId } from './types';
 
 const FPS_SMOOTHING_TAU = 0.5;
+/** Distância da faixa de chegada até o fim geométrico da spline (m). */
+const FINISH_LINE_FROM_END = 3.5;
+/** Intervalo entre parar o carro na chegada e abrir o resultado (s). */
+const RESULT_DELAY_SECONDS = 0.5;
 /** Fase em que o carro é recolocado (fração da recuperação total). */
 const RECOVERY_TELEPORT_PHASE = 0.29;
 /** Fase em que o fade de saída começa (fração da recuperação total). */
@@ -36,6 +44,8 @@ const UNSTUCK_SPEED = 0.8;
 const UNSTUCK_TIME = 2.5;
 /** Abaixo deste `s` o carro é considerado atrás da largada (m). */
 const BEHIND_START_S = 1;
+/** Intervalo de atualização dos chips de powerup no HUD (s). */
+const POWERUP_HUD_INTERVAL = 0.1;
 
 /** Integração do M3a: pista fixa, terreno, cenário, câmera, HUD e painel. */
 export class Game {
@@ -47,12 +57,15 @@ export class Game {
   private readonly gates: Gates;
   private readonly scenery: Scenery;
   private readonly obstacles: Obstacles;
+  private readonly powerups: Powerups;
   private readonly environment: Environment;
   private readonly car: Car;
   private readonly carView = new CarView();
   private readonly input: Input;
   private readonly chaseCamera: ChaseCamera;
+  private readonly race: Race;
   private readonly hud: Hud;
+  private readonly results: Results;
   private readonly tuningPanel: TuningPanel | null;
   private readonly loop: Loop;
   private readonly resizeObserver: ResizeObserver | null;
@@ -82,11 +95,14 @@ export class Game {
     trackU: 0,
   };
 
-  private elapsedSeconds = 0;
   private state: RaceState = 'READY';
   private started = false;
   private disposed = false;
   private pausedByVisibility = false;
+
+  /** Apresentação da chegada: carro parado, resultado abre após um respiro. */
+  private resultPending = false;
+  private resultDelayElapsed = 0;
 
   /** Recuperação em andamento (fases e reposicionamento). */
   private recoveryElapsed = 0;
@@ -105,6 +121,8 @@ export class Game {
   private fps = 0;
   /** Intensidade da última colisão com obstáculo (m/s), para a telemetria. */
   private lastImpact = 0;
+  /** Acumulador da atualização dos chips de powerup (~10 Hz). */
+  private powerupHudElapsed = 0;
 
   constructor(container: HTMLElement, hudRoot: HTMLElement) {
     this.container = container;
@@ -130,8 +148,19 @@ export class Game {
     this.scene.add(this.scenery.group);
     this.obstacles = new Obstacles(this.track);
     this.scene.add(this.obstacles.group);
+    this.powerups = new Powerups(this.track);
+    this.scene.add(this.powerups.group);
     this.environment = new Environment(this.scene, desertStart(this.track));
     this.environment.update(this.track.startS, this.track.length);
+
+    const split = this.track.def.splits[0] ?? null;
+    this.race = new Race({
+      trackId: this.track.def.id,
+      finishS: this.track.length - FINISH_LINE_FROM_END,
+      splitS: split?.s ?? null,
+      splitName: split?.name ?? 'Parcial 1',
+      tuning: RACE_TUNING,
+    });
 
     this.car = new Car(CAR_TUNING);
     this.heightAt = (x, z) => this.track.heightAtWorld(x, z, this.car.state.trackS);
@@ -151,10 +180,20 @@ export class Game {
     this.hud = new Hud(hudRoot, {
       handbrakeMode: INPUT_TUNING.handbrakeMode,
       debug: isDebugMode(),
+      track: {
+        startS: this.track.startS,
+        finishS: this.race.finishS,
+        splitS: this.race.splitS,
+        splitName: this.race.splitName,
+      },
     });
     this.hud.setState(this.state);
     this.hud.setTime(0);
+    this.hud.setBest(this.race.bestTime);
     this.hud.onReset(this.reset);
+
+    this.results = new Results(hudRoot);
+    this.results.onRetry(this.reset);
 
     this.input = new Input(this.renderer.domElement, {
       tuning: INPUT_TUNING,
@@ -275,12 +314,21 @@ export class Game {
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.environment.update(target, this.track.length);
+    this.powerups.reset();
+    this.chaseCamera.setFovBoost(0);
+    this.hud.clearPowerups();
+    this.powerupHudElapsed = 0;
 
     // Teleporte de debug é um estado limpo de teste: volta para READY e zera
     // o cronômetro, senão a corrida ficaria RUNNING sem ter começado no lugar.
-    this.elapsedSeconds = 0;
+    // O melhor tempo é preservado; uma parcial já ultrapassada fica pulada.
+    this.race.reset(target);
+    this.hideResult();
     this.state = 'READY';
+    this.hud.hideSplit();
     this.hud.setTime(0);
+    this.hud.setBest(this.race.bestTime);
+    this.hud.setProgress(target);
     this.hud.setState(this.state);
     this.hud.setTelemetry(this.car.telemetry, this.car.state.position, this.debugInfo);
   }
@@ -308,12 +356,14 @@ export class Game {
     window.removeEventListener('orientationchange', this.resize);
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     this.resizeObserver?.disconnect();
+    this.results.dispose();
     this.hud.dispose();
 
     this.trackMesh.dispose();
     this.gates.dispose();
     this.scenery.dispose();
     this.obstacles.dispose();
+    this.powerups.dispose();
 
     this.scene.traverse((object) => {
       if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
@@ -351,17 +401,35 @@ export class Game {
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.environment.update(this.track.startS, this.track.length);
+    this.powerups.reset();
+    this.chaseCamera.setFovBoost(0);
+    this.hud.clearPowerups();
+    this.powerupHudElapsed = 0;
 
-    this.elapsedSeconds = 0;
+    this.race.reset();
+    this.hideResult();
     this.state = 'READY';
+    this.hud.hideSplit();
     this.hud.setTime(0);
+    this.hud.setBest(this.race.bestTime);
+    this.hud.setProgress(this.track.startS);
     this.hud.setState(this.state);
     this.hud.setTelemetry(this.car.telemetry, this.car.state.position, this.debugInfo);
   };
 
   private readonly update = (fixedDt: number): void => {
-    // Na recuperação a física fica congelada, mas o cronômetro continua: essa
-    // é a penalidade. O carro só é reposicionado no meio do fade.
+    // Na chegada a física para; só corre o respiro antes de abrir o resultado.
+    if (this.state === 'FINISHED') {
+      this.updateFinishPresentation(fixedDt);
+      return;
+    }
+
+    // O relógio só anda com a corrida ativa. Em RECOVERING ele continua
+    // correndo (penalidade), mas a física fica congelada.
+    if (this.state === 'RUNNING' || this.state === 'RECOVERING') {
+      this.race.tick(fixedDt);
+    }
+
     if (this.state === 'RECOVERING') {
       this.updateRecovery(fixedDt);
       return;
@@ -369,13 +437,26 @@ export class Game {
 
     this.input.update(fixedDt);
 
+    if (this.state === 'RUNNING') {
+      this.powerups.update(fixedDt);
+    } else {
+      // READY: os pickups continuam girando/flutuando, mas sem timers.
+      this.powerups.animate(fixedDt);
+    }
+
     const state = this.car.state;
     const before = this.track.project(state.position.x, state.position.z, state.trackS);
     const trackSurface = this.track.surfaceAt(before.s, before.u);
     const surfaceId = this.forcedSurface === 'auto' ? trackSurface : this.forcedSurface;
     this.currentSurfaceId = surfaceId;
 
-    this.car.step(fixedDt, this.input.inputState, SURFACES[surfaceId], this.heightAt);
+    this.car.step(
+      fixedDt,
+      this.input.inputState,
+      SURFACES[surfaceId],
+      this.heightAt,
+      this.powerups.getModifiers(),
+    );
 
     // Colisão com obstáculos sólidos: push-out + ricochete. Acontece antes da
     // projeção em (s,u), então a recuperação e a telemetria já leem a posição
@@ -386,6 +467,17 @@ export class Game {
       this.chaseCamera.addShake(clamp(impact / 25, 0.05, 0.35));
       this.hud.flashImpact();
       this.carView.impact(impact);
+    }
+
+    // Coleta só com a corrida ativa (nunca em READY/RECOVERING/FINISHED).
+    // Ativar/renovar acontece na hora; o HUD recebe o novo estado sem
+    // esperar o próximo tick de 0,1 s.
+    if (this.state === 'RUNNING') {
+      const collected = this.powerups.checkCollect(state.position);
+      if (collected) {
+        this.hud.flashPowerup(collected);
+        this.hud.setPowerups(this.powerups.getActive());
+      }
     }
 
     const after = this.track.project(
@@ -400,11 +492,79 @@ export class Game {
     this.updateRumble();
 
     if (this.state === 'RUNNING') {
-      this.elapsedSeconds += fixedDt;
+      const split = this.race.checkSplit(after.s);
+      if (split) {
+        this.hud.showSplit(split);
+      }
+
+      if (this.race.checkFinish(after.s)) {
+        this.finishRace();
+        return;
+      }
     }
 
     this.updateRecoveryTriggers(fixedDt);
   };
+
+  /**
+   * Chegada: para o relógio (o Race já marcou), cancela todo input e congela
+   * o carro. O resultado só abre depois de um respiro curto para o jogador
+   * registrar o cruzamento da faixa.
+   */
+  private finishRace(): void {
+    if (this.state === 'FINISHED') {
+      return;
+    }
+
+    this.state = 'FINISHED';
+    this.input.cancelAll();
+    this.chaseCamera.setRumble(0);
+    this.powerups.clearEffects();
+    this.chaseCamera.setFovBoost(0);
+    this.hud.clearPowerups();
+    this.powerupHudElapsed = 0;
+    this.resetImpactFeedback();
+
+    const state = this.car.state;
+    state.velocity.set(0, 0, 0);
+    state.speed = 0;
+    state.yawRate = 0;
+    this.car.telemetry.speed = 0;
+    this.car.telemetry.longitudinalSpeed = 0;
+    this.car.telemetry.lateralSpeed = 0;
+    this.car.telemetry.slipAngle = 0;
+    this.car.snapRenderPose();
+
+    this.resultPending = true;
+    this.resultDelayElapsed = 0;
+
+    this.hud.hideSplit();
+    this.hud.setState(this.state);
+    this.hud.setTime(this.race.elapsed);
+    this.hud.setBest(this.race.bestTime);
+    this.hud.setProgress(this.race.finishS);
+    this.hud.setTelemetry(this.car.telemetry, state.position, this.debugInfo);
+  }
+
+  private updateFinishPresentation(dt: number): void {
+    if (!this.resultPending) {
+      return;
+    }
+
+    this.resultDelayElapsed += dt;
+    if (this.resultDelayElapsed < RESULT_DELAY_SECONDS) {
+      return;
+    }
+
+    this.resultPending = false;
+    this.results.show(this.race.snapshot());
+  }
+
+  private hideResult(): void {
+    this.resultPending = false;
+    this.resultDelayElapsed = 0;
+    this.results.hide();
+  }
 
   /**
    * Inicia a recuperação (limite do mundo, atrás da largada ou carro preso).
@@ -463,7 +623,6 @@ export class Game {
   private updateRecovery(dt: number): void {
     const duration = Math.max(RACE_TUNING.recoveryPenalty, 0.2);
     this.recoveryElapsed += dt;
-    this.elapsedSeconds += dt;
 
     if (!this.recoveryTeleported && this.recoveryElapsed >= duration * RECOVERY_TELEPORT_PHASE) {
       this.teleportAfterRecovery();
@@ -609,9 +768,22 @@ export class Game {
     this.cameraState.verticalVelocity = this.car.state.verticalVelocity;
     this.cameraState.trackS = this.car.state.trackS;
     this.cameraState.trackU = this.car.state.trackU;
+    this.chaseCamera.setFovBoost(
+      this.powerups.isActive('turbo') ? CAMERA_TUNING.turboFovBoost : 0,
+    );
     this.chaseCamera.update(frameDt, this.cameraState);
 
-    this.hud.setTime(this.elapsedSeconds);
+    this.hud.setTime(this.race.elapsed);
+    this.hud.setProgress(
+      this.state === 'FINISHED' ? this.race.finishS : this.car.state.trackS,
+    );
+
+    this.powerupHudElapsed += frameDt;
+    if (this.powerupHudElapsed >= POWERUP_HUD_INTERVAL) {
+      this.powerupHudElapsed = 0;
+      this.hud.setPowerups(this.powerups.getActive());
+    }
+
     this.hud.setTelemetry(this.car.telemetry, pose.position, this.debugInfo);
 
     this.renderer.render(this.scene, this.chaseCamera.camera);
@@ -629,7 +801,30 @@ export class Game {
       offRoad: this.track.offTrackDistance(state.trackS, state.trackU),
       obstacles: this.obstacles.getCount(),
       impact: this.lastImpact,
+      powerups: this.describePowerups(),
     };
+  }
+
+  private describePowerups(): string {
+    const active = this.powerups.getActive();
+    if (active.length === 0) {
+      return '—';
+    }
+
+    const modifiers = this.powerups.getModifiers();
+    let text = '';
+    for (const entry of active) {
+      if (text.length > 0) {
+        text += ' · ';
+      }
+      text += `${entry.type.toUpperCase()} ${entry.remaining.toFixed(1)}s`;
+    }
+
+    return (
+      `${text} | V×${modifiers.maxSpeedMultiplier.toFixed(2)} ` +
+      `A×${modifiers.accelerationMultiplier.toFixed(2)} ` +
+      `G×${modifiers.gripMultiplier.toFixed(2)}`
+    );
   }
 
   /** `?debug=1&s=150` abre já teleportado — útil para revisar a pista inteira. */

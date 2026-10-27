@@ -72,7 +72,18 @@ export const TRACK_01: TrackDef = {
     { s: 620, length: 8, height: 2.2 },
   ],
   obstacles: [],
-  powerups: [],
+  powerups: [
+    // Turbo na reta da floresta, à direita do centro (fora da linha ideal e
+    // 20 m antes do kicker de s = 140, que fica em trecho reto).
+    { type: 'turbo', s: 120, u: 1.6 },
+    // Grip na aproximação do hairpin 1 (s ≈ 241), à esquerda do centro.
+    { type: 'grip', s: 200, u: -1.2 },
+    // Grip antes do hairpin 2 (s ≈ 466), à direita do centro.
+    { type: 'grip', s: 440, u: 1.2 },
+    // Turbo na reta do deserto, à esquerda do centro e 20 m antes do kicker
+    // de s = 620.
+    { type: 'turbo', s: 600, u: -1.6 },
+  ],
   splits: [{ s: 300, name: 'Parcial 1', target: 21 }],
   medals: { gold: 43, silver: 49, bronze: 57 },
 };

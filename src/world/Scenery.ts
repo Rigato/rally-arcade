@@ -257,6 +257,19 @@ export class Scenery {
     minZ -= margin;
     maxZ += margin;
 
+    // Amostras do centro usadas para suavizar o fundo entre pernas paralelas.
+    // Sem isso, o vizinho mais próximo troca de perna e cria uma parede.
+    const centerSamples: Array<{ s: number; x: number; y: number; z: number }> = [];
+    for (let s = 0; s <= track.length; s += 4) {
+      const sample = track.sampleAt(s);
+      centerSamples.push({
+        s,
+        x: sample.position.x,
+        y: sample.position.y,
+        z: sample.position.z,
+      });
+    }
+
     const cols = Math.ceil((maxX - minX) / spacing) + 1;
     const rows = Math.ceil((maxZ - minZ) / spacing) + 1;
     const positions = new Float32Array(cols * rows * 3);
@@ -267,29 +280,64 @@ export class Scenery {
       const z = minZ + row * spacing;
       for (let col = 0; col < cols; col += 1) {
         const x = minX + col * spacing;
-        const projection = track.project(x, z);
-        const s = projection.s;
-        const lateral = Math.abs(projection.u);
-        const half = track.widthAt(s) * 0.5;
+
+        let nearestS = 0;
+        let nearestDistanceSq = Infinity;
+        let nearestY = 0;
+        for (const sample of centerSamples) {
+          const dx = sample.x - x;
+          const dz = sample.z - z;
+          const distanceSq = dx * dx + dz * dz;
+          if (distanceSq < nearestDistanceSq) {
+            nearestDistanceSq = distanceSq;
+            nearestS = sample.s;
+            nearestY = sample.y;
+          }
+        }
+
+        let secondDistanceSq = Infinity;
+        let secondY = 0;
+        for (const sample of centerSamples) {
+          if (Math.abs(sample.s - nearestS) < 40) {
+            continue;
+          }
+          const dx = sample.x - x;
+          const dz = sample.z - z;
+          const distanceSq = dx * dx + dz * dz;
+          if (distanceSq < secondDistanceSq) {
+            secondDistanceSq = distanceSq;
+            secondY = sample.y;
+          }
+        }
+
+        const weight1 = 1 / (nearestDistanceSq + 1);
+        const weight2 = Number.isFinite(secondDistanceSq)
+          ? 1 / (secondDistanceSq + 1)
+          : 0;
+        const blendedY =
+          (nearestY * weight1 + secondY * weight2) / (weight1 + weight2);
+
+        const lateral = Math.sqrt(nearestDistanceSq);
+        const half = track.widthAt(nearestS) * 0.5;
         const inner = half + 5.9;
         const outside = Math.max(0, lateral - inner);
         const slope = Math.min(Math.max(0, outside - 2) * 0.12, 5.0);
         const ripple =
-          (Math.sin(s * 0.055 + lateral * 0.11) * 0.3 +
-            Math.sin(s * 0.017 - lateral * 0.03) * 0.6) *
+          (Math.sin(nearestS * 0.055 + lateral * 0.11) * 0.3 +
+            Math.sin(nearestS * 0.017 - lateral * 0.03) * 0.6) *
           Math.min(1, outside / 8);
         // No corredor da pista o relevo fica rebaixado: a malha de fundo tem
         // células de 6 m e a corda entre vértices passa por cima da rampa
         // convexa dos kickers. Sem essa folga o terreno cobre a pista.
         const nearDepression = 0.18 + 0.26 * (1 - clamp(outside / 10, 0, 1));
-        const y = track.heightAt(s, 0) - nearDepression - slope + ripple;
+        const y = blendedY - nearDepression - slope + ripple;
 
         const vertex = row * cols + col;
         positions[vertex * 3] = x;
         positions[vertex * 3 + 1] = y;
         positions[vertex * 3 + 2] = z;
 
-        const raw = clamp((s - (this.desertStart - 15)) / 30, 0, 1);
+        const raw = clamp((nearestS - (this.desertStart - 15)) / 30, 0, 1);
         const blend = raw * raw * (3 - 2 * raw);
         const grain = 0.9 + hash2(col, row) * 0.18;
         tempTerrainColor.copy(FOREST_TERRAIN).lerp(DESERT_TERRAIN, blend);

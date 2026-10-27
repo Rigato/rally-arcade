@@ -32,6 +32,18 @@ export interface SurfaceDef {
 
 export type HandbrakeMode = 'drag' | 'button';
 
+/** Powerups do MVP: turbo (velocidade) e grip extra (derrapagem). */
+export type PowerupType = 'turbo' | 'grip';
+
+/** Powerup ativo exposto ao HUD (lista pequena, recriada pelo `Powerups`). */
+export interface ActivePowerup {
+  type: PowerupType;
+  /** Tempo restante (s); chega a 0 e o powerup desativa. */
+  remaining: number;
+  /** Duração total da ativação (s), para a barra do chip. */
+  duration: number;
+}
+
 /**
  * Piso escolhido no painel de debug. `auto` usa o piso da zona da pista
  * (cascalho na floresta, areia no deserto; fora da pista, o piso da zona).
@@ -211,7 +223,7 @@ export interface TrackObstacle {
 }
 
 export interface TrackPowerup {
-  readonly type: 'turbo' | 'grip';
+  readonly type: PowerupType;
   readonly s: number;
   readonly u: number;
 }

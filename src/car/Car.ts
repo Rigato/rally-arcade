@@ -8,6 +8,16 @@ export interface RenderPose {
   heading: number;
 }
 
+/**
+ * Modificadores temporários de física (powerups). Ausentes = 1.
+ * O `Game` passa o objeto vivo do `Powerups` a cada passo fixo.
+ */
+export interface CarModifiers {
+  maxSpeedMultiplier?: number;
+  accelerationMultiplier?: number;
+  gripMultiplier?: number;
+}
+
 const LOW_SPEED_YAW_THRESHOLD = 0.3;
 const MIN_GRIP_RATE = 0.001;
 const TERRAIN_SAMPLE_HALF_LENGTH = 1.5;
@@ -108,6 +118,7 @@ export class Car {
     input: Readonly<InputState>,
     surface: SurfaceDef,
     heightAt?: (x: number, z: number) => number,
+    modifiers?: CarModifiers,
   ): void {
     if (dt <= 0) {
       return;
@@ -115,6 +126,9 @@ export class Car {
 
     const tuning = this.tuning;
     const state = this.state;
+    const maxSpeedMultiplier = modifiers?.maxSpeedMultiplier ?? 1;
+    const accelerationMultiplier = modifiers?.accelerationMultiplier ?? 1;
+    const gripMultiplier = modifiers?.gripMultiplier ?? 1;
 
     this.previousPosition.copy(state.position);
     this.previousHeading = state.heading;
@@ -143,7 +157,11 @@ export class Car {
     let vLat = state.velocity.x * rightX + state.velocity.z * rightZ;
 
     const speed = Math.hypot(vLong, vLat);
-    const speedRatio = clamp(speed / tuning.maxSpeed, 0, 1);
+    const speedRatio = clamp(
+      speed / (tuning.maxSpeed * Math.max(maxSpeedMultiplier, 0.01)),
+      0,
+      1,
+    );
 
     let nextVLong = vLong;
     let nextVLat = vLat;
@@ -182,7 +200,10 @@ export class Car {
 
       // --- Longitudinal ---
       let accelerationLong =
-        tuning.engineAcceleration * (input.throttle ? 1 : 0) * surface.acceleration;
+        tuning.engineAcceleration *
+        accelerationMultiplier *
+        (input.throttle ? 1 : 0) *
+        surface.acceleration;
       accelerationLong -= tuning.dragCoefficient * vLong * Math.abs(vLong) * surface.drag;
 
       // Componente da gravidade na inclinação (positivo sobe, então desacelera).
@@ -212,7 +233,11 @@ export class Car {
 
       // Não existe entrada de ré, mas o carro pode ficar com velocidade
       // longitudinal negativa durante um giro forte (apontando para trás).
-      nextVLong = clamp(nextVLong, -tuning.maxSpeed * 0.6, tuning.maxSpeed);
+      nextVLong = clamp(
+        nextVLong,
+        -tuning.maxSpeed * 0.6,
+        tuning.maxSpeed * maxSpeedMultiplier,
+      );
 
       // Evita creep de poucos mm/s depois que o carro já parou.
       if (!input.throttle && Math.abs(nextVLong) < 0.02) {
@@ -221,7 +246,9 @@ export class Car {
 
       // --- Lateral ---
       const gripRate = Math.max(
-        surface.grip * (input.handbrake ? tuning.handbrakeGripMultiplier : 1),
+        surface.grip *
+          gripMultiplier *
+          (input.handbrake ? tuning.handbrakeGripMultiplier : 1),
         MIN_GRIP_RATE,
       );
       nextVLat = vLat * Math.exp(-gripRate * dt);
@@ -459,6 +486,16 @@ export class Car {
     this.telemetry.landingImpact = 0;
     this.telemetry.longitudinalAcceleration = 0;
     this.telemetry.lateralAcceleration = 0;
+  }
+
+  /**
+   * Alinha a pose visual à posição atual. Usado na chegada: sem novos passos,
+   * a interpolação continuaria oscilando entre `previousPosition` e a posição
+   * final a cada frame renderizado.
+   */
+  snapRenderPose(): void {
+    this.previousPosition.copy(this.state.position);
+    this.previousHeading = this.state.heading;
   }
 
   /**

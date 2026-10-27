@@ -31,7 +31,7 @@ Fora do MVP: progressão, loja, pista procedural, cenários extras, manobras aé
 | Painel de ajuste | lil-gui, acessível via `?debug=1` |
 | Pista | Uma pista fixa autorada em TS (`src/track/track01.ts`) |
 | Escala | 1 unidade = 1 metro |
-| Pista | ~800 m, dois trechos de 400 m (floresta → deserto) |
+| Pista | 799,8 m; 0–300 m floresta, 300–799,8 m deserto |
 | Visual | Low poly procedural com primitivas |
 | Áudio | Fora do MVP; apenas stretch opcional |
 | Plataforma | Portrait-first no celular; PC com mouse como secundário |
@@ -156,7 +156,7 @@ Centro da pista com Catmull-Rom centrípeto; largura interpolada por ponto; elev
 
 ### Composição da pista fixa
 
-- ~800 m; 0–400 m floresta, 400–800 m deserto.
+- 799,8 m; 0–300 m floresta, 300–799,8 m deserto. Largada em s=22 e chegada em s=796,3.
 - Largura entre 7 e 14 m.
 - Elevação de ±7 m, com pelo menos duas subidas/descidas.
 - Dois hairpins (um por cenário).
@@ -177,7 +177,7 @@ API única usada pela física e pela geração de malha:
 
 **Regra crítica:** a malha visual e a física leem a mesma função de altura.
 
-Malha em faixas de 1 m. Ombros/fora de pista até ~30 m de cada lado; limite do mundo em 24 m.
+Malha em faixas de 1 m. Ombros de 6 m por lado, com relevo off-road; o limite de recuperação fica 5,5 m além da borda. Um backdrop visual suavizado cobre o resto do terreno.
 
 ### Cenário
 
@@ -345,7 +345,7 @@ Total estimado: ~25 dias úteis + buffer. Áudio, se entrar, consome 1–2 dias 
 | Turbo | 2,0 s |
 | Tempos-alvo | Ouro 43 / prata 49 / bronze 57 s (recalibrar) |
 | Caminhos alternativos | Fora do MVP; seções largas permitem escolher linha |
-| Limite do mundo | 24 m da centerline; ~1,2 s de penalidade |
+| Limite do mundo | 5,5 m além da borda da pista; ~1,2 s de penalidade |
 
 ## 17. Definition of Done do MVP
 
@@ -358,7 +358,7 @@ Total estimado: ~25 dias úteis + buffer. Áudio, se entrar, consome 1–2 dias 
 | Floresta/cascalho e deserto/areia | Mesma curva nos dois pisos com comportamento distinto |
 | Pista fixa de 30–60 s com elevação, largura variável e salto | Completar em 3 faixas de tempo |
 | Fora da pista recuperável, obstáculos, ricochete, limite | Sair, bater, voltar; limite recupera com perda de tempo |
-| Cronômetro, distância e parcial | Conferir split em 400 m e distância |
+| Cronômetro, distância e parcial | Conferir split em 300 m e distância |
 | Medalhas e reinício no topo | Fechar com cada medalha e reiniciar em 1 toque |
 
 ## 18. Autenticação e publicação
@@ -381,3 +381,38 @@ Estado na criação do repositório: sem SSH key e sem credencial HTTPS na máqu
 3. `npm run dev -- --host` e abrir no navegador/Pages.
 4. Verificar o último marco concluído na seção 13 e seguir para o próximo.
 5. Usar o painel `?debug=1` para tuning; exportar os valores e congelar em `src/game/config.ts`/`track01.ts` antes de fechar um marco.
+
+## 20. Status de implementação — Oct 27, 2026
+
+### Concluído
+
+- **M0** — Vite + TypeScript + three.js, loop fixo de 120 Hz, canvas portrait, HUD e deploy workflow.
+- **M1** — física de derrapagem, touch/mouse/teclado, freio com rampa, freio de mão, câmera seguindo o movimento, visual do carro com roll/pitch e painel lil-gui com persistência.
+- **M2** — pisos cascalho/areia/fora de pista com grip, aceleração, arrasto e resposta diferentes.
+- **M3** — pista spline de 799,8 m, dois hairpins, elevação, largura variável, dois kickers, saltos balísticos, suspensão visual, cenário low poly, portais e marcadores.
+- **M4** — fora de pista acidentado, trepidação de câmera, limite e recuperação com penalidade, auto-unstick, 54 obstáculos sólidos com ricochete e flash de impacto.
+- **M5** — cronômetro, distância, barra de progresso, parcial em s=300, medalhas, melhor tempo em localStorage, tela de resultado e retry.
+- **M5b** — powerups turbo (2 s) e grip extra (10 s), 4 pickups na pista, efeitos na física, renovação de timer, chips no HUD e reset.
+
+### Decisões que divergiram do plano original
+
+- Largada em s=22 (não s=4) para a câmera não mostrar o vazio atrás do carro.
+- Chegada em s=796,3 (3,5 m antes do fim da malha).
+- Ombros de 6 m e limite off-road de 5,5 m além da borda (não 24 m da centerline).
+- Backdrop visual suavizado por blend entre pernas paralelas, para evitar paredes no switchback.
+- Escala de obstáculos: 54 no total (18 rochas, 18 árvores/cactos, 18 troncos).
+- Powerups: turbo em s=120/u=+1,6 e s=600/u=-1,6; grip em s=200/u=-1,2 e s=440/u=+1,2.
+- Câmera final: distância 15,5; altura 15,2; lookAhead 7,5; FOV 60.
+
+### Pendente
+
+- **Push e Pages:** a máquina ainda não tem credencial git/SSH; o repositório local está pronto para push. Autenticar e habilitar Pages com source "GitHub Actions".
+- **Teste em dispositivo real:** validar touch, safe-area, performance e sensação no celular; o headless/SwiftShader é apenas smoke test.
+- **Calibração final:** rodar 10 voltas, ajustar tempos-alvo/medalhas e exportar o tuning; os valores atuais (43/49/57 s) são provisórios.
+- **Powerups:** a duração/efeito está implementada, mas o balanceamento (2 s/10 s) ainda não foi testado em corrida completa.
+
+### Verificação atual
+
+- `npm run typecheck` passa.
+- `npm run build` passa; único aviso é o tamanho do chunk (>650 kB, ~688 kB minificado / ~178 kB gzip), aceitável para o protótipo.
+- Validações headless: saltos, colisões, recuperação, parcial, resultado, retry e powerups sem erros de console.
