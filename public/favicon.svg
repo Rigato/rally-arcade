@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Rally Arcade">
+  <rect width="64" height="64" rx="14" fill="#0e1418"/>
+  <path d="M12 40l4-11 7-7h18l7 7 4 11v5H12z" fill="#d94b36"/>
+  <path d="M24 24h16l4 6H20z" fill="#1c2b36"/>
+  <rect x="10" y="38" width="44" height="6" rx="2" fill="#f2f6f3"/>
+  <circle cx="20" cy="45" r="6" fill="#14181b" stroke="#f2f6f3" stroke-width="2.5"/>
+  <circle cx="44" cy="45" r="6" fill="#14181b" stroke="#f2f6f3" stroke-width="2.5"/>
+  <rect x="27" y="18" width="10" height="4" rx="1" fill="#ffcb47"/>
+</svg>

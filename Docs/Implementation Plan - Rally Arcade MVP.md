@@ -1,0 +1,383 @@
+# Implementation Plan — Rally Arcade MVP
+
+Oct 27, 2026 · Baseado no `Mini GDD - Rally Arcade v2.md`
+
+Este documento é a referência de implementação do MVP. Se uma nova sessão começar, leia primeiro o GDD e depois este plano.
+
+## 1. Objetivo do MVP
+
+Validar se **dirigir é gostoso com uma mão só**, antes de investir em arte, conteúdo e progressão. O protótipo precisa entregar o ciclo completo:
+
+> toque para acelerar → derrapar → sair da pista e se recuperar → trocar de cenário → chegar → medalha → reiniciar em 1 toque
+
+Critérios de sucesso:
+
+- 60 fps em celular de médio porte.
+- Corrida completa de 30–60 s com dois pisos claramente diferentes.
+- Hairpin com freio de mão funcional; cascalho e areia com sensações distintas.
+- Reinício em menos de 1 s, sem menus intermediários.
+- 5–10 tentativas seguidas sem tédio (teste real do feeling).
+
+Fora do MVP: progressão, loja, pista procedural, cenários extras, manobras aéreas, suspensão dinâmica, público, multiplayer e trilha sonora licenciada.
+
+## 2. Decisões fechadas
+
+| Área | Decisão |
+|---|---|
+| Stack | Vite + TypeScript estrito + three.js |
+| Física | Própria, sem Rapier/Cannon |
+| Passo de simulação | Fixo em 120 Hz, render interpolado |
+| UI | DOM/CSS sobre o canvas |
+| Painel de ajuste | lil-gui, acessível via `?debug=1` |
+| Pista | Uma pista fixa autorada em TS (`src/track/track01.ts`) |
+| Escala | 1 unidade = 1 metro |
+| Pista | ~800 m, dois trechos de 400 m (floresta → deserto) |
+| Visual | Low poly procedural com primitivas |
+| Áudio | Fora do MVP; apenas stretch opcional |
+| Plataforma | Portrait-first no celular; PC com mouse como secundário |
+| Deploy | GitHub Pages via GitHub Actions a cada push na `main` |
+| Repositório | https://github.com/Rigato/rally-arcade |
+
+Versões atuais no npm na data do plano: three `0.186.x`, vite `8.x`, lil-gui `0.21.x`, `@types/three` `0.186.x`.
+
+## 3. Estrutura de arquivos
+
+```
+src/
+├── main.ts
+├── style.css
+├── game/
+│   ├── Game.ts          # bootstrap, cena, loop, orquestração
+│   ├── Race.ts          # estados, cronômetro, parciais, medalhas, reinício
+│   ├── config.ts        # defaults tipados de tuning
+│   └── types.ts
+├── core/
+│   ├── Loop.ts          # passo fixo + acumulador + interpolação
+│   ├── Spring.ts        # mola/amortecedor
+│   ├── Rng.ts           # seed determinística
+│   └── math.ts
+├── input/
+│   └── Input.ts
+├── car/
+│   ├── Car.ts           # física
+│   ├── CarView.ts       # malha, rodas, roll/pitch, sombra
+│   └── surfaces.ts
+├── track/
+│   ├── track01.ts       # dados da pista
+│   ├── Track.ts         # spline + sampler (s, u, altura, piso)
+│   ├── TrackMesh.ts     # pista, ombros, placas, portais
+│   ├── Obstacles.ts
+│   └── Powerups.ts
+├── world/
+│   ├── Scenery.ts
+│   └── Environment.ts
+├── camera/
+│   └── ChaseCamera.ts
+└── ui/
+    ├── Hud.ts
+    ├── Results.ts
+    └── TuningPanel.ts
+```
+
+Fluxo por frame:
+
+`Input → Car.step(dt fixo) → Track.project/height/surface → Race (splits/fim) → CarView (interpolação) → ChaseCamera → Hud`
+
+Sem framework de estado e sem event bus. O `Game` coordena os módulos e usa callbacks simples para pickup, parcial e chegada.
+
+## 4. Física e sensação
+
+### Modelo
+
+Estado: posição, heading (yaw), velocidade no mundo, velocidade vertical, `onGround`, `yawRate`.
+
+A cada passo fixo:
+
+1. Esterço define a guinada alvo: `yawTarget = steer × maxYawRate × f(speed) × surface.steer`. `f(speed)` cresce de zero até ~6 m/s e cai levemente no topo.
+2. Rotaciona o heading e decompõe a velocidade em longitudinal/lateral no referencial do carro.
+3. Longitudinal: motor − arrasto quadrático − rolamento − freio − componente da gravidade na inclinação.
+4. Lateral: `vLat *= exp(-grip × dt)`. A derrapagem nasce do carro girar enquanto a velocidade continua reta; o grip puxa a velocidade para o heading.
+5. Freio de mão: grip × ~0,28, desaceleração moderada, resposta de esterço levemente maior; permite jogar o carro de lado no hairpin.
+6. Frear ao soltar: rampa de ~30% até 100% em ~0,55 s.
+7. Inclinação: diferença de altura entre frente e traseira gera aceleração/desaceleração gravitacional.
+8. Ar: sem esterço, gravidade ~24 m/s², sem grip lateral; heading mantém.
+9. Colisão: dois círculos (frente/traseira) contra círculos de obstáculos; resolve penetração, ricochete com restituição ~0,25 e perda forte de velocidade, sem teletransporte.
+
+### Valores iniciais de tuning
+
+| Parâmetro | Inicial |
+|---|---|
+| Aceleração do motor | 10 m/s² |
+| Velocidade máxima | 34 m/s |
+| Arrasto | `0.003 × v²` + 0,5 m/s² de rolamento |
+| Guinada máxima | 2,0 rad/s |
+| Resposta de esterço | tau 0,10 s |
+| Freio máximo | 12 m/s² (rampa 3,5 → 12 em 0,55 s) |
+| Gravidade no ar | 24 m/s² |
+| Turbo | +30% de velocidade e força por 2 s |
+
+### Pisos
+
+| Superfície | Grip (1/s) | Acel. | Arrasto | Bump | Onde |
+|---|---|---|---|---|---|
+| Cascalho | 6,5 | 1,0 | 1,0 | 0,6 | pista da floresta |
+| Areia | 3,8 | 0,85 | 1,25 | 0,9 | pista do deserto |
+| Fora — floresta | 3,4 | 0,8 | 1,7 | 1,4 | ombro/mato |
+| Fora — deserto | 2,7 | 0,7 | 2,0 | 1,8 | dunas/areia fofa |
+
+Todos os valores devem ser ajustáveis ao vivo pelo painel. Nenhum número é definitivo.
+
+### Saltos
+
+Elevação analítica: spline base + kickers autorados (rampa curta e queda). Quando a altura do chão cai mais rápido que a trajetória balística, o carro decola com a velocidade vertical da rampa. No pouso, a mola visual da suspensão absorve o impacto. Sem controle no ar.
+
+### Suspensão visual
+
+Hierarquia: `carRoot` (posição + yaw + alinhamento ao chão) → `bodyPivot` (roll/pitch) → carroceria. Rodas no `carRoot`, com giro e esterço visual; traseiras travam no freio de mão. Roll vem da aceleração lateral; pitch da aceleração/frenagem; pouso injeta velocidade na mola. A suspensão não altera a física neste MVP.
+
+## 5. Pista e mundo
+
+### Dados
+
+```ts
+type TrackDef = {
+  id: string;
+  points: { x: number; z: number; y: number; width: number }[];
+  zones: { start: number; end: number; id: 'forest' | 'desert'; surface: 'gravel' | 'sand' }[];
+  kickers: { s: number; length: number; height: number }[];
+  obstacles: { type: 'rock' | 'tree' | 'log'; s: number; u: number; radius: number }[];
+  powerups: { type: 'turbo' | 'grip'; s: number; u: number }[];
+  splits: { s: number; name: string; target: number }[];
+  medals: { gold: number; silver: number; bronze: number };
+};
+```
+
+Centro da pista com Catmull-Rom centrípeto; largura interpolada por ponto; elevação própria. Objetos posicionados em coordenadas de pista `(s, u)`.
+
+### Composição da pista fixa
+
+- ~800 m; 0–400 m floresta, 400–800 m deserto.
+- Largura entre 7 e 14 m.
+- Elevação de ±7 m, com pelo menos duas subidas/descidas.
+- Dois hairpins (um por cenário).
+- Dois saltos, com área de pouso limpa.
+- Portal visual na troca de cenário e portal de chegada.
+- 2 turbo + 2 grip, fora da linha ideal.
+- ~60 obstáculos sólidos entre 1 e 18 m da borda.
+- 1 parcial em 400 m com tempo-alvo.
+
+### TrackSampler
+
+API única usada pela física e pela geração de malha:
+
+- `sampleAt(s)` → posição, tangente, normal, largura.
+- `project(worldPos, hintS)` → `s`, `u`, distância; busca local com fallback global.
+- `heightAt(s, u)` → altura analítica, incluindo ombros e bumpiness.
+- `surfaceAt(s, u)` → piso + cenário.
+
+**Regra crítica:** a malha visual e a física leem a mesma função de altura.
+
+Malha em faixas de 1 m. Ombros/fora de pista até ~30 m de cada lado; limite do mundo em 24 m.
+
+### Cenário
+
+- Floresta: pinheiros, pedras, chão verde-terroso, névoa fria.
+- Deserto: cactos, pedras claras, areia, névoa quente.
+- `InstancedMesh` + seed fixa.
+- Transição visual em ~30 m antes do portal; física troca exatamente em 400 m.
+- Sem shadow maps; blob shadow sob o carro, que cresce/clareia no ar.
+
+## 6. Câmera
+
+- Terceira pessoa, ângulo alto (~48–52°), calibrada para portrait.
+- Segue a **direção do movimento**, não o heading.
+- Suavização: posição ~0,12 s; yaw ~0,35 s. Abaixo de ~2 m/s usa o heading.
+- Carro em ~65–68% da altura da tela.
+- FOV 60° em portrait; +6° com turbo/velocidade; shake em impacto/piso ruim.
+- `cameraY = max(desiredY, groundY + 2 m)`.
+- Distância, altura, look-ahead, lag e FOV no painel.
+
+## 7. Controles
+
+### Touch (uma mão)
+
+- Acelerar: qualquer toque no canvas.
+- Esterçar: deslocamento horizontal em relação ao ponto inicial; lock total em ~32% da largura (≈128 px em 400 px), deadzone 5 px, suavização 0,08 s.
+- Frear: soltar o dedo inicia a rampa.
+- Freio de mão: modo padrão por deslocamento além de ~110% do lock; modo botão disponível no painel.
+- Reiniciar: botão fixo no topo.
+
+### Mouse / teclado
+
+- Mouse: mesmo esquema.
+- Teclado: WASD/setas, Espaço = freio de mão, R = reiniciar, H = telemetria, P = pausa.
+
+### Mobile
+
+- `touch-action: none`, `user-select: none`, `overscroll-behavior: none`.
+- `100dvh`, safe-area insets, alvos de toque ≥44 px.
+- `pointercancel` tratado como soltar.
+- HUD com `pointer-events: none`, exceto botões.
+- Resize/reorientação preserva o estado.
+- Auto-pause em `visibilitychange`.
+
+## 8. Corrida, HUD e resultados
+
+### Estados
+
+`READY → RUNNING → (RECOVERING) → FINISHED`
+
+- READY: carro na largada, cronômetro zerado, dica "TOQUE E ARRASTE". O primeiro toque inicia.
+- RUNNING: cronômetro, parciais e coleta ativos.
+- RECOVERING: fade rápido, reposicionamento na pista, fade in; cronômetro continua. Usado no limite do mundo e se o carro ficar preso ~2 s.
+- FINISHED: cruza a chegada, desacelera, mostra resultado.
+
+### HUD
+
+- Topo central: cronômetro.
+- Topo direito: reiniciar.
+- Topo esquerdo: melhor tempo.
+- Barra de progresso com parcial e posição.
+- Banner de parcial na troca de cenário (tempo + diferença vs. alvo).
+- Chips de powerup com tempo restante.
+- Telemetria apenas em debug.
+
+### Resultado
+
+- Tempo total, medalha, tempos-alvo e parciais.
+- Melhor tempo em `localStorage`.
+- Botão "CORRER DE NOVO".
+- Se não bateu medalha, mostrar quanto faltou para o bronze.
+
+### Medalhas
+
+Iniciais: ouro 43,0 s / prata 49,0 s / bronze 57,0 s; parcial-alvo 21,0 s. Após 10 corridas, recalibrar: ouro = melhor limpa + 2%; prata = +10%; bronze = +22%, limitado a 60 s.
+
+## 9. Powerups
+
+| Powerup | Efeito | Duração | Visual |
+|---|---|---|---|
+| Turbo | +30% de velocidade/aceleração, FOV e shake leve | 2,0 s | Anel laranja, rastro |
+| Grip extra | Grip ×1,8 | 10 s | Anel azul, aura |
+
+4 no total (2 de cada), fora da linha ideal. Pegar o mesmo tipo renova o timer; tipos diferentes coexistem. Cada pickup é coletado uma vez por corrida e reaparece no reinício.
+
+## 10. Painel de ajuste e telemetria
+
+Acessível por `?debug=1` (e tecla H no desktop):
+
+- Carro: aceleração, velocidade máxima, arrasto, rolamento, freio máximo, curva do freio, guinada máxima, resposta, grip base.
+- Pisos: grip/aceleração/arrasto/bump de cada superfície.
+- Freio de mão: multiplicador de grip, frenagem, modo, limiar.
+- Câmera: distância, altura, look-ahead, lags, FOV, shake.
+- Suspensão: rigidez, amortecimento, roll/pitch.
+- Powerups: duração e intensidade.
+- Input: lock em px, deadzone, suavização.
+- Ações: salvar, restaurar padrões, exportar JSON.
+
+Telemetria: FPS, km/h, ângulo de escorregamento, `s/u`, piso, estado, `onGround`, tempo de voo.
+
+## 11. Performance e mobile
+
+- Orçamento: <100 draw calls, <150 mil triângulos, 60 fps em Android médio.
+- `InstancedMesh` para vegetação/pedras.
+- Sem shadow maps; blob shadow.
+- `setPixelRatio(min(dpr, 2))`; queda adaptativa para 1,5 se FPS < 50.
+- Névoa para esconder o fim do mundo.
+- Pista + ombros em uma malha; sem pós-processamento.
+- Teste em Chrome Android e Safari iOS via GitHub Pages (HTTPS).
+- Evitar sincronizar `node_modules`/`dist` pelo Nextcloud.
+
+## 12. Deploy — GitHub Pages
+
+- `vite.config.ts` com `base: './'`.
+- Workflow `.github/workflows/deploy.yml`: build Node, upload de `dist`, deploy no Pages a cada push na `main`.
+- Pages configurado com source **GitHub Actions**.
+- URL esperada: `https://rigato.github.io/rally-arcade/`.
+- Tuning via `?debug=1`; valores em `localStorage` e exportáveis em JSON.
+- Repositório público: o GDD em `Docs/` também fica público.
+
+## 13. Roadmap por marcos
+
+| Marco | Dias | Entrega | Critério de pronto |
+|---|---|---|---|
+| M0 — Fundação | 2 | Vite + TS + three, canvas portrait, loop fixo, chão liso, câmera provisória, HUD vazio, painel shell, git, Actions/Pages | Roda a 60 fps no desktop e no celular via Pages; `npm run build` limpo |
+| M1 — Carro e feeling | 5 | Física de derrapagem, touch/mouse/teclado, rampa de freio, freio de mão, câmera, carro low poly com rodas | Donut, curva normal e hairpin com freio de mão; tuning no celular |
+| M2 — Pisos | 2 | Cascalho/areia/fora, troca por zona, cores e respostas distintas | Mesma curva nos dois pisos com sensações claramente diferentes |
+| M3 — Pista | 5–6 | Spline, elevação, largura, kickers, malha, sampler, saltos, alinhamento, suspensão visual, cenário | Percorrer 800 m sem buracos/float; dois saltos; portal no lugar |
+| M4 — Fora da pista | 4 | Terreno acidentado, grip baixo, obstáculos, colisão/ricochete, limite e recuperação, decoração | Sair, trepidar, bater e voltar; recuperação com penalidade |
+| M5 — Corrida completa | 4 | Powerups, cronômetro, distância, parciais, medalhas, reinício, resultado, melhor tempo, polimento | Ciclo completo 3 vezes seguidas |
+| Buffer | 3–4 | Tuning com testes, bugs, performance, build final, README | Protótipo jogável e ajustável |
+
+Total estimado: ~25 dias úteis + buffer. Áudio, se entrar, consome 1–2 dias do buffer.
+
+## 14. Validação
+
+- Por marco: checklist manual + build TypeScript limpo. Teste no celular após M1 e M3, não só no fim.
+- Validador de pista no boot: autointerseção, raio interno pequeno, kicker sem pouso, obstáculo/powerup fora da faixa, splits fora de ordem.
+- Física: 10 voltas, tempos; tunneling na velocidade máxima, pouso, rampa de freio, recuperação.
+- Medalhas: 10 corridas, melhor tempo limpo, fórmula, congelar valores no `track01.ts`.
+- Dispositivos: Chrome Android, Safari iOS, Chrome desktop. Testar resize, rotação, background/foreground e toque no HUD.
+- Playtest final: 3–5 pessoas por 5–10 minutos.
+
+## 15. Riscos e mitigações
+
+| Risco | Mitigação |
+|---|---|
+| Esterço por deslocamento impreciso | Testar no celular no M1; lock/deadzone/suavização no painel |
+| Câmera confusa na derrapagem | Seguir direção do movimento com lag ajustável; testar heading como fallback |
+| Saltos grudados/exagerados | Kicker + checagem balística + epsilon de pouso |
+| Malha e física divergirem | Uma única função `heightAt` |
+| Pista autointersectando | Validador no boot e autoria com margem de largura |
+| Carro preso em obstáculo | Ricochete + recuperação automática após ~2 s |
+| Performance no celular | Instancing, sem sombras, DPR limitado, névoa |
+| Escopo crescer | Checklist congelado; áudio/procedural/arte externa só stretch |
+| Safari/iOS | `dvh`, safe-area, `touch-action`, pointercancel |
+| Nextcloud sincronizando build | Excluir `node_modules`/`dist` da sincronização |
+
+## 16. Defaults para pontos em aberto do GDD
+
+| Ponto | Proposta |
+|---|---|
+| Freio de mão | Deslocamento > ~110% do lock; modo botão no painel |
+| Câmera | Yaw tau 0,35 s; posição 0,12 s |
+| Curva do freio | 30% → 100% em 0,55 s |
+| Turbo | 2,0 s |
+| Tempos-alvo | Ouro 43 / prata 49 / bronze 57 s (recalibrar) |
+| Caminhos alternativos | Fora do MVP; seções largas permitem escolher linha |
+| Limite do mundo | 24 m da centerline; ~1,2 s de penalidade |
+
+## 17. Definition of Done do MVP
+
+| Item do GDD | Verificação |
+|---|---|
+| Acelerar, esterçar, derrapar, frear, freio de mão em touch e mouse | Uma volta completa em cada dispositivo, sem teclado |
+| Painel de ajuste de grip, aceleração, arrasto, esterço e freio | Alterar ao vivo e persistir após reload |
+| Suspensão e roll visuais, incluindo pouso | Roll visível; carro afunda e volta no pouso |
+| Turbo e grip extra | Coletar, ver HUD, renovar timer, sentir efeito |
+| Floresta/cascalho e deserto/areia | Mesma curva nos dois pisos com comportamento distinto |
+| Pista fixa de 30–60 s com elevação, largura variável e salto | Completar em 3 faixas de tempo |
+| Fora da pista recuperável, obstáculos, ricochete, limite | Sair, bater, voltar; limite recupera com perda de tempo |
+| Cronômetro, distância e parcial | Conferir split em 400 m e distância |
+| Medalhas e reinício no topo | Fechar com cada medalha e reiniciar em 1 toque |
+
+## 18. Autenticação e publicação
+
+Estado na criação do repositório: sem SSH key e sem credencial HTTPS na máquina. Antes do primeiro push:
+
+1. Configurar identidade local (já previsto): `George Rigato <4633395+Rigato@users.noreply.github.com>`.
+2. Autenticar de uma das formas:
+   - instalar `gh` e rodar `gh auth login`; ou
+   - adicionar uma SSH key ao GitHub; ou
+   - usar um Personal Access Token com `git credential-store`.
+3. `git push -u origin main`.
+4. No GitHub: Settings → Pages → Source = **GitHub Actions**.
+5. Validar `https://rigato.github.io/rally-arcade/` no celular.
+
+## 19. Como retomar em outra sessão
+
+1. Ler `Docs/Mini GDD - Rally Arcade v2.md` e este plano.
+2. `npm install`.
+3. `npm run dev -- --host` e abrir no navegador/Pages.
+4. Verificar o último marco concluído na seção 13 e seguir para o próximo.
+5. Usar o painel `?debug=1` para tuning; exportar os valores e congelar em `src/game/config.ts`/`track01.ts` antes de fechar um marco.
