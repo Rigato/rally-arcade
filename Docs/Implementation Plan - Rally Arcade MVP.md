@@ -363,16 +363,18 @@ Total estimado: ~25 dias úteis + buffer. Áudio, se entrar, consome 1–2 dias 
 
 ## 18. Autenticação e publicação
 
-Estado na criação do repositório: sem SSH key e sem credencial HTTPS na máquina. Antes do primeiro push:
+Concluído em Oct 27, 2026:
 
-1. Configurar identidade local (já previsto): `George Rigato <4633395+Rigato@users.noreply.github.com>`.
-2. Autenticar de uma das formas:
-   - instalar `gh` e rodar `gh auth login`; ou
-   - adicionar uma SSH key ao GitHub; ou
-   - usar um Personal Access Token com `git credential-store`.
-3. `git push -u origin main`.
-4. No GitHub: Settings → Pages → Source = **GitHub Actions**.
-5. Validar `https://rigato.github.io/rally-arcade/` no celular.
+1. Identidade local: `George Rigato <4633395+Rigato@users.noreply.github.com>`.
+2. Autenticação via `gh` (conta `Rigato`, HTTPS) e `gh auth setup-git`.
+3. `git push -u origin main` — commits até `37cf79e` publicados.
+4. Pages habilitado com **Build type: workflow** (`gh api repos/Rigato/rally-arcade/pages`).
+5. Workflow de deploy executado com sucesso; URL validada com HTTP 200 e smoke test headless:
+   <https://rigato.github.io/rally-arcade/>
+
+Para publicar novas mudanças, basta `git push` na `main`. A URL de debug é
+`https://rigato.github.io/rally-arcade/?debug=1`; o teleporte de inspeção é
+`?debug=1&s=780`.
 
 ## 19. Como retomar em outra sessão
 
@@ -404,12 +406,19 @@ Estado na criação do repositório: sem SSH key e sem credencial HTTPS na máqu
 - Powerups: turbo em s=120/u=+1,6 e s=600/u=-1,6; grip em s=200/u=-1,2 e s=440/u=+1,2.
 - Câmera final: distância 15,5; altura 15,2; lookAhead 7,5; FOV 60.
 
+### Publicado
+
+- Push na `main` feito; Pages habilitado com source **GitHub Actions**; workflow verde.
+- URL live: <https://rigato.github.io/rally-arcade/>
+- Debug: <https://rigato.github.io/rally-arcade/?debug=1>
+- Smoke test headless do build publicado: HTTP 200, carro andando, 54 obstáculos e 4 powerups carregados, 0 erros de console.
+
 ### Pendente
 
-- **Push e Pages:** a máquina ainda não tem credencial git/SSH; o repositório local está pronto para push. Autenticar e habilitar Pages com source "GitHub Actions".
 - **Teste em dispositivo real:** validar touch, safe-area, performance e sensação no celular; o headless/SwiftShader é apenas smoke test.
 - **Calibração final:** rodar 10 voltas, ajustar tempos-alvo/medalhas e exportar o tuning; os valores atuais (43/49/57 s) são provisórios.
 - **Powerups:** a duração/efeito está implementada, mas o balanceamento (2 s/10 s) ainda não foi testado em corrida completa.
+- **Playtest de feeling:** confirmar lock do esterço, freio de mão por deslocamento vs. botão e atraso da câmera.
 
 ### Verificação atual
 

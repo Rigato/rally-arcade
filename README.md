@@ -4,7 +4,13 @@ Protótipo de corrida arcade de rally para celular em **portrait**, jogável com
 
 Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), UI em DOM/CSS sobre o canvas.
 
-> Status: **MVP completo — M5, com powerups (M5b)**. O ciclo largada → parcial → chegada → medalha → reinício está fechado, com cronômetro, barra de progresso, melhor tempo persistido, tela de resultado e pickups de turbo/grip.
+**Jogue agora:** <https://rigato.github.io/rally-arcade/>
+
+> Status: **MVP completo — M5, com powerups (M5b)**. O ciclo largada → parcial → chegada → medalha → reinício está fechado, com cronômetro, barra de progresso, melhor tempo persistido, tela de resultado e pickups de turbo/grip. Falta apenas o playtest em celular real e a calibração final dos tempos.
+
+## Screenshot
+
+![Largada na floresta](Docs/screenshots/forest-start.png)
 
 ## Documentação
 
@@ -131,11 +137,11 @@ src/
 
 ## Deploy
 
-O workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) publica o build no GitHub Pages a cada push na `main` (ou manualmente via `workflow_dispatch`). No GitHub, configure **Settings → Pages → Source: GitHub Actions**.
+O workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) publica o build no GitHub Pages a cada push na `main` (ou manualmente via `workflow_dispatch`). O Pages já está configurado com **Source: GitHub Actions**.
 
-URL esperada: <https://rigato.github.io/rally-arcade/>
+URL publicada: <https://rigato.github.io/rally-arcade/>
 
-O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages.
+O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O deploy do commit `37cf79e` foi validado com HTTP 200 e smoke test headless.
 
 ## Roadmap
 
