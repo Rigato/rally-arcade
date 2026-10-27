@@ -458,8 +458,24 @@ A primeira versão independente está em:
 
 Características: serpentina de 4 pernas e 3 hairpins (raio 25,5–34 m), 4 zonas alternadas, 3 parciais, 1–2 kickers baixos (1,0–1,5 m), 30–60 obstáculos a ≥5 m da borda, 4–6 powerups, 979–1112 m. Validação: **100/100 seeds válidas**, determinismo OK.
 
-Ainda **não está integrado ao jogo**: falta generalizar as visuais/HUD para multi-zona (em andamento na pista fixa v2) e adicionar um carregador de debug tipo `?track=proc&seed=1`. O objetivo é um protótipo, não o sistema final.
+A integração de debug está pronta: `?debug=1&track=proc&seed=1` carrega a pista gerada usando os mesmos sistemas multi-zona, splits, powerups, cenário e HUD. O sistema ainda não tem menu de seeds, editor, nem usa a lista de obstáculos autorada pelo gerador (o `Obstacles` atual gera a sua própria lista válida a partir do `Track`); é um protótipo, não o sistema final.
 
-## 23. Pista fixa v2 — em andamento
+## 23. Pista fixa v2 — concluída (Oct 27, 2026)
 
-Em uma worktree separada, um subagente está refazendo a pista fixa com 4 setores alternados, ~1 km, curvas de 30–70 m, ombros de 12 m, obstáculos a 5–10 m da borda, rampas de 1,0–1,5 m com 40 m de pouso, 3 parciais e ambientes multi-zona. A integração será feita depois do retorno desse trabalho, junto com o gerador procedural.
+- **1034,5 m** em **circuito fechado**, 4 setores alternados: 0–250 floresta, 250–500 deserto, 500–750 floresta, 750–fim deserto.
+- Largura **10,5–12,0 m**; raio mínimo **36,5 m**; sem hairpins; quatro curvas de 90° com R≈50 m e S suaves.
+- Inclinações longas de ~5% e crista curta de 8,6%; duas rampas de **1,2 m × 6,5 m** com 55,5 m e 120,5 m de pouso/run-out.
+- **Ombros de 12 m**, limite off-road de 12 m, **50 obstáculos** a 5–10 m da borda (18 rochas, 15 árvores/cactos, 17 troncos).
+- **6 powerups** (3 turbo, 3 grip), turbos depois dos pousos; **3 parciais** em 250/500/750; medalhas 55/62/72 s.
+- Multi-zona em `TrackMesh`, `Environment`, `Scenery`, `Gates` e `Obstacles`; `zones.ts` centraliza o blend.
+- HUD/Race/Results com 3 parciais; `scripts/validate-track.ts` + `npm run validate:track` validam o layout.
+- Validação: comprimento 1034,5 m, raio 36,5 m, sem autointerseção, rampas com pouso, parciais e obstáculos OK.
+
+**Desvio consciente:** o traçado v2 é um **circuito fechado** (chegada geometricamente perto da largada), não uma pista A→B. Foi a forma de caber 4 setores, curvas de 36 m+ e ombros de 12 m no espaço do protótipo. O gerador procedural entrega uma topologia ponto-a-ponto para comparar; se o circuito não agradar, o próximo passo é converter a pista fixa para aberta.
+
+### Integração final
+
+- `?debug=1&track=proc&seed=N` carrega a pista procedural; a pista fixa v2 é o padrão.
+- Track id fixo atualizado para `track01-v2`, resetando o melhor tempo antigo.
+- `RACE_TUNING.medals` recebe as medalhas da pista no boot; o painel ainda ajusta em runtime.
+- Deploy atual: commit `e7d041b`, Pages verde, smoke test live em fixed e `proc seed=1` sem erros de console.

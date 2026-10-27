@@ -6,7 +6,7 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 **Jogue agora:** <https://rigato.github.io/rally-arcade/>
 
-> Status: **MVP completo — M5, com powerups (M5b) e pista v2 multi-zona**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado, com cronômetro, barra de progresso, melhor tempo persistido, tela de resultado e pickups de turbo/grip. Falta apenas o playtest em celular real e a calibração final dos tempos.
+> Status: **MVP completo — M5, com powerups (M5b), controles revisados e pista v2 multi-zona**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado, com cronômetro, barra de progresso, melhor tempo persistido, tela de resultado e pickups de turbo/grip. A pista v2 e o novo controle estão em playtest; falta calibrar tempos e feeling.
 
 ## Screenshot
 
@@ -22,7 +22,7 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 1. O carro larga em `s = 22 m` com o cronômetro zerado. O **primeiro toque** (ou tecla de acelerar) inicia a corrida.
 2. Dirigir, derrapar, pular e escolher a linha. Sair da pista custa tempo; a recuperação automática mantém o relógio correndo.
 3. A pista tem **4 setores intercalados** (floresta → deserto → floresta → deserto). Em `s = 250`, `500` e `750 m` aparecem as **parciais 1, 2 e 3**, com tempo e diferença contra os alvos provisórios (13,5 s / 27 s / 40,5 s).
-4. Ao cruzar a faixa em `s ≈ 1031 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s.
+4. Ao cruzar a faixa em `s ≈ 1031 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s. A pista v2 é um **circuito fechado** de teste (~1035 m); a chegada fica geometricamente perto da largada.
 5. A medalha vem do tempo final: **ouro ≤ 55 s**, **prata ≤ 62 s**, **bronze ≤ 72 s**. Sem medalha, o resultado mostra quantos segundos faltaram para o bronze.
 6. **CORRER DE NOVO** (ou o botão ↺ / tecla **R**) recoloca o carro na largada em menos de 1 s. O melhor tempo continua no topo do HUD.
 
@@ -123,7 +123,8 @@ src/
 ├── camera/
 │   └── ChaseCamera.ts   # câmera de perseguição
 ├── input/
-│   └── Input.ts         # touch, mouse e teclado
+│   ├── Input.ts         # touch drag2d, mouse e teclado
+│   └── TouchGuide.ts    # anel/ponto de feedback do toque
 ├── track/
 │   ├── track01.ts       # pista fixa v2 autorada (~1 km, 4 setores)
 │   ├── Track.ts         # spline, sampler, altura e validação
@@ -131,7 +132,8 @@ src/
 │   ├── Gates.ts         # portais em cada troca de setor + chegada
 │   ├── zones.ts         # mistura de paletas nos limites das zonas
 │   ├── Obstacles.ts     # obstáculos sólidos e colisão
-│   └── Powerups.ts      # pickups de turbo/grip, timers e efeitos na física
+│   ├── Powerups.ts      # pickups de turbo/grip, timers e efeitos na física
+│   └── procedural/      # gerador por seed e validação do protótipo
 ├── world/
 │   ├── Scenery.ts       # cenário instanciado por setor (floresta/deserto)
 │   └── Environment.ts   # céu, névoa e luz multi-zona
@@ -165,7 +167,7 @@ O workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) public
 
 URL publicada: <https://rigato.github.io/rally-arcade/>
 
-O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O deploy do commit `37cf79e` foi validado com HTTP 200 e smoke test headless.
+O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O deploy do commit `e7d041b` foi validado com HTTP 200 e smoke test live nas pistas fixa e procedural.
 
 ## Roadmap
 
@@ -177,5 +179,7 @@ O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O dep
 - **M5 — Corrida completa** (concluído): cronômetro, distância, parcial, medalhas, resultado, melhor tempo persistido e reinício instantâneo.
 - **M5b — Powerups** (concluído): pickups 3D de turbo e grip extra, efeitos reais na física, chips com timers no HUD e restauração no reinício/teleporte.
 - **Pista v2** (concluído): ~1035 m, 4 setores intercalados, curvas de raio ≥ 36 m, ombros de 12 m, 2 rampas baixas e 3 parciais.
+- **Controles v2** (em playtest): drag2d com freio vertical, deadzone/expo, carro mais solto e roll maior.
+- **Protótipo procedural** (em validação): gerador determinístico por seed, 4 zonas, 3 parciais e preview SVG; carregável em debug por `?track=proc&seed=1`.
 
-Fora do MVP: progressão, loja, pista procedural, áudio e cenários extras.
+Fora do MVP: progressão, loja, menu/editor de pistas procedurais, áudio e cenários extras.
