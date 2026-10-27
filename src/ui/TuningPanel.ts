@@ -238,8 +238,17 @@ export class TuningPanel {
     this.addNumber(race, RACE_TUNING.medals, 'gold', 'Ouro (s)', 20, 180, 1);
     this.addNumber(race, RACE_TUNING.medals, 'silver', 'Prata (s)', 20, 180, 1);
     this.addNumber(race, RACE_TUNING.medals, 'bronze', 'Bronze (s)', 20, 180, 1);
-    this.addNumber(race, RACE_TUNING, 'worldLimit', 'Limite do mundo', 5, 100, 1);
-    this.addNumber(race, RACE_TUNING, 'recoveryPenalty', 'Penalidade (s)', 0, 10, 0.1);
+    this.addNumber(
+      race,
+      RACE_TUNING,
+      'offTrackLimit',
+      'Limite off-road (m)',
+      1,
+      20,
+      0.5,
+    );
+    this.addNumber(race, RACE_TUNING, 'recoveryPenalty', 'Recuperação (s)', 0.2, 10, 0.1);
+    this.addNumber(race, RACE_TUNING, 'worldLimit', 'Limite reservado', 5, 100, 1);
   }
 
   private buildDebugFolder(): void {
@@ -248,6 +257,7 @@ export class TuningPanel {
     const debugState = {
       telemetry: this.hud.isDebugVisible(),
       surface: this.game.getForcedSurface() as string,
+      showColliders: false,
       s: Number(this.game.getTrackS().toFixed(1)),
     };
 
@@ -256,6 +266,13 @@ export class TuningPanel {
       .name('Telemetria')
       .onChange((value: unknown) => {
         this.hud.setDebugVisible(Boolean(value));
+      });
+
+    folder
+      .add(debugState, 'showColliders')
+      .name('Mostrar colisores')
+      .onChange((value: unknown) => {
+        this.game.setObstacleCollidersVisible(Boolean(value));
       });
 
     folder
@@ -288,6 +305,19 @@ export class TuningPanel {
         'goToS',
       )
       .name('Ir para s');
+
+    folder
+      .add(
+        {
+          nextObstacle: () => {
+            this.game.teleportToNextObstacle();
+            debugState.s = Number(this.game.getTrackS().toFixed(1));
+            sController.updateDisplay();
+          },
+        },
+        'nextObstacle',
+      )
+      .name('→ Próximo obstáculo');
 
     this.copyController = folder
       .add({ copy: () => void this.copyJson() }, 'copy')

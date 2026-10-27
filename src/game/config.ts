@@ -118,6 +118,9 @@ export const RACE_TUNING: RaceTuning = {
     silver: 49.0,
     bronze: 57.0,
   },
+  // Reservado: o plano previa 24 m fixos. O limite real é medido a partir da
+  // borda da pista (ombro visual de 6 m) e fica em `offTrackLimit`.
   worldLimit: 24,
+  offTrackLimit: 5.5,
   recoveryPenalty: 1.2,
 };

@@ -108,6 +108,18 @@ export class CarView {
     }
   }
 
+  /**
+   * Pequeno afundamento da carroceria ao bater em obstáculo (só visual).
+   * A intensidade vem da velocidade normal do impacto (m/s).
+   */
+  impact(strength: number): void {
+    if (!Number.isFinite(strength) || strength <= 0) {
+      return;
+    }
+
+    this.heaveSpring.kick(-clamp(strength * 0.06, 0.3, 1.8));
+  }
+
   update(dt: number, state: CarViewState): void {
     if (dt <= 0) {
       return;

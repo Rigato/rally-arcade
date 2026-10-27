@@ -1,6 +1,7 @@
 import type { CarTelemetry, HandbrakeMode, RaceState } from '../game/types';
 
 const RAD_TO_DEG = 180 / Math.PI;
+const IMPACT_FLASH_MS = 160;
 
 function formatTime(seconds: number): string {
   const totalMs = Math.floor(Math.max(seconds, 0) * 1000);
@@ -34,7 +35,15 @@ export interface HudDebugInfo {
   y: number;
   /** Zona da pista já formatada (FLORESTA/DESERTO). */
   zone: string;
+  /** Distância além da borda da pista (m; 0 dentro da pista). */
+  offRoad: number;
+  /** Quantidade de obstáculos sólidos gerados. */
+  obstacles: number;
+  /** Intensidade da última colisão com obstáculo (m/s; 0 = sem impacto). */
+  impact: number;
 }
+
+export type RecoveryPhase = 'in' | 'returning' | 'out';
 
 /**
  * HUD em DOM sobre o canvas. O root tem `pointer-events: none`; somente os
@@ -48,6 +57,10 @@ export class Hud {
   private readonly resetButton: HTMLButtonElement;
   private readonly hint: HTMLParagraphElement;
   private readonly debugPanel: HTMLElement;
+  private readonly recoveryOverlay: HTMLElement;
+  private readonly recoveryText: HTMLParagraphElement;
+  private readonly recoverySub: HTMLParagraphElement;
+  private readonly impactOverlay: HTMLElement;
 
   private readonly debugValues: Record<string, HTMLElement> = {};
 
@@ -58,6 +71,7 @@ export class Hud {
   private lastDebugInfo: HudDebugInfo | null = null;
   private debugVisible: boolean;
   private currentState: RaceState = 'READY';
+  private impactTimer: number | null = null;
 
   constructor(root: HTMLElement, options: HudOptions = {}) {
     this.root = root;
@@ -116,6 +130,9 @@ export class Hud {
     this.addDebugRow('surface', 'PISO');
     this.addDebugRow('zone', 'ZONA');
     this.addDebugRow('track', 'S / U');
+    this.addDebugRow('offroad', 'OFF-ROAD');
+    this.addDebugRow('obstacles', 'OBSTÁCULOS');
+    this.addDebugRow('impact', 'IMPACTO');
     this.addDebugRow('height', 'Y');
     this.addDebugRow('grounded', 'CHÃO');
     this.addDebugRow('jump', 'SALTO');
@@ -126,7 +143,31 @@ export class Hud {
     this.addDebugRow('input', 'INPUT');
     this.addDebugRow('position', 'POS');
 
-    this.root.append(top, this.hint, this.handbrakeButton, this.debugPanel);
+    this.recoveryOverlay = document.createElement('div');
+    this.recoveryOverlay.className = 'hud__recovery';
+    this.recoveryOverlay.setAttribute('aria-hidden', 'true');
+    this.recoveryOverlay.dataset.phase = 'off';
+
+    this.impactOverlay = document.createElement('div');
+    this.impactOverlay.className = 'hud__impact';
+    this.impactOverlay.setAttribute('aria-hidden', 'true');
+
+    const recoveryPanel = document.createElement('div');
+    recoveryPanel.className = 'hud__recovery-panel';
+
+    this.recoveryText = document.createElement('p');
+    this.recoveryText.className = 'hud__recovery-text';
+    this.recoveryText.textContent = 'RECUPERANDO...';
+
+    this.recoverySub = document.createElement('p');
+    this.recoverySub.className = 'hud__recovery-sub';
+    this.recoverySub.textContent = 'PERDENDO TEMPO';
+
+    recoveryPanel.append(this.recoveryText, this.recoverySub);
+    this.recoveryOverlay.append(recoveryPanel);
+
+    this.root.append(top, this.hint, this.recoveryOverlay, this.handbrakeButton, this.debugPanel);
+    this.root.prepend(this.impactOverlay);
     this.resetButton.addEventListener('click', this.handleReset);
     this.setState(this.currentState);
   }
@@ -147,6 +188,57 @@ export class Hud {
     this.hint.hidden = state !== 'READY';
 
     this.debugValues.state.textContent = state;
+  }
+
+  /** Mostra/esconde o overlay de recuperação (fade controlado por CSS). */
+  setRecovery(active: boolean): void {
+    this.recoveryOverlay.classList.toggle('is-active', active);
+    this.recoveryOverlay.setAttribute('aria-hidden', active ? 'false' : 'true');
+    this.recoveryOverlay.dataset.phase = active ? 'in' : 'off';
+    this.recoveryText.textContent = 'RECUPERANDO...';
+    this.recoverySub.textContent = 'PERDENDO TEMPO';
+  }
+
+  /**
+   * Fase visual da recuperação. `out` inicia o fade de saída mantendo o
+   * overlay no DOM; o fim (RUNNING) chama `setRecovery(false)`.
+   */
+  setRecoveryPhase(phase: RecoveryPhase): void {
+    this.recoveryOverlay.dataset.phase = phase;
+    this.recoverySub.textContent =
+      phase === 'returning' ? 'VOLTANDO À PISTA' : 'PERDENDO TEMPO';
+
+    if (phase === 'out') {
+      this.recoveryOverlay.classList.remove('is-active');
+      this.recoveryOverlay.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  /** Flash curto de borda/vinheta no impacto; não bloqueia a tela. */
+  flashImpact(): void {
+    if (this.impactTimer !== null) {
+      window.clearTimeout(this.impactTimer);
+      this.impactTimer = null;
+    }
+
+    // Reinicia a animação mesmo se um impacto anterior ainda estiver ativo.
+    this.impactOverlay.classList.remove('is-active');
+    void this.impactOverlay.offsetWidth;
+    this.impactOverlay.classList.add('is-active');
+
+    this.impactTimer = window.setTimeout(() => {
+      this.impactTimer = null;
+      this.impactOverlay.classList.remove('is-active');
+    }, IMPACT_FLASH_MS);
+  }
+
+  /** Cancela o flash e o estado visual (reset, teleporte, recuperação). */
+  clearImpact(): void {
+    if (this.impactTimer !== null) {
+      window.clearTimeout(this.impactTimer);
+      this.impactTimer = null;
+    }
+    this.impactOverlay.classList.remove('is-active');
   }
 
   setTelemetry(
@@ -192,6 +284,7 @@ export class Hud {
   }
 
   dispose(): void {
+    this.clearImpact();
     this.resetButton.removeEventListener('click', this.handleReset);
     this.resetHandler = null;
   }
@@ -224,6 +317,18 @@ export class Hud {
     this.debugValues.track.textContent = debugInfo
       ? `${formatNumber(debugInfo.s, 1)} / ${formatNumber(debugInfo.u, 1)} m`
       : '—';
+    this.debugValues.offroad.textContent = debugInfo
+      ? debugInfo.offRoad > 0.01
+        ? `${formatNumber(debugInfo.offRoad, 1)} m`
+        : '—'
+      : '—';
+    this.debugValues.obstacles.textContent = debugInfo
+      ? String(debugInfo.obstacles)
+      : '—';
+    this.debugValues.impact.textContent =
+      debugInfo && debugInfo.impact > 0
+        ? `${formatNumber(debugInfo.impact, 1)} m/s`
+        : '—';
     this.debugValues.height.textContent = debugInfo
       ? `${formatNumber(debugInfo.y, 1)} m`
       : '—';

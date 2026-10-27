@@ -6,6 +6,7 @@ import { Loop } from '../core/Loop';
 import { clamp } from '../core/math';
 import { Input } from '../input/Input';
 import { Gates } from '../track/Gates';
+import { Obstacles } from '../track/Obstacles';
 import { Track } from '../track/Track';
 import { TrackMesh } from '../track/TrackMesh';
 import { TRACK_01 } from '../track/track01';
@@ -13,11 +14,28 @@ import { Hud, type HudDebugInfo } from '../ui/Hud';
 import { TuningPanel } from '../ui/TuningPanel';
 import { Environment } from '../world/Environment';
 import { Scenery } from '../world/Scenery';
-import { CAR_TUNING, INPUT_TUNING, RENDER_SETTINGS, SIMULATION, SURFACES } from './config';
+import {
+  CAR_TUNING,
+  INPUT_TUNING,
+  RACE_TUNING,
+  RENDER_SETTINGS,
+  SIMULATION,
+  SURFACES,
+} from './config';
 import { isDebugMode } from './debug';
 import type { CarState, ForcedSurface, HandbrakeMode, RaceState, SurfaceId } from './types';
 
 const FPS_SMOOTHING_TAU = 0.5;
+/** Fase em que o carro é recolocado (fração da recuperação total). */
+const RECOVERY_TELEPORT_PHASE = 0.29;
+/** Fase em que o fade de saída começa (fração da recuperação total). */
+const RECOVERY_FADE_PHASE = 0.66;
+/** Velocidade abaixo da qual o carro conta como preso (m/s). */
+const UNSTUCK_SPEED = 0.8;
+/** Tempo com acelerador e velocidade baixa para auto-recuperar (s). */
+const UNSTUCK_TIME = 2.5;
+/** Abaixo deste `s` o carro é considerado atrás da largada (m). */
+const BEHIND_START_S = 1;
 
 /** Integração do M3a: pista fixa, terreno, cenário, câmera, HUD e painel. */
 export class Game {
@@ -28,6 +46,7 @@ export class Game {
   private readonly trackMesh: TrackMesh;
   private readonly gates: Gates;
   private readonly scenery: Scenery;
+  private readonly obstacles: Obstacles;
   private readonly environment: Environment;
   private readonly car: Car;
   private readonly carView = new CarView();
@@ -69,12 +88,23 @@ export class Game {
   private disposed = false;
   private pausedByVisibility = false;
 
+  /** Recuperação em andamento (fases e reposicionamento). */
+  private recoveryElapsed = 0;
+  private recoveryTeleported = false;
+  private recoveryFaded = false;
+  /** `s` guardado no início da recuperação; o carro volta para o centro ali. */
+  private recoveryS = 0;
+  /** Tempo com acelerador mas sem sair do lugar (auto-unstick). */
+  private unstickElapsed = 0;
+
   /** Piso forçado no debug; `auto` segue a zona da pista. */
   private forcedSurface: ForcedSurface = 'auto';
   /** Piso efetivamente usado no último passo fixo. */
   private currentSurfaceId: SurfaceId = 'gravel';
   /** FPS suavizado exibido na telemetria. */
   private fps = 0;
+  /** Intensidade da última colisão com obstáculo (m/s), para a telemetria. */
+  private lastImpact = 0;
 
   constructor(container: HTMLElement, hudRoot: HTMLElement) {
     this.container = container;
@@ -98,6 +128,8 @@ export class Game {
     this.scene.add(this.gates.group);
     this.scenery = new Scenery(this.track);
     this.scene.add(this.scenery.group);
+    this.obstacles = new Obstacles(this.track);
+    this.scene.add(this.obstacles.group);
     this.environment = new Environment(this.scene, desertStart(this.track));
     this.environment.update(this.track.startS, this.track.length);
 
@@ -192,6 +224,30 @@ export class Game {
     return this.car.state.trackS;
   }
 
+  getObstacleCount(): number {
+    return this.obstacles.getCount();
+  }
+
+  /** Wireframe dos colisores (debug, desligado por padrão). */
+  setObstacleCollidersVisible(visible: boolean): void {
+    this.obstacles.setColliderDebugVisible(visible);
+  }
+
+  /**
+   * Teleporte de debug para ~14 m antes do próximo obstáculo à frente.
+   * Retorna o `s` do obstáculo escolhido (ou null se não houver).
+   */
+  teleportToNextObstacle(): number | null {
+    const obstacle = this.obstacles.getNextObstacle(this.car.state.trackS);
+    if (!obstacle) {
+      return null;
+    }
+
+    const target = clamp(obstacle.s - 14, 0, this.track.length);
+    this.teleportToS(target);
+    return obstacle.s;
+  }
+
   /** Coloca o carro de volta na largada (mesmo fluxo do botão de reinício). */
   repositionCar(): void {
     this.reset();
@@ -209,6 +265,7 @@ export class Game {
       sample.position.z,
     );
 
+    this.cancelRecovery();
     this.input.reset();
     this.car.reset(this.teleportPosition, heading);
     this.car.state.trackS = target;
@@ -218,6 +275,13 @@ export class Game {
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.environment.update(target, this.track.length);
+
+    // Teleporte de debug é um estado limpo de teste: volta para READY e zera
+    // o cronômetro, senão a corrida ficaria RUNNING sem ter começado no lugar.
+    this.elapsedSeconds = 0;
+    this.state = 'READY';
+    this.hud.setTime(0);
+    this.hud.setState(this.state);
     this.hud.setTelemetry(this.car.telemetry, this.car.state.position, this.debugInfo);
   }
 
@@ -249,6 +313,7 @@ export class Game {
     this.trackMesh.dispose();
     this.gates.dispose();
     this.scenery.dispose();
+    this.obstacles.dispose();
 
     this.scene.traverse((object) => {
       if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
@@ -276,6 +341,7 @@ export class Game {
   };
 
   private readonly reset = (): void => {
+    this.cancelRecovery();
     this.input.reset();
     this.car.reset(this.track.startPose.position, this.track.startPose.heading);
     this.car.state.trackS = this.track.startS;
@@ -294,6 +360,13 @@ export class Game {
   };
 
   private readonly update = (fixedDt: number): void => {
+    // Na recuperação a física fica congelada, mas o cronômetro continua: essa
+    // é a penalidade. O carro só é reposicionado no meio do fade.
+    if (this.state === 'RECOVERING') {
+      this.updateRecovery(fixedDt);
+      return;
+    }
+
     this.input.update(fixedDt);
 
     const state = this.car.state;
@@ -304,6 +377,17 @@ export class Game {
 
     this.car.step(fixedDt, this.input.inputState, SURFACES[surfaceId], this.heightAt);
 
+    // Colisão com obstáculos sólidos: push-out + ricochete. Acontece antes da
+    // projeção em (s,u), então a recuperação e a telemetria já leem a posição
+    // corrigida. O carro não é teletransportado: só sai da sobreposição.
+    const impact = this.obstacles.resolveCollisions(this.car);
+    if (impact > 0) {
+      this.lastImpact = impact;
+      this.chaseCamera.addShake(clamp(impact / 25, 0.05, 0.35));
+      this.hud.flashImpact();
+      this.carView.impact(impact);
+    }
+
     const after = this.track.project(
       state.position.x,
       state.position.z,
@@ -313,11 +397,165 @@ export class Game {
     state.trackU = after.u;
 
     this.environment.update(state.trackS, this.track.length);
+    this.updateRumble();
 
     if (this.state === 'RUNNING') {
       this.elapsedSeconds += fixedDt;
     }
+
+    this.updateRecoveryTriggers(fixedDt);
   };
+
+  /**
+   * Inicia a recuperação (limite do mundo, atrás da largada ou carro preso).
+   * Idempotente: só age em RUNNING e cancela inputs, para o carro congelar.
+   */
+  private startRecovery(): void {
+    if (this.state !== 'RUNNING') {
+      return;
+    }
+
+    const state = this.car.state;
+
+    this.state = 'RECOVERING';
+    this.recoveryElapsed = 0;
+    this.recoveryTeleported = false;
+    this.recoveryFaded = false;
+    // Atrás da largada, volta para a posição de largada; senão, mantém o `s`.
+    this.recoveryS = clamp(state.trackS, this.track.startS, this.track.length);
+    this.unstickElapsed = 0;
+
+    // "Pare a física": sem input, sem velocidade e sem rumbling da câmera.
+    this.input.cancelAll();
+    state.velocity.set(0, 0, 0);
+    state.speed = 0;
+    state.yawRate = 0;
+    this.car.telemetry.speed = 0;
+    this.chaseCamera.setRumble(0);
+    this.resetImpactFeedback();
+
+    this.hud.setRecovery(true);
+    this.hud.setState(this.state);
+  }
+
+  /** Cancela a recuperação (reset, teleporte de debug) e limpa o overlay. */
+  private cancelRecovery(): void {
+    this.recoveryElapsed = 0;
+    this.recoveryTeleported = false;
+    this.recoveryFaded = false;
+    this.unstickElapsed = 0;
+    this.chaseCamera.setRumble(0);
+    this.hud.setRecovery(false);
+    this.resetImpactFeedback();
+  }
+
+  /** Limpa o feedback transitório de impacto (reset, teleporte, recuperação). */
+  private resetImpactFeedback(): void {
+    this.lastImpact = 0;
+    this.hud.clearImpact();
+  }
+
+  /**
+   * Fases da recuperação, escaladas pela duração de `recoveryPenalty`:
+   * reposiciona em ~29% (≈0,35 s), começa o fade em ~66% (≈0,8 s) e volta a
+   * RUNNING no fim (≈1,2 s). O cronômetro soma durante todo o processo.
+   */
+  private updateRecovery(dt: number): void {
+    const duration = Math.max(RACE_TUNING.recoveryPenalty, 0.2);
+    this.recoveryElapsed += dt;
+    this.elapsedSeconds += dt;
+
+    if (!this.recoveryTeleported && this.recoveryElapsed >= duration * RECOVERY_TELEPORT_PHASE) {
+      this.teleportAfterRecovery();
+    }
+
+    if (
+      this.recoveryTeleported &&
+      !this.recoveryFaded &&
+      this.recoveryElapsed >= duration * RECOVERY_FADE_PHASE
+    ) {
+      this.recoveryFaded = true;
+      this.hud.setRecoveryPhase('out');
+    }
+
+    if (this.recoveryElapsed >= duration) {
+      this.state = 'RUNNING';
+      this.unstickElapsed = 0;
+      this.hud.setRecovery(false);
+      this.hud.setState(this.state);
+    }
+  }
+
+  /** Recoloca o carro no centro da pista, no `s` guardado, olhando adiante. */
+  private teleportAfterRecovery(): void {
+    const target = clamp(this.recoveryS, 0, this.track.length);
+    const sample = this.track.sampleAt(target);
+    const heading = Math.atan2(sample.tangent.x, sample.tangent.z);
+
+    this.teleportPosition.set(
+      sample.position.x,
+      this.track.heightAt(target, 0),
+      sample.position.z,
+    );
+
+    this.input.cancelAll();
+    this.car.reset(this.teleportPosition, heading);
+    this.car.state.trackS = target;
+    this.car.state.trackU = 0;
+    this.currentSurfaceId = this.track.surfaceAt(target, 0);
+    this.carView.reset();
+    this.carView.setPose(this.car.state.position, this.car.state.heading);
+    this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
+    this.chaseCamera.setRumble(0);
+    this.environment.update(target, this.track.length);
+    this.hud.setTelemetry(this.car.telemetry, this.car.state.position, this.debugInfo);
+
+    this.recoveryTeleported = true;
+    this.hud.setRecoveryPhase('returning');
+  }
+
+  /** Trepidação contínua: distância lateral além da borda × velocidade. */
+  private updateRumble(): void {
+    const state = this.car.state;
+    const half = this.track.widthAt(state.trackS) * 0.5;
+    const offRoad = Math.max(0, Math.abs(state.trackU) - half);
+    const intensity =
+      clamp(offRoad / Math.max(RACE_TUNING.offTrackLimit, 0.1), 0, 1) *
+      clamp(state.speed / 15, 0, 1);
+
+    // No ar o chão não está batendo no carro: o shake de pouso entra no render.
+    this.chaseCamera.setRumble(state.grounded ? intensity : 0);
+  }
+
+  /**
+   * Limite do mundo baseado na borda (ombro de 6 m) e auto-unstick: acelerar
+   * contra algo por 2,5 s sem sair de ~0,8 m/s também dispara a recuperação.
+   */
+  private updateRecoveryTriggers(dt: number): void {
+    if (this.state !== 'RUNNING') {
+      this.unstickElapsed = 0;
+      return;
+    }
+
+    const state = this.car.state;
+    const half = this.track.widthAt(state.trackS) * 0.5;
+    const beyondEdge = Math.abs(state.trackU) - half;
+
+    if (beyondEdge > RACE_TUNING.offTrackLimit || state.trackS < BEHIND_START_S) {
+      this.startRecovery();
+      return;
+    }
+
+    if (this.input.inputState.throttle && state.speed < UNSTUCK_SPEED) {
+      this.unstickElapsed += dt;
+    } else {
+      this.unstickElapsed = 0;
+    }
+
+    if (this.unstickElapsed >= UNSTUCK_TIME) {
+      this.startRecovery();
+    }
+  }
 
   private readonly render = (alpha: number, frameDt: number): void => {
     if (frameDt > 0) {
@@ -338,6 +576,13 @@ export class Game {
       pose.position.z,
       this.car.state.trackS,
     );
+    const landingImpact = frameDt > 0 ? this.car.consumeLandingImpact() : 0;
+
+    // Pousos fortes também sacodem a câmera (barato e ajuda a ler o salto).
+    if (landingImpact < -6) {
+      this.chaseCamera.addShake(clamp((-landingImpact - 6) / 18, 0, 1) * 0.6);
+    }
+
     this.carView.update(frameDt, {
       speed: this.car.telemetry.speed,
       steer: this.input.inputState.steer,
@@ -348,7 +593,7 @@ export class Game {
       groundY,
       verticalVelocity: this.car.state.verticalVelocity,
       airborne: this.car.state.airborne,
-      landingImpact: frameDt > 0 ? this.car.consumeLandingImpact() : 0,
+      landingImpact,
     });
 
     this.cameraState.position.copy(pose.position);
@@ -381,6 +626,9 @@ export class Game {
       u: state.trackU,
       y: state.position.y,
       zone: this.track.zoneAt(state.trackS) === 'forest' ? 'FLORESTA' : 'DESERTO',
+      offRoad: this.track.offTrackDistance(state.trackS, state.trackU),
+      obstacles: this.obstacles.getCount(),
+      impact: this.lastImpact,
     };
   }
 

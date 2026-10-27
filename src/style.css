@@ -167,6 +167,104 @@ body {
   display: none;
 }
 
+/*
+ * Overlay de recuperação: cobre a tela com um véu escuro e um texto central.
+ * O root do HUD já tem pointer-events: none; o overlay reforça isso para que
+ * toques continuem indo ao canvas (o Input é cancelado pelo Game durante a
+ * recuperação e um toque novo só volta a acelerar quando ela termina).
+ */
+.hud__recovery {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 8, 10, 0.62);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    visibility 0s linear 160ms;
+}
+
+.hud__recovery.is-active {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 160ms ease,
+    visibility 0s linear 0s;
+}
+
+.hud__recovery[data-phase='out'] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.hud__recovery-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 26px;
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  text-align: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.hud__recovery-text {
+  margin: 0;
+  color: var(--accent);
+  font-size: clamp(1.05rem, 5vw, 1.5rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.15;
+}
+
+.hud__recovery-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: clamp(0.58rem, 2.5vw, 0.7rem);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+
+/*
+ * Flash de impacto: vinheta vermelha curta nas bordas, sem cobrir o centro
+ * nem bloquear toque. `flashImpact()` liga/desliga a classe por ~160 ms.
+ */
+.hud__impact {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: radial-gradient(
+    ellipse at 50% 52%,
+    rgba(201, 79, 59, 0) 42%,
+    rgba(201, 79, 59, 0.22) 72%,
+    rgba(201, 79, 59, 0.55) 100%
+  );
+  box-shadow: inset 0 0 46px 10px rgba(201, 79, 59, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 140ms ease-out,
+    visibility 0s linear 140ms;
+}
+
+.hud__impact.is-active {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 35ms ease-in,
+    visibility 0s linear 0s;
+}
+
 .hud__debug {
   position: absolute;
   top: calc(var(--safe-top) + 68px);

@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { clamp } from '../core/math';
 import type { Track } from './Track';
 
-const SHOULDER_WIDTH = 6;
+/** Offsets laterais do ombro (além da borda), do mais externo ao mais interno. */
+const SHOULDER_OFFSETS: readonly number[] = [6, 4.5, 3, 1.5];
+/** Pista (borda esquerda, centro, borda direita) + ombros dos dois lados. */
+const COLUMNS = SHOULDER_OFFSETS.length * 2 + 3;
 const TRANSITION_RANGE = 15;
 const EDGE_RIBBON_WIDTH = 0.45;
 const EDGE_LIFT = 0.025;
@@ -57,27 +60,39 @@ export class TrackMesh {
   }
 
   private buildSurface(track: Track): THREE.Mesh {
-    const columns = 5;
+    const columns = COLUMNS;
     const rows = track.sampleCount + 1;
     const positions = new Float32Array(rows * columns * 3);
     const colors = new Float32Array(rows * columns * 3);
     const uvs = new Float32Array(rows * columns * 2);
     const indices: number[] = [];
     const transitionS = findDesertStart(track);
+    const lateral = new Array<number>(columns);
 
     for (let i = 0; i < rows; i += 1) {
       const s = Math.min(i * track.step, track.length);
       const sample = track.sampleAt(s);
       const half = sample.width * 0.5;
       const blend = transitionBlend(s, transitionS);
+      const centerY = track.heightAt(s, 0);
 
-      const lateral = [-half - SHOULDER_WIDTH, -half, 0, half, half + SHOULDER_WIDTH];
+      // Ombros com 4 faixas por lado: resolução suficiente para as ondulações
+      // de 2–5 m em u. A pista continua com 3 colunas e fica lisa.
+      for (let k = 0; k < SHOULDER_OFFSETS.length; k += 1) {
+        lateral[k] = -half - SHOULDER_OFFSETS[k];
+        lateral[columns - 1 - k] = half + SHOULDER_OFFSETS[k];
+      }
+      lateral[SHOULDER_OFFSETS.length] = -half;
+      lateral[SHOULDER_OFFSETS.length + 1] = 0;
+      lateral[SHOULDER_OFFSETS.length + 2] = half;
+
       for (let k = 0; k < columns; k += 1) {
         const u = lateral[k];
         const vertex = i * columns + k;
         const x = sample.position.x + sample.right.x * u;
         const z = sample.position.z + sample.right.z * u;
         const y = track.heightAt(s, u);
+        const isRoad = Math.abs(u) <= half + 1e-6;
 
         positions[vertex * 3] = x;
         positions[vertex * 3 + 1] = y;
@@ -85,14 +100,19 @@ export class TrackMesh {
         uvs[vertex * 2] = u / 8 + 0.5;
         uvs[vertex * 2 + 1] = s / 8;
 
-        const isShoulder = k === 0 || k === columns - 1;
-        if (isShoulder) {
-          tempColor.copy(FOREST_SHOULDER).lerp(DESERT_SHOULDER, blend);
-        } else {
+        if (isRoad) {
           tempColor.copy(FOREST_ROAD).lerp(DESERT_ROAD, blend);
+        } else {
+          tempColor.copy(FOREST_SHOULDER).lerp(DESERT_SHOULDER, blend);
         }
 
-        const grain = 0.94 + 0.12 * hash2(i, k);
+        let grain = 0.94 + 0.12 * hash2(i, k);
+        if (!isRoad) {
+          // Claro nas cristas, escuro nas covas: dá leitura ao relevo mesmo
+          // no low poly e sem shadow map.
+          grain += clamp((y - centerY) * 0.22, -0.1, 0.1);
+        }
+
         colors[vertex * 3] = tempColor.r * grain;
         colors[vertex * 3 + 1] = tempColor.g * grain;
         colors[vertex * 3 + 2] = tempColor.b * grain;

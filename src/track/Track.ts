@@ -15,6 +15,10 @@ const VALIDATION_SELF_INTERSECTION_WINDOW = 40;
 const KICKER_LANDING_CHECK = 20;
 const KICKER_STRAIGHT_LIMIT = 0.35;
 const DEFAULT_START_S = 22;
+/** Distância em que o relevo fora da pista aparece (transição suave). */
+const OFFROAD_BLEND_RANGE = 1.5;
+/** Distância em que a amplitude do fora de pista atinge o máximo (ombro). */
+const OFFROAD_FULL_DISTANCE = 6;
 
 export type TrackZoneId = 'forest' | 'desert';
 
@@ -223,11 +227,13 @@ export class Track {
   }
 
   /**
-   * Altura do chão na coordenada de pista. O perfil do kicker sobe de forma
-   * parabólica e cai abruptamente no lip: por enquanto o carro ainda cola no
-   * chão depois da queda; o voo real entra no M3b.
+   * Altura do chão na coordenada de pista.
+   *
+   * Base (spline) + kicker + relevo off-road. O ruído só existe além da borda
+   * e começa suavemente em 1,5 m, para a emenda com a pista não ter degrau.
+   * É a única fonte de altura para física, malha, câmera e cenário.
    */
-  heightAt(s: number, _u: number): number {
+  heightAt(s: number, u: number): number {
     const clamped = clamp(s, 0, this.length);
     const f = clamped / this.step;
     const i = clamp(Math.floor(f), 0, this.sampleCount);
@@ -236,7 +242,23 @@ export class Track {
 
     const baseY = lerp(this.py[i], this.py[j], t);
     const kicker = lerp(this.kickerHeights[i], this.kickerHeights[j], t);
-    return baseY + kicker;
+    const distance = Math.abs(u) - this.widthAt(clamped) * 0.5;
+
+    if (distance <= 0) {
+      return baseY + kicker;
+    }
+
+    return baseY + kicker + this.offRoadHeightAt(clamped, u, distance);
+  }
+
+  /** Distância lateral além da borda da pista (0 quando está na pista). */
+  offTrackDistance(s: number, u: number): number {
+    return Math.max(0, Math.abs(u) - this.widthAt(s) * 0.5);
+  }
+
+  /** `true` quando `u` está além da borda (o ombro conta como fora). */
+  isOffTrack(s: number, u: number): boolean {
+    return Math.abs(u) > this.widthAt(s) * 0.5;
   }
 
   heightAtWorld(x: number, z: number, hintS?: number): number {
@@ -298,6 +320,41 @@ export class Track {
       this.controlS.push(bestIndex * this.step);
       this.controlWidth.push(clamp(point.width, MIN_WIDTH, MAX_WIDTH));
     }
+  }
+
+  /**
+   * Relevo determinístico do ombro/fora da pista.
+   *
+   * Duas escalas: ondulações finas (λ ≈ 4–8 m em s, 2–5 m em u) e "costelas"
+   * mais grossas, que fazem o carro subir/descer e eventualmente decolar.
+   * A amplitude cresce com a distância da borda; a mistura de 1,5 m mantém a
+   * derivada contínua na emenda porque o smoothstep começa com inclinação zero.
+   */
+  private offRoadHeightAt(s: number, u: number, distance: number): number {
+    const growth = Math.min(distance / OFFROAD_FULL_DISTANCE, 1);
+    const blend = smoothstep01(distance / OFFROAD_BLEND_RANGE);
+
+    // Amplitude moderada: o ombro deve tremer e eventualmente tirar o carro
+    // do chão, não virar uma parede. Ondulações longas (λ 8–27 m) para o
+    // carro não ser arremessado a cada metro.
+    const fineAmplitude = 0.04 + 0.08 * growth;
+    const coarseAmplitude = 0.08 + 0.12 * growth;
+    const crossAmplitude = 0.01 + 0.02 * growth;
+
+    const fine =
+      Math.sin(s * 0.55 + u * 1.1) * 0.6 +
+      Math.sin(s * 0.31 - u * 0.8 + 1.9) * 0.4;
+    const coarse =
+      Math.sin(s * 0.37 + u * 0.5 + 0.6) * 0.55 +
+      Math.sin(s * 0.23 - u * 0.7 + 3.1) * 0.45;
+    const cross = Math.sin(u * 1.3 + s * 0.18 + 0.9);
+
+    return (
+      blend *
+      (fineAmplitude * fine +
+        coarseAmplitude * coarse +
+        crossAmplitude * cross)
+    );
   }
 
   private kickerHeightAt(s: number): number {
@@ -521,6 +578,11 @@ export class Track {
       }
     }
   }
+}
+
+function smoothstep01(t: number): number {
+  const clamped = clamp(t, 0, 1);
+  return clamped * clamped * (3 - 2 * clamped);
 }
 
 function shortestAngle(from: number, to: number): number {

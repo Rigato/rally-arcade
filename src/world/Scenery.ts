@@ -138,7 +138,9 @@ export class Scenery {
           const z = sample.position.z + sample.right.z * u;
           const y = track.heightAt(ss, u) - 0.02;
 
-          this.items.push(this.makeItem(zone, x, y, z, rng, this.isHairpin(ss)));
+          this.items.push(
+            this.makeItem(zone, x, y, z, rng, this.isHairpin(ss), Math.abs(u) - half),
+          );
         }
       }
 
@@ -171,17 +173,21 @@ export class Scenery {
     z: number,
     rng: () => number,
     inHairpin: boolean,
+    distanceFromEdge: number,
   ): SceneryItem {
     const roll = rng();
     let kind: SceneryKind;
 
     if (zone === 'forest') {
       kind = roll < 0.5 ? 'pine' : roll < 0.78 ? 'rock' : 'bush';
-      if (inHairpin && kind === 'pine') {
+      if ((inHairpin || distanceFromEdge < 3.5) && kind === 'pine') {
         kind = rng() < 0.55 ? 'rock' : 'bush';
       }
     } else {
       kind = roll < 0.42 ? 'cactus' : roll < 0.72 ? 'rock' : 'drybush';
+      if (distanceFromEdge < 3.5 && kind === 'cactus') {
+        kind = rng() < 0.5 ? 'rock' : 'drybush';
+      }
     }
 
     const baseScale = 0.75 + rng() * 0.75;

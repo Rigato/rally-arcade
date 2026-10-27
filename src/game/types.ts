@@ -173,7 +173,11 @@ export interface MedalTargets {
 export interface RaceTuning {
   splitTarget: number;
   medals: MedalTargets;
+  /** Reservado: limite antigo do plano (24 m), hoje substituído por `offTrackLimit`. */
   worldLimit: number;
+  /** Distância além da borda da pista que dispara a recuperação (m). */
+  offTrackLimit: number;
+  /** Duração total da recuperação/fade (s); o cronômetro continua correndo. */
   recoveryPenalty: number;
 }
 
