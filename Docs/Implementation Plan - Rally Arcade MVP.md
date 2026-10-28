@@ -683,4 +683,46 @@ O playtest aprovou o protótipo e pediu uma segunda camada de variedade e sensa�
 - Ver se a nova velocidade (141 km/h) e o freio +15% deixam as curvas curtas controláveis; o teste deve ser no celular.
 - Validar a poeira e o rumble em movimento, além de confirmar se a poeira alta está sutil o suficiente.
 - Recalibrar medalhas/parciais das pistas procedurais de ~1,5 km; os alvos atuais escalam com o comprimento, mas a velocidade +15% mudou o ritmo.
-- A pista fixa continua com as medalhas antigas (59,3/67,6/77,1 s); o carro mais rápido pode deixá-las fáceis.
+- A pista fixa continua com as medalhas antigas (59,3/67,6/77,1 s) na v5; isso foi resolvido na seção 28 com **36/42/48 s** e parciais 8,2/16,5/24,7.
+
+## 28. Hairpin extremo, medalhas e poeira v6 (Oct 28, 2026)
+
+O playtest aprovou kink, larguras e distâncias. O hairpin normal de 20–23 m ficou fácil demais — quase não exigia frear — e o usuário pediu uma variante extrema. Também pediu medalhas de ouro 36–46 s e poeira um pouco mais densa/subindo mais.
+
+### Hairpin extremo
+
+- **Normal:** 20–23 m / sweep 160–180° (inalterado).
+- **Extremo:** **14–15 m / sweep 170–185°**, 1 por pista; normais 0–1 (total 1–2).
+- Aproximação reta de **45–60 m**, saída de **35–60 m**, a ≥80 m da largada/chegada.
+- Largura local **5,2–6,2 m**; a regra de separação de 40 m é afrouxada só para as duas pernas do próprio extremo (≥26 m).
+- O raio ficou no topo da faixa 12–15 m (**14–15 m**) porque os ombros visuais de 12 m se encostam; em 14–15 m o interior vira um apron contínuo, sem costura evidente. Medido após a spline: **13,6–14,8 m**.
+- Validação v5: raio mínimo pass **8 m**, warn **10 m**; legado continua 22/25.
+- 100/100 seeds com exatamente 1 extremo; 55 à direita / 45 à esquerda; sem autointerseção.
+
+### Medalhas e parciais
+
+- Fórmula procedural: `gold = 36 + 10 * clamp((length - 1300)/350, 0, 1)`; `silver = gold + 6`; `bronze = gold + 12`.
+- Nas 100 seeds (1517,7–1625,3 m): **ouro 42,2–45,3 s**, prata 48,2–51,3 s, bronze 54,2–57,3 s. Parciais no ritmo do ouro: `target = gold * s / length`.
+- Pista fixa: **ouro 36 / prata 42 / bronze 48 s**; parciais **8,2 / 16,5 / 24,7 s**.
+- O gerador legado mantém a fórmula antiga; `freeze-track.ts` aplica os valores fixos novos e reproduz `track01.ts` byte a byte.
+- Observação física: 36 s em 1.518 m exigiria 42,2 m/s de média, acima da máxima de 39,1 m/s. Os 36–42 s do usuário provavelmente foram na pista fixa de 1,1 km; o ouro procedural atual é 42,2–45,3 s.
+
+### Poeira v6
+
+- Pool **80**; taxa máxima **34/s**; começa em **5°** e satura em **27°**.
+- Subida inicial **1,0–2,0 m/s**; gravidade **0,25 m/s²**; vida 0,50–0,95 s; tamanho 0,30–0,65 m; alpha 0,28–0,55.
+- Teste sintético a 20 m/s: 10° → média 3,67 / máx 6; 30° → média 16,3 / regime ~19 / máx 21; altura de pico 0,73 → 1,05 m. Zero a 0°/5°.
+- No jogo: reta 0; 11° ≈ 4; 29–30° ≈ 10–12 ativos; dissipa em ~0,6–0,9 s.
+
+### Testes
+
+- `npm run typecheck`, `npm run build`, `npm run validate:track` OK; pista fixa 1096,8 m, 36/42/48.
+- 100/100 seeds válidas; 1 hairpin extremo por seed; 4 zonas; 6–8 powerups; 50–75 obstáculos.
+- Resultado procedural no jogo (seed 1): ouro **43,5 s**, prata 49,5, bronze 55,5; resultado fixo: 36/42/48.
+- Touch 5 botões e desktop oculto; console sem erros.
+
+### Pendências
+
+- Testar se o hairpin de 14–15 m já obriga a frear o suficiente ou se precisa descer para **12–13 m** (aceitando mais sobreposição de ombros ou reduzindo o ombro local).
+- Confirmar a experiência de ouro: 42,2–45,3 s nas procedurais e 36 s na fixa; ajustar prata/bronze e parciais depois.
+- Avaliar a poeira v6 em movimento; se ainda estiver fraca, subir `MAX_RATE` para ~37–40.
