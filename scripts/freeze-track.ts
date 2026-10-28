@@ -1,11 +1,13 @@
 /**
  * Congela a seed escolhida no formato do `TrackDef` fixo A→B.
  *
- * Estratégia: `generateProceduralTrack(91)` gera o traçado em serpentina com 4
- * zonas. O gerador sempre tem um hairpin de ~26,3–27,5 m de raio; uma escala
- * uniforme de 1.1102 leva o raio mínimo para ~30,2 m e o comprimento para
- * ~1097 m. Larguras, alturas de rampa, `u` dos powerups/obstáculos e o relevo
- * relativo ficam intactos (a escala é uniforme em x/y/z).
+ * Estratégia: `generateLegacyProceduralTrack(91)` reproduz o gerador antigo
+ * (serpente de 4 pernas + 3 hairpins) do qual a pista fixa `track01-v3` foi
+ * congelada. O gerador novo das pistas aleatórias NÃO é usado aqui. O legado
+ * sempre tem um hairpin de ~26,3–27,5 m de raio; uma escala uniforme leva o
+ * raio mínimo para ~30,2 m e o comprimento para ~1100 m. Larguras, alturas de
+ * rampa, `u` dos powerups/obstáculos e o relevo relativo ficam intactos (a
+ * escala é uniforme em x/y/z).
  *
  * Uso:
  *   node_modules/.bin/rolldown scripts/freeze-track.ts --format esm --platform node \
@@ -14,7 +16,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Track } from '../src/track/Track';
-import { generateProceduralTrack } from '../src/track/procedural/ProceduralTrack';
+import { generateLegacyProceduralTrack } from '../src/track/procedural/ProceduralTrack';
 import { Obstacles } from '../src/track/Obstacles';
 import type { TrackDef } from '../src/game/types';
 
@@ -23,7 +25,7 @@ const MIN_RADIUS_TARGET = 30.55;
 const ELEVATION_SCALE = 0.72;
 const MAX_LENGTH = 1099.5;
 
-const source = generateProceduralTrack(SEED);
+const source = generateLegacyProceduralTrack(SEED);
 const sourceTrack = new Track(source);
 
 function minRadiusOf(track: Track): number {

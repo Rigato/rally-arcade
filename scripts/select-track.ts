@@ -2,7 +2,11 @@
  * Seleção da seed da pista fixa A→B — compara as seeds com as mesmas regras do
  * `validate-track.ts` (B1), sem alterar nenhum arquivo compartilhado.
  *
- * O gerador sempre tem um hairpin de 26,3–27,5 m, então congelamos a seed com
+ * Usa o gerador LEGADO (serpente de 4 pernas), o mesmo que produziu a pista
+ * fixa `track01-v3` na seed 91. O gerador novo das pistas aleatórias não é
+ * compatível com a escala/congelamento da pista fixa e não deve ser usado aqui.
+ *
+ * O legado sempre tem um hairpin de 26,3–27,5 m, então congelamos a seed com
  * uma escala uniforme que leve o raio mínimo para >= 30,1 m (mantendo o
  * comprimento <= 1100 m). Este script calcula a escala, projeta as medidas e
  * imprime as seeds viáveis.
@@ -13,7 +17,7 @@
  */
 import { Track } from '../src/track/Track';
 import {
-  generateProceduralTrack,
+  generateLegacyProceduralTrack,
   validateProceduralTrack,
 } from '../src/track/procedural/ProceduralTrack';
 import type { TrackDef } from '../src/game/types';
@@ -92,7 +96,7 @@ const MIN_RADIUS = 30.1;
 const rows: Row[] = [];
 
 for (let seed = 1; seed <= 100; seed += 1) {
-  const def = generateProceduralTrack(seed);
+  const def = generateLegacyProceduralTrack(seed);
   const track = new Track(def);
   const length = track.length;
   const { radius } = b1Radius(def);

@@ -79,6 +79,9 @@ for (let i = 0; i < count; i += 1) {
           kickers: 0,
           splits: 0,
           startToFinish: 0,
+          bboxWidth: 0,
+          bboxHeight: 0,
+          minSectionDistance: 0,
         },
       },
       elapsedMs: performance.now() - start,
@@ -179,6 +182,11 @@ function printSummary(items: readonly Row[], errors: readonly string[]): void {
     console.log(
       `Grade máxima: ${range(grades.map((grade) => grade * 100))}% | ` +
         `tempo de geração: ${range(times)} ms`,
+    );
+    console.log(
+      `Caixa máxima: ${Math.max(...valid.map((row) => Math.max(row.validation.stats.bboxWidth, row.validation.stats.bboxHeight))).toFixed(0)} m | ` +
+        `separação mínima entre trechos: ${Math.min(...valid.map((row) => row.validation.stats.minSectionDistance)).toFixed(1)} m | ` +
+        `A→B: ${range(valid.map((row) => row.validation.stats.startToFinish))} m`,
     );
     console.log(
       `Obstáculos: ${range(valid.map((row) => row.validation.stats.obstacles))} | ` +
