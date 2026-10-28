@@ -6,13 +6,15 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 **Jogue agora:** <https://rigato.github.io/rally-arcade/>
 
-> Status: **MVP completo — M5, com powerups (M5b), controles GO/botões e pista A→B**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. A pista fixa agora é uma seed procedural curada (1096,8 m), e o carro tem física de derrapagem mais solta; o conjunto está em playtest para calibrar tempos e feeling.
+> Status: **MVP completo — M5, com powerups (M5b), controles touch de uma mão, pista A→B e gerador procedural variado**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. A pista fixa é uma seed procedural curada (1096,8 m), as pistas aleatórias agora misturam curvas de vários raios e os dois sentidos, e o touch usa 5 botões com combos de freio. O conjunto está em playtest para calibrar tempos e feeling.
 
 ## Screenshots
 
 ![Largada com GO](Docs/screenshots/start-go.png)
 
-![Controles em jogo](Docs/screenshots/running-controls.png)
+![Controles touch em jogo](Docs/screenshots/running-controls.png)
+
+![Menu de mão](Docs/screenshots/touch-hand-menu.png)
 
 ## Documentação
 
@@ -32,18 +34,21 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 | Ação | Touch | PC |
 | --- | --- | --- |
-| Iniciar | GO! central ou toque na tela | W / ↑ / Enter |
+| Iniciar | GO! central ou toque na tela | Clique no GO / W / ↑ / Enter |
 | Acelerar | Automático depois do GO | Automático depois do start |
-| Esterçar / derrapar | Segurar ◀ ou ▶ (canto inferior esquerdo) | A / ← (esquerda), D / → (direita) |
-| Frear | Segurar FREIO (canto inferior direito) | S / ↓ |
-| Frear e virar | Dois dedos: ◀/▶ + FREIO | A/D + S |
+| Esterçar / derrapar | Segurar ◀ ou ▶ no stack (canto inferior direito por padrão) | A / ← (esquerda), D / → (direita) |
+| Frear | Segurar FREIO na base do stack | S / ↓ |
+| Frear e virar | ◀F/▶F com um dedo, ou ◀/▶ + FREIO com dois dedos | A/D + S |
+| Lado do stack | Menu **MÃO**: DIREITA ou ESQUERDA, persistido | — |
 | Freio de mão | Sem botão no touch por enquanto | Espaço |
 | Reiniciar | Botão no topo da tela | R |
 | Pista | 🎲 NOVA (seed 1–100) / FIXA | Mesmos botões na tela |
 | Telemetria (debug) | — | H |
 | Pausa | Auto-pause ao trocar de aba | — |
 
-O carro fica parado no READY. O GO libera a largada e liga a auto-aceleração; soltar o freio volta a acelerar. Segurar ◀/▶ vira na direção da tela; com dois dedos é possível frear e virar ao mesmo tempo. O freio de mão continua disponível no teclado (Espaço), mas não há um quarto botão no touch.
+O carro fica parado no READY. O GO libera a largada e liga a auto-aceleração; soltar o freio volta a acelerar. O stack touch tem **5 botões**: a linha de cima é ◀/▶ puro, a linha do meio é **◀F/▶F** (esterço + freio no mesmo dedo) e embaixo fica o **FREIO** largo. Assim dá para frear e virar com um polegar, ou usar dois dedos nos botões puros. O menu **MÃO** acima do stack escolhe o lado (DIREITA/ESQUERDA) e a escolha fica em `localStorage['rally.controls.side.v1']`.
+
+No PC o stack, o gatilho MÃO e o menu não aparecem; o GO mostra “CLIQUE OU ENTER” e o teclado continua funcionando. O freio de mão segue disponível no Espaço, mas não há botão de freio de mão no touch.
 
 Os botões **🎲 NOVA** e **FIXA** no topo trocam entre uma pista procedural aleatória (seed 1–100) e a pista fixa A→B.
 
@@ -55,7 +60,7 @@ Os botões **🎲 NOVA** e **FIXA** no topo trocam entre uma pista procedural al
 - **Botões de pista:** `🎲 NOVA` gera uma seed procedural 1–100; `FIXA` volta à pista A→B.
 - **Barra de progresso:** distância percorrida, um marcador por parcial (250/500/750 m) e ponto do carro no fim do preenchimento.
 - **GO!:** overlay central no READY; inicia a corrida e a auto-aceleração.
-- **Controles touch:** ◀/▶ no canto inferior esquerdo, FREIO no canto inferior direito; aparecem depois do GO.
+- **Controles touch:** stack de 5 botões no canto inferior direito — ◀/▶ puros, ◀F/▶F com freio e FREIO largo embaixo. O menu **MÃO** escolhe o lado; no PC todo o stack fica oculto.
 - **Banner de parcial:** nome, tempo e delta (`+0,42` em vermelho, `-0,31` em verde) por ~2,5 s.
 - **Resultado:** tempo total, medalha, tempos-alvo, as **3 parciais** (tempo e delta), melhor tempo, selo `NOVO RECORDE` quando aplicável e o botão grande **CORRER DE NOVO**. O overlay escuro só intercepta toque no painel/botão; escondido, não bloqueia o canvas.
 - **Powerups (topo esquerdo):** chips com nome, tempo restante e barra de duração, atualizados a ~10 Hz. Ao coletar, o nome do powerup sobe e some em ~0,75 s.
@@ -130,7 +135,7 @@ src/
 ├── camera/
 │   └── ChaseCamera.ts   # câmera de perseguição
 ├── input/
-│   └── Input.ts         # GO, auto-throttle, 3 botões, teclado e multi-touch
+│   └── Input.ts         # GO, auto-throttle, 5 botões, teclado e multi-touch
 ├── track/
 │   ├── track01.ts       # pista fixa A→B (seed 91, ~1097 m, 4 setores)
 │   ├── Track.ts         # spline, sampler, altura e validação
@@ -150,21 +155,28 @@ src/
     └── TuningPanel.ts   # lil-gui em ?debug=1
 ```
 
-Na raiz, `scripts/` reúne `validate-track.ts`, `select-track.ts`, `freeze-track.ts` e `proc-validate.ts`. A pista fixa foi congelada da seed procedural com `select-track.ts` e `freeze-track.ts`.
+Na raiz, `scripts/` reúne `validate-track.ts`, `select-track.ts`, `freeze-track.ts`, `proc-validate.ts` e `proc-diversity.ts`. A pista fixa foi congelada da seed 91 do gerador legado com `select-track.ts` e `freeze-track.ts`.
 
 ## Protótipo procedural
 
-A base do gerador de pistas por seed está em `src/track/procedural/`:
+O gerador de pistas por seed fica em `src/track/procedural/`:
 
-- `generateProceduralTrack(seed)` monta um `TrackDef` completo com 4 zonas alternadas, 3 parciais, largura/elevação variadas, 1–2 rampas baixas, powerups na pista e obstáculos fora dela.
-- `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, rampas, splits, powerups e obstáculos.
+- `generateProceduralTrack(seed)` usa uma **gramática de segmentos**: retas de ~20–90 m e curvas sorteadas entre cinco categorias — longa (R≈70–110 m), média (45–65 m), curta (28–38 m), cotovelo (26–31 m) e hairpin ocasional (26–30 m). Cada seed mistura pelo menos três categorias e curvas nos dois sentidos.
+- Candidatos são rejeitados se trechos não vizinhos ficarem a menos de **36 m** entre centros, se o layout passar de ~450×450 m ou se a chegada ficar a menos de **100 m** da largada. O resultado é sempre uma pista **A→B**.
+- `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, separação, rampas, splits, powerups e obstáculos.
+- `generateLegacyProceduralTrack(seed)` preserva a serpentina antiga de 4 pernas, usada para reproduzir a pista fixa `track01-v3`. As pistas aleatórias usam o gerador novo.
 
-Teste 20 seeds e gere um preview top-down:
+Validação atual: **100/100 seeds** (1–100), comprimento 1014–1148 m, raio mínimo 25,2–29,7 m, separação mínima 37,4 m e A→B de 159–584 m.
+
+![12 seeds procedurais](Docs/screenshots/proc-variety.png)
+
+Teste as seeds e gere um preview top-down ou um contact sheet:
 
 ```bash
 npx --yes tsx scripts/proc-validate.ts
 npx --yes tsx scripts/proc-validate.ts --count 100 --start 1
 npx --yes tsx scripts/proc-validate.ts --svg /tmp/opencode/pista.svg
+npx --yes tsx scripts/proc-diversity.ts --count 12 --svg /tmp/opencode/proc-sheet.svg
 ```
 
 A integração está pronta: `?track=proc&seed=1` (com ou sem `?debug=1`) carrega a pista gerada com os mesmos sistemas de cenário, splits, powerups e obstáculos. Na tela, **🎲 NOVA** sorteia uma seed 1–100 e **FIXA** volta à pista A→B. Ainda não há menu para escolher seed nem editor de pista; o objetivo é validar o gerador.
@@ -187,8 +199,9 @@ O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O dep
 - **M5 — Corrida completa** (concluído): cronômetro, distância, parcial, medalhas, resultado, melhor tempo persistido e reinício instantâneo.
 - **M5b — Powerups** (concluído): pickups 3D de turbo e grip extra, efeitos reais na física, chips com timers no HUD e restauração no reinício/teleporte.
 - **Pista v2** (substituída): circuito fechado de ~1035 m, 4 setores, curvas de raio ≥ 36 m e 3 parciais; reprovado no playtest por ser fechado.
-- **Controles v3** (em playtest): GO, auto-aceleração, 3 botões touch, teclado invertido corretamente, carro mais solto e derrapagem visível.
+- **Controles v3** (substituída): GO, auto-aceleração, 3 botões touch e teclado invertido corretamente.
+- **Controles v4** (em playtest): 5 botões touch com combos ◀F/▶F, menu MÃO à esquerda/direita e stack oculto no PC.
 - **Pista A→B** (em playtest): seed 91 congelada, 1096,8 m, 4 setores, raio mínimo 30,2 m, 2 rampas baixas, 3 parciais e 50 obstáculos.
-- **Protótipo procedural** (em validação): gerador determinístico por seed, carregável por `?track=proc&seed=N` e botão 🎲 NOVA na tela.
+- **Protótipo procedural v2** (em validação): gramática de curvas longas/médias/curtas/cotovelo/hairpin nos dois sentidos, 100/100 seeds, contact sheet e botão 🎲 NOVA.
 
 Fora do MVP: progressão, loja, menu/editor de pistas procedurais, áudio e cenários extras.

@@ -572,3 +572,46 @@ O teste seguinte foi no PC, com teclado. O controle ficou confortável, mas reve
 - Confirmar se os 3 botões são confortáveis em portrait e se frear+virar com dois dedos funciona na prática.
 - Recalibrar medalhas e parciais com tempos reais.
 - O freio de mão continua só no teclado; um 4º botão touch fica para outra rodada, se necessário.
+
+## 26. Uma mão no touch e variedade procedural (Oct 28, 2026)
+
+O playtest seguinte trouxe três correções: os traçados procedurais estavam todos parecidos (serpentina para um lado), os controles de toque apareciam no PC e o esquema de 3 botões não era confortável para jogar com uma mão.
+
+### Controles touch v4
+
+- **5 botões** no canto inferior direito por padrão:
+  - linha 1: ◀ e ▶ puros (só esterço);
+  - linha 2: ◀F e ▶F (esterço + freio no mesmo pointer);
+  - linha 3: FREIO largo, sozinho.
+- O stack mede ~118×184 px em 390×844 (56 px por botão, FREIO 60 px) e ~101×160 px em 320×568 (48 px / 54 px); safe areas respeitadas e sem cobrir o carro.
+- O menu **MÃO** fica acima do stack, visível em READY/RUNNING, e escolhe **DIREITA** (padrão) ou **ESQUERDA**. A escolha é aplicada na hora e persistida em `localStorage['rally.controls.side.v1']`; o stack espelha mantendo a ordem das linhas.
+- **Desktop:** o stack, o gatilho e o menu ficam ocultos. A detecção é `(pointer: coarse)` OU (`maxTouchPoints > 0` E `(hover: none)`), então notebook com touchscreen + mouse continua desktop. O GO troca o subtítulo para “CLIQUE OU ENTER”. Overrides de QA: `?touch=1` e `?touch=0`.
+- **Input:** `InputControlBinding { element, steer, brake }`; cada pointer contribui com seu esterço/freio, então ◀F = `steer +1` + freio e ▶F = `-1` + freio. Pointer capture, multi-touch, blur e cancelamento continuam iguais; teclado intocado.
+- O painel de tuning (opt-in) encolhe/desloca em touch para não cobrir a coluna de botões.
+
+### Gerador procedural v2
+
+- A serpentina fixa de 4 pernas foi substituída por uma **gramática de segmentos**: retas de 20–90 m e curvas em cinco categorias — longa (R 70–110 m, sweep 25–70°), média (45–65 m, 35–90°), curta (28–38 m, 45–110°), cotovelo (26–31 m, 75–120°) e hairpin ocasional (26–30 m, 150–180°).
+- Cada seed usa **≥3 categorias**, curvas nos **dois sentidos**, no máximo 2 curvas seguidas para o mesmo lado e nenhum sentido com menos de 30% do sweep total.
+- Candidatos são rejeitados por:
+  - separação < **36 m** entre trechos não vizinhos (spatial hash, amostragem de 1 m, janela de 46 m ao longo da pista);
+  - caixa > **450×450 m**;
+  - chegada a < **100 m** da largada.
+- Kickers são posicionados a partir dos metadados das retas, com 40 m+ de pouso e sem powerup a menos de 20 m antes.
+- O gerador antigo continua exportado como `generateLegacyProceduralTrack(seed)` e é usado por `freeze-track.ts`/`select-track.ts` para reproduzir a pista fixa `track01-v3`. **A pista fixa não mudou.**
+- Validação: **100/100 seeds (1–100)**, 1014–1148 m, raio mínimo 25,2–29,7 m, separação mínima 37,4 m, A→B 159–584 m, 32–56 obstáculos, 4–6 powerups e 1–2 kickers. Geração de 100 seeds em ~1,8 s.
+- `scripts/proc-diversity.ts` gera métricas por seed e um contact sheet top-down; `Docs/screenshots/proc-variety.png` mostra 12 seeds.
+
+### Testes
+
+- 55/55 verificações de touch no headless: geometria em 390×844 e 320×568; ◀ puro sem freio; ◀F/▶F com freio máximo; FREIO puro; dois pointers ◀+FREIO; release zera; menu abre em READY/RUNNING sem iniciar corrida; troca de lado aplica e persiste; desktop sem stack/gatilho/menu, GO “CLIQUE OU ENTER”, Enter inicia e A esterça.
+- Integração no jogo: seeds 5/23/61/97 carregam em READY com 50 obstáculos e 1054–1129 m; `🎲 NOVA` carrega `proc-79` (1024,8 m) e `FIXA` volta para `track01-v3` (1096,8 m); sem erros de console.
+- `npm run typecheck`, `npm run build` e `npm run validate:track` passam; a pista fixa segue com 1096,8 m e raio 30,2 m.
+- Screenshots: `start-go.png`, `running-controls.png`, `touch-hand-menu.png` e `proc-variety.png`.
+
+### Pendências de playtest
+
+- Testar os 5 botões em uma mão: se os combos ◀F/▶F resolvem frear+virar ou se atrapalham; decidir se o layout final fica em 3 ou 5 botões.
+- Validar o menu MÃO e a persistência no celular real (incluindo recarregar e trocar de lado no meio da sessão).
+- Avaliar se as curvas procedurais novas são variadas o suficiente e se algum raio curto/elbow ficou apertado demais na jogabilidade.
+- Recalibrar medalhas/parciais com tempos reais; a pista fixa continua a seed 91 antiga (se o novo gerador agradar, dá para congelar uma nova seed depois).
