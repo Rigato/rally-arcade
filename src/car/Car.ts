@@ -129,6 +129,10 @@ export class Car {
     const maxSpeedMultiplier = modifiers?.maxSpeedMultiplier ?? 1;
     const accelerationMultiplier = modifiers?.accelerationMultiplier ?? 1;
     const gripMultiplier = modifiers?.gripMultiplier ?? 1;
+    // Limite longitudinal do piso (áreas de escape). Nos pisos de pista o
+    // multiplicador é 1 e nada muda.
+    const surfaceMax =
+      tuning.maxSpeed * maxSpeedMultiplier * clamp(surface.speedLimit, 0, 1);
 
     this.previousPosition.copy(state.position);
     this.previousHeading = state.heading;
@@ -257,6 +261,22 @@ export class Car {
         -tuning.maxSpeed * 0.6,
         tuning.maxSpeed * maxSpeedMultiplier,
       );
+
+      // --- Limite do piso (v5) ---
+      // Fora de pista o motor não sustenta a velocidade da pista. Acima do
+      // limite, o carro perde velocidade com uma desaceleração extra suave
+      // (`offRoadBrake`), nunca com corte instantâneo; abaixo dele nada é
+      // aplicado. O grip lateral e a derrapagem ficam intocados.
+      if (nextVLong > surfaceMax) {
+        const braked = nextVLong - surface.offRoadBrake * dt;
+        // Se já estava acima do teto, não ganha mais velocidade: no máximo
+        // mantém a atual e deixa arrasto + freio extra trazerem de volta.
+        nextVLong = Math.max(surfaceMax, Math.min(braked, vLong));
+      } else if (nextVLong < -surfaceMax * 0.6) {
+        const reverseMax = -surfaceMax * 0.6;
+        const braked = nextVLong + surface.offRoadBrake * dt;
+        nextVLong = Math.min(reverseMax, Math.max(braked, vLong));
+      }
 
       // Evita creep de poucos mm/s depois que o carro já parou.
       if (!input.throttle && Math.abs(nextVLong) < 0.02) {

@@ -28,6 +28,16 @@ export interface SurfaceDef {
   bump: number;
   /** Multiplicador da resposta de esterço (1.0 no M1; ajustado no M2). */
   steerMultiplier: number;
+  /**
+   * Multiplicador do limite de velocidade longitudinal (0..1). Fora de pista
+   * o carro não passa de `maxSpeed * speedLimit`, por mais que acelere.
+   */
+  speedLimit: number;
+  /**
+   * Desaceleração extra (m/s²) aplicada suavemente quando o carro está acima
+   * do limite do piso. 0 nos pisos de pista.
+   */
+  offRoadBrake: number;
 }
 
 /** Powerups do MVP: turbo (velocidade) e grip extra (derrapagem). */

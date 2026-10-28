@@ -213,6 +213,9 @@ export class TuningPanel {
         1.5,
         0.05,
       );
+      // v5: limite de velocidade do piso e freio extra fora de pista.
+      this.addNumber(surfaceFolder, surface, 'speedLimit', 'Limite vel. ×', 0.3, 1, 0.01);
+      this.addNumber(surfaceFolder, surface, 'offRoadBrake', 'Freio off-road', 0, 20, 0.5);
     }
   }
 
