@@ -1,17 +1,19 @@
-# Mini GDD - Rally Arcade v2
+# Mini GDD - Rally Arcade v2.1
 
-Oct 27, 2026 · @George
+Oct 28, 2026 · @George
+
+> **Revisão 2.1 (Oct 28, 2026).** Este documento foi atualizado para refletir o protótipo v7: GO + auto-aceleração + 5 botões touch, pista procedural aleatória como default, pista fixa via **FIXA**, hairpin extremo, medalhas atuais e poeira. O GDD v2 original está preservado em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
 
 ## Ficha e High Concept
 
 Rally Arcade é um jogo de corrida arcade para celular, jogável com uma mão, em que o jogador leva um carro derrapante de A a B por terrenos diferentes, atrás do menor tempo e da melhor medalha.
 
-- **Stack:** Three.js + Vite (JavaScript ou TypeScript), sem engine; física do carro própria.
+- **Stack:** Three.js + Vite (TypeScript estrito), sem engine; física do carro própria.
 - **Escopo / Complexidade:** pequeno (1 mês) para chegar ao MVP.
 - **Gênero:** arcade, corrida.
-- **Plataforma alvo:** web, celular em orientação portrait jogado com o polegar; PC como plataforma secundária, com mouse.
+- **Plataforma alvo:** web, celular em orientação portrait jogado com o polegar; PC como plataforma secundária, com teclado (mouse ainda não implementado para direção).
 - **Público / Vibe:** casual, relaxante.
-- **Status:** ideia em definição, com o MVP mapeado.
+- **Estado:** protótipo jogável em playtest; MVP do GDD quase completo, com duas lacunas de controle: freio de mão no touch e mouse no PC.
 
 **High Concept:** jogo relaxante de corrida de rally em que o jogador percorre uma pista aberta, do ponto A ao B, por diversos tipos de terreno com um carro deslizante, desviando de obstáculos e pegando powerups. O objetivo é fazer o menor tempo possível e conquistar medalhas de ouro, prata ou bronze.
 
@@ -19,9 +21,9 @@ Rally Arcade é um jogo de corrida arcade para celular, jogável com uma mão, e
 
 O jogo se sustenta em três sensações: dirigir gostoso, viver o rally e rejogar sempre uma pista nova.
 
-1. **Gostoso de dirigir e fácil de jogar.** Dá para jogar com uma mão só, com o polegar, com o celular de pé. O carro é levemente solto do controle e derrapa. Os terrenos mudam o comportamento do carro, principalmente o grip.
-2. **Elementos importantes de rally.** Saltos, diferentes tipos de curva (incluindo hairpin feito com freio de mão) e diferentes cenários: neve, floresta, vilarejos, deserto, estrada de terra, cascalho e asfalto.
-3. **Pista procedural para alta rejogabilidade.** Fica fora do primeiro MVP, que usa uma pista fixa para validar o controle primeiro.
+1. **Gostoso de dirigir e fácil de jogar.** Dá para jogar com uma mão só, com o polegar, com o celular de pé. O carro é solto de traseira e derrapa. Os terrenos mudam o comportamento do carro, principalmente o grip. O esquema atual usa **GO + auto-aceleração + 5 botões** (◀/▶, ◀F/▶F e FREIO), com menu para escolher o lado da mão.
+2. **Elementos importantes de rally.** Saltos, curvas de vários tipos (incluindo hairpin normal e extremo) e cenários diferentes. Hoje: floresta/cascalho e deserto/areia. Neve, vilarejo, asfalto e estrada de terra continuam no roadmap.
+3. **Pista procedural para alta rejogabilidade.** Já implementada como protótipo e agora é o **modo padrão**: abrir `/` sorteia uma seed 1–100. A pista fixa continua como test track no botão **FIXA**.
 
 ## 2. O Diferencial (The Hook)
 
@@ -29,12 +31,12 @@ O jogo é leve e divertido, e errar não condena a corrida: dá para sair da pis
 
 - **Recuperar o erro é parte da graça.** O fora da pista é um terreno a atravessar, não uma punição imediata. Só bater num obstáculo sólido é o erro de verdade.
 - **Medalhas graduais e reinício quase instantâneo.** Quem estourou o ouro ainda luta pela prata ou pelo bronze, e um botão no topo da tela reinicia a corrida na hora.
-- **Dúvida até o fim do trecho.** O jogador não vê a diferença para o tempo-alvo no meio do trecho, só nas paradas parciais. Essa incerteza faz querer acertar para ver como ficou.
-- **Desafio crescente.** A dificuldade aumenta a cada X tempos ou X mudanças de cenário.
+- **Dúvida até o fim do trecho.** O jogador não vê a diferença para o tempo-alvo no meio do trecho, só nas paradas parciais.
+- **Desafio crescente.** A dificuldade aumenta a cada X tempos ou X mudanças de cenário — **ainda não implementado**; é um dos próximos pilares.
 
 ## 3. Core Gameplay Loop
 
-A corrida dura de 30 a 60 s no MVP e termina em uma medalha, o que leva o jogador a tentar de novo.
+A corrida dura de 30 a 60 s e termina em uma medalha, o que leva o jogador a tentar de novo. Nas pistas procedurais atuais (~1,5 km), as corridas ficam mais perto de 45–60 s; a pista fixa de ~1,1 km tem ouro em 39 s.
 
 **Loop da corrida**
 
@@ -45,51 +47,59 @@ A corrida dura de 30 a 60 s no MVP e termina em uma medalha, o que leva o jogado
 
 **Loop de progressão (fora do MVP)**
 
-Correr, ganhar medalha, receber dinheiro, tunar ou comprar carros, e liberar fases e mundos que exigem determinado carro.
+Correr, ganhar medalha, receber dinheiro, tunar ou comprar carros, e liberar fases e mundos que exigem determinado carro. **Ainda não implementado.**
 
 ## 4. Mecânicas Principais
 
-O controle é pensado para o celular em portrait e para uma mão só; o carro desliza, a câmera acompanha o movimento e o terreno muda principalmente o grip.
-
 ### Controles e movimento (touch)
 
-- **Acelerar:** tocar na tela. O carro fica fixo na parte de baixo da tela, visto por trás.
-- **Esterçar e derrapar:** o esterço depende do **deslocamento** do dedo em relação ao ponto de toque inicial. Se o dedo vai para a direita, o carro gira e derrapa para a direita.
-- **Frear:** soltar o dedo é freio ativo. A frenagem começa na hora e cresce em intensidade com o tempo sem o dedo na tela.
-- **Freio de mão:** serve para jogar o carro de lado no início de uma curva em cotovelo (hairpin), como no rally real. Em cada hairpin o jogador escolhe entre desacelerar bastante e curvar sem freio de mão, ou desacelerar menos e usar o freio de mão para ganhar tempo.
-- **Ativação do freio de mão (a testar):** por deslocamento acima de um limite do dedo, ou por um botão dedicado. Toque com dois dedos foi descartado, por ser difícil com o polegar.
-- **Reiniciar:** botão no topo da tela reinicia a corrida na hora.
-- **PC:** a princípio, o mesmo esquema simulado com o mouse.
+O controle é pensado para o celular em portrait e para uma mão só. O esquema de **drag + soltar para frear** do GDD v2 foi substituído após playtest.
+
+- **Início:** o carro fica parado em READY. **GO!** central, toque no canvas ou W/↑/Enter inicia o cronômetro.
+- **Aceleração:** automática depois do GO. O freio corta o motor.
+- **Esterço:** stack de 5 botões no canto inferior, por padrão à direita:
+  - linha 1: **◀** e **▶** puros;
+  - linha 2: **◀F** e **▶F** (esterço + freio no mesmo dedo);
+  - linha 3: **FREIO** largo.
+  Segurar; multi-touch permite dois dedos. Não há drag steering.
+- **Lado da mão:** o menu **MÃO** alterna DIREITA/ESQUERDA e persiste em `localStorage['rally.controls.side.v1']`.
+- **Freio de mão:** disponível **somente no teclado (Espaço)**. Ainda não há botão no touch; é uma lacuna conhecida e um ponto para a próxima fase.
+- **Reiniciar:** botão no topo ou R.
+- **PC:** teclado A/← esquerda, D/→ direita, S/↓ freio, Espaço handbrake, R reset, H telemetria. O mouse ainda só clica no GO/canvas; o esquema de mouse do GDD v2 não foi implementado.
+- **Desktop:** os controles touch ficam ocultos; o GO mostra “CLIQUE OU ENTER”.
 
 ### Derrapagem
 
-A direção para onde o carro aponta é diferente da direção em que ele se move. O grip puxa o movimento em direção ao que o carro aponta; quanto menos grip, mais o carro escorrega. O Polygon Drift é inspiração para essa mecânica, sem copiar.
+A direção para onde o carro aponta é diferente da direção em que ele se move. O grip puxa o movimento em direção ao que o carro aponta; quanto menos grip, mais o carro escorrega. O modelo atual tem slip visível (~30° com esterço cheio em velocidade), grip que cai com o slip e recuperação por contra-esterço/freio. O Polygon Drift é inspiração, sem cópia.
 
 ### Suspensão e rolagem
 
-No MVP é só visual: a carroceria rola conforme o movimento lateral e amortece o pouso dos saltos, para dar vida e sensação de movimento. A influência no comportamento do carro fica para depois.
+No MVP é só visual: a carroceria rola conforme o movimento lateral e amortece o pouso dos saltos. A influência no comportamento físico do carro continua **fora do MVP**.
 
 ### Câmera
 
-Terceira pessoa, por trás do carro, em ângulo alto, quase top-down, para mostrar mais cenário e possíveis caminhos alternativos. A câmera acompanha o carro com uma leve folga e aponta para a **direção do movimento**, não para a direção do carro. O carro quase não se move na tela e, ao derrapar, gira em relação à câmera. O atraso da câmera será definido testando.
+Terceira pessoa, por trás do carro, em ângulo alto, quase top-down, para mostrar cenário e possíveis caminhos alternativos. A câmera acompanha o carro com folga e aponta para a **direção do movimento**, não para a direção do carro. O carro quase não se move na tela e, ao derrapar, gira em relação à câmera. O atraso foi calibrado no protótipo.
 
 ### Terrenos
 
-- Cada cenário tem um único tipo de piso, sem mistura dentro do cenário: cascalho na floresta, areia no deserto.
-- O terreno muda principalmente o **grip**, isto é, o quanto o carro escorrega ao esterçar.
-- Também muda levemente a aceleração, a frenagem, o arrasto e a resposta do esterço (quão rápido o carro passa a se mover para onde aponta).
+- Cada cenário tem um tipo principal de piso: **floresta/cascalho** e **deserto/areia**.
+- Fora da pista há pisos próprios (floresta/deserto) mais soltos, com mais arrasto e trepidação.
+- O terreno muda **grip**, aceleração, frenagem, arrasto, resposta do esterço e bump.
+- **Novos cenários** (neve, vilarejo, asfalto, estrada de terra) continuam no roadmap.
 
 ### Pista e fora da pista
 
-- A pista tem subidas e descidas em inclinações diferentes. Pontos íngremes em distância curta criam saltos.
-- A largura varia: estreita e alarga. Cenários mais fáceis têm uma faixa de largura maior.
-- **Fora da pista dá para se recuperar.** Há obstáculos espalhados em distâncias diferentes da borda, e o piso acidentado desacelera, trepida e pode tirar o carro do chão. Se não bater em um obstáculo sólido, o jogador pode "salvar" o carro e voltar à pista.
-- **Bater** em um obstáculo sólido tira muita velocidade e dá um leve ricochete, sem teletransporte.
-- **Limite do mundo:** além de certo ponto o carro volta para a pista, perdendo tempo.
+- **Pista fixa:** `track01-v3`, A→B, **1096,8 m**, 4 setores, raio mínimo 30,2 m, 2 rampas, 4 powerups, 50 obstáculos. Acessível por **FIXA** / `?track=fixed`.
+- **Pistas procedurais:** A→B, **1518–1624 m**, 4 setores de ~354–438 m, 7 tipos de curva (incluindo **hairpin extremo 13–14 m** e **kink**), largura 4,6–15,0 m, chokes de 4,6–5,4 m, 6–8 powerups, 50–75 obstáculos, 2–3 platôs planos. Seed 1–100.
+- **Default:** abrir `/` sorteia uma procedural; **NOVA** gera outra; **FIXA** carrega a pista fixa.
+- A pista tem subidas e descidas; pontos íngremes criam saltos.
+- **Fora da pista dá para se recuperar.** O piso acidentado desacelera, trepida e pode tirar o carro do chão; obstáculos sólidos dão ricochete. Se não bater, o jogador pode voltar à pista.
+- **Limite do mundo:** além de ~12 m da borda, o carro é recuperado automaticamente perdendo tempo.
+- **Caminhos alternativos/linhas de risco-recompensa:** ainda não implementados; continuam como ideia em aberto.
 
 ### Saltos
 
-No MVP o carro salta, tem tempo de voo e pousa, com a suspensão amortecendo o pouso. Não há controle no ar. Manobras e mecânicas de salto e aterrissagem ficam para depois.
+No MVP o carro salta, tem tempo de voo e pousa, com a suspensão amortecendo o pouso. **Não há controle no ar.** Manobras e mecânicas de salto/aterrissagem ficam para depois.
 
 ### Powerups
 
@@ -97,30 +107,34 @@ O powerup é pego e ativa na hora; nada fica guardado. Pegar o mesmo powerup de 
 
 | Powerup | Efeito | Duração |
 | --- | --- | --- |
-| Turbo | Velocidade temporária | cerca de 2 s (a confirmar) |
+| Turbo | Velocidade temporária e boost de FOV | ~2 s |
 | Grip extra | Mais grip para virar melhor | 10 s |
 
 ### Vitória e derrota
 
-- **Vitória:** chegar ao fim da pista. A medalha vem do tempo: abaixo do tempo X é ouro, abaixo de Y é prata e abaixo de Z é bronze. Os valores serão ajustados depois do protótipo.
-- **Tempos parciais:** marcados a cada troca de cenário. A diferença para o tempo-alvo aparece só nas paradas parciais, não no meio do trecho.
+- **Vitória:** chegar ao fim da pista. A medalha vem do tempo.
+  - **Pista fixa:** ouro **39 s**, prata **45 s**, bronze **51 s**; parciais **8,9 / 17,9 / 26,8 s**.
+  - **Procedurais:** ouro **45,2–48,2 s**, prata +6 s, bronze +12 s; parciais no ritmo do ouro.
+- **Tempos parciais:** marcados a cada troca de cenário; a diferença para o alvo aparece nas parciais.
 - **Derrota:** não há game over. Errar custa tempo. As medalhas graduais e o reinício instantâneo permitem que quem errou ainda ganhe alguma coisa.
-- **Ideia a explorar:** como no rally, o público ajudar a "salvar" um carro que saiu da pista, ao custo de tempo parado.
+- **Ideia a explorar:** público ajudando a "salvar" um carro que saiu da pista, ao custo de tempo parado. **Não implementado.**
 
 ## 5. Direção de Arte e Áudio
 
-O visual é low poly 3D e nada realista, e o som mistura rally house com detalhes do carro e do piso.
+O visual é low poly 3D e nada realista; o som planejado mistura rally house com detalhes do carro e do piso.
 
-- **Estilo visual:** low poly 3D. Vista em terceira pessoa por trás do carro, em ângulo alto, mais próximo de um top-down.
+- **Estilo visual:** low poly 3D implementado. Vista em terceira pessoa por trás do carro, em ângulo alto, mais próximo de um top-down.
 - **Referência visual:** [Just Another Racing Game](https://play.google.com/store/apps/details?id=com.carona.project_carona).
-- **Tom sonoro:** Rally House, um subgênero emergente de música eletrônica que mistura deep house enérgico dos anos 90 com vocal loops de phonk, elementos de UK garage e a estética audiovisual retrô dos jogos clássicos de corrida.
-- **Detalhes de som importantes:** som do motor, estouros e pops do escapamento, e sons de derrapagem diferentes para cada tipo de pavimento e cenário.
+- **Tom sonoro planejado:** Rally House, com deep house enérgico, vocal loops de phonk, UK garage e estética retrô de jogos de corrida.
+- **Detalhes de som planejados:** motor, estouros/pops do escapamento e derrapagem diferente por piso/cenário.
+- **Estado do áudio:** **não implementado** no MVP; fica para uma fase de polimento.
+- **Poeira:** implementada e proporcional ao slip. No deserto a cor ainda tem pouco contraste com o chão; modular volume/cor por bioma é um item futuro.
 
 ## 6. Benchmarks e Inspirações
 
 As referências são dois jogos de Android, um para a derrapagem e outro para o visual.
 
-- **Polygon Drift (Android):** inspiração para a derrapagem dos carros, uma mecânica parecida com a que se quer. Serve de inspiração, não de cópia.
+- **Polygon Drift (Android):** inspiração para a derrapagem, sem cópia.
 - **Just Another Racing Game (Android):** look and feel visual.
 - **O que não fazer:** visual realista.
 
@@ -128,43 +142,59 @@ As referências são dois jogos de Android, um para a derrapagem e outro para o 
 
 O MVP existe para testar se dirigir é gostoso, antes de investir em arte e fases completas.
 
-- [ ] Mecânica principal funcional: acelerar, esterçar, derrapar, frear e freio de mão, em touch portrait com uma mão e com mouse no PC.
-- [ ] Painel de ajuste dos parâmetros do carro (grip, aceleração, arrasto, resposta do esterço, curva do freio) para acertar a sensação testando.
-- [ ] Suspensão e rolagem só visuais da carroceria, incluindo o pouso dos saltos.
-- [ ] Dois powerups: turbo temporário e grip extra.
-- [ ] Dois cenários com pisos diferentes: floresta com cascalho e deserto com areia.
-- [ ] Uma pista fixa de 30 a 60 s com subidas, descidas, largura variável e ao menos um salto, cobrindo o ciclo completo: início, troca de cenário, fim.
-- [ ] Fora da pista recuperável, com obstáculos espalhados, piso acidentado, ricochete ao bater e limite do mundo.
-- [ ] Cronômetro, distância percorrida e tempo parcial a cada troca de cenário.
-- [ ] Medalhas de ouro, prata e bronze por tempo-alvo, e botão de reinício no topo da tela.
+- [x] Mecânica principal funcional: acelerar, esterçar, derrapar e frear em touch portrait com uma mão; GO + auto-aceleração + 5 botões.
+- [ ] **Freio de mão no touch** — existe só no teclado.
+- [ ] **Mouse no PC para direção** — PC usa teclado; o mouse só inicia.
+- [x] Painel de ajuste dos parâmetros do carro e da pista para acertar a sensação testando.
+- [x] Suspensão e rolagem só visuais da carroceria, incluindo o pouso dos saltos.
+- [x] Dois powerups: turbo temporário e grip extra.
+- [x] Dois cenários com pisos diferentes: floresta com cascalho e deserto com areia.
+- [x] Uma pista fixa de 30–60 s com subidas, descidas, largura variável e ao menos um salto.
+- [x] Fora da pista recuperável, com obstáculos, piso acidentado, ricochete e limite do mundo.
+- [x] Cronômetro, distância percorrida e tempo parcial a cada troca de cenário.
+- [x] Medalhas de ouro, prata e bronze e botão de reinício no topo.
+- [x] **Além do MVP:** gerador procedural determinístico, pista procedural aleatória por default, 7 tipos de curva, hairpin extremo, poeira dinâmica e menu de lado dos controles.
 
 **Ordem dos marcos**
 
-1. Carro em plano liso, com toque, freio, freio de mão e painel de ajuste.
-2. Superfícies de cascalho e areia trocáveis.
-3. Pista por spline com elevação, largura variável e salto, com suspensão visual.
-4. Fora da pista, obstáculos e piso acidentado.
-5. Powerups, cronômetro, parciais, medalhas e reinício.
+1. Carro em plano liso, com toque, freio e freio de mão no teclado; painel de ajuste. ✅ (handbrake no touch pendente)
+2. Superfícies de cascalho e areia trocáveis. ✅
+3. Pista por spline com elevação, largura variável e salto, com suspensão visual. ✅
+4. Fora da pista, obstáculos e piso acidentado. ✅
+5. Powerups, cronômetro, parciais, medalhas e reinício. ✅
+6. Pista procedural, default aleatório, hairpin extremo e polish de poeira. ✅ (protótipo)
 
 ## 8. Fora do MVP
 
 Depois de validar o feeling, a ideia é crescer em progressão, variedade e profundidade de mecânicas.
 
-- **Progressão fora da corrida:** cada medalha rende dinheiro para tunar o carro e comprar outros, com vários modelos "reais" de rally para explorar. Certas fases ou mundos só abrem com determinado carro.
-- **Pista procedural** para alta rejogabilidade, com mais cenários: neve, vilarejos, asfalto, estrada de terra.
-- **Dificuldade crescente:** mais mudanças de cenário e composições mais difíceis nas dificuldades maiores, com desafios que aumentam a cada X tempos.
-- **Suspensão** influenciando o comportamento lateral do carro, além do efeito visual.
-- **Saltos:** manobras e mecânicas de controle no ar e na aterrissagem.
-- **Público** que ajuda a recolocar na pista o carro que saiu.
+- **Progressão fora da corrida:** cada medalha rende dinheiro para tunar o carro e comprar outros, com vários modelos de rally. Certas fases/mundos só abrem com determinado carro. **Não iniciado.**
+- **Mais cenários:** neve, vilarejos, asfalto, estrada de terra. **Não iniciado.**
+- **Dificuldade crescente:** mais mudanças de cenário e composições mais difíceis, com desafios a cada X tempos. **Não iniciado.**
+- **Suspensão** influenciando o comportamento lateral do carro, além do visual. **Não iniciado.**
+- **Saltos:** manobras e controle no ar/aterrissagem. **Não iniciado.**
+- **Público** ajudando a recolocar o carro na pista. **Não iniciado.**
+- **Áudio completo** (Rally House, motor, escapamento, derrapagem por piso). **Não iniciado.**
+- **Procedural como produto:** menu de seeds, histórico/favoritos, compartilhar seed, daily challenge e editor. **Parcial:** já há default aleatório, NOVA/FIXA e URLs com seed, mas não há menu/editor.
+- **Caminhos alternativos/linhas de risco-recompensa.** **Não iniciado.**
 
 ## 9. Pontos em aberto para testar
 
-Estes itens dependem de jogar o protótipo e ajustar.
+- **Freio de mão no touch:** 6º botão, gesto, combo ou manter teclado-only? O hairpin extremo atual exige freio normal.
+- **Medalhas:** o +3 s melhorou; continuar testando ouro/prata/bronze e as parciais.
+- **Poeira no deserto:** corrigir contraste da cor com o chão e modular volume/cor por bioma.
+- **Hairpin extremo:** 13–14 m foi aprovado; se ainda estiver fácil, testar 12–13 m com ombro local menor.
+- **Default procedural:** mostrar a seed no HUD/resultado ou permitir repetir a pista sem sair do fluxo?
+- **Caminhos alternativos:** entram no MVP ou ficam para depois?
+- **Limite do mundo:** calibrar os 12 m e o tempo perdido na recuperação.
+- **Áudio e progressão:** definir o próximo grande pilar antes de investir.
+- **Performance:** validar partículas/cenários em celular real; FPS de headless não representa.
 
-- Acionamento do freio de mão: deslocamento acima de um limite ou botão dedicado.
-- Atraso e folga da câmera ao seguir a direção do movimento.
-- Curva de crescimento do freio ao soltar o dedo.
-- Duração do turbo: ficou "2-2 segundos", a confirmar o valor.
-- Tempos-alvo de ouro, prata e bronze da pista fixa.
-- Caminhos alternativos na pista (linhas de risco e recompensa): entram no MVP ou depois?
-- Limite do mundo: onde fica e quanto tempo se perde ao voltar para a pista.
+## 10. Documentos relacionados
+
+- [`../README.md`](../README.md) — quickstart, comandos, controles, deploy.
+- [`Implementation Plan - Rally Arcade MVP.md`](Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md) — decisões de implementação e histórico v1–v7.
+- [`Handoff - Rally Arcade.md`](Handoff%20-%20Rally%20Arcade.md) — estado atual, gaps do GDD e agenda da próxima sessão de plan.
+- [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2 antes desta revisão.
+- [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md) — GDD v1 original.
+- [`screenshots/`](screenshots/) — capturas de referência (GO, controles, menu de mão, pista, choke, hairpin extremo, contact sheet procedural).

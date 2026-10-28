@@ -7,6 +7,16 @@ Documento para abrir uma nova sessão de **plan** sem reler todo o histórico. B
 - **Stack:** Vite + TypeScript estrito + Three.js; física própria, UI em DOM/CSS.
 - **Estado:** protótipo jogável, MVP do GDD quase completo, em playtest de feeling/tempos.
 
+## Documentos de referência
+
+- [`Docs/Mini GDD - Rally Arcade v2.md`](Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — **GDD oficial v2.1**, atualizado para o protótipo v7.
+- [`Docs/bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2 antes da revisão v2.1.
+- [`Docs/old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md) — GDD v1 original.
+- [`Docs/Implementation Plan - Rally Arcade MVP.md`](Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md) — decisões, marcos e histórico v1–v7.
+- [`Docs/Handoff - Rally Arcade.md`](Handoff%20-%20Rally%20Arcade.md) — este documento.
+- [`Docs/screenshots/`](screenshots/) — capturas de referência (GO, controles, menu de mão, pista, choke, hairpin extremo, contact sheet procedural).
+- [`README.md`](../README.md) — quickstart, comandos, controles e deploy.
+
 ---
 
 ## 1. Resumo executivo — o que o GDD previa e ainda não foi feito
@@ -28,7 +38,7 @@ O loop principal e **quase todo** o checklist do **MVP do GDD (seção 7)** est�
 | **Menu/seed/favoritos de pistas procedurais**, salvar/compartilhar seed | ⚠️ Parcial | Já há procedural aleatória por padrão, `?track=proc&seed=N`, botão NOVA e FIXA; não há menu de seeds, histórico, favoritos nem editor (editor é extensão, não está explícito no GDD). |
 | **Vários carros/modelos de rally** | ❌ Não iniciado | Parte da progressão; existe um único carro low poly. |
 
-**Observação importante:** a seção de **controles touch do GDD (drag + soltar para frear)** foi **substituída** pelo esquema atual de GO + auto-aceleração + 5 botões. Isso não é uma pendência; é uma decisão de playtest. O GDD precisa ser atualizado nesse ponto.
+**Observação importante:** a seção de **controles touch do GDD (drag + soltar para frear)** foi **substituída** pelo esquema atual de GO + auto-aceleração + 5 botões. Isso não é uma pendência; é uma decisão de playtest. O **GDD oficial já foi atualizado na v2.1**; o v2 antigo está preservado em `Docs/bak_old/`.
 
 **Já além do GDD:** o gerador procedural saiu de “fora do MVP” e virou o modo padrão; o touch de 5 botões com combos e menu MÃO também não estava previsto no GDD. A pista fixa continua como test track.
 
@@ -153,7 +163,7 @@ Escolher **um** vetor principal para o próximo ciclo, porque o protótipo já c
 - Corrigir contraste da poeira no deserto e adicionar multiplicador de volume por bioma.
 - Adicionar seed visível/share no HUD ou no resultado.
 - Testar handbrake touch em um 6º botão temporário.
-- Atualizar o GDD para o esquema de controle atual (5 botões, GO, auto-throttle) e para o default procedural.
+- Manter o GDD v2.1 atualizado a cada rodada; o v2 antigo está em `Docs/bak_old/`.
 
 ---
 

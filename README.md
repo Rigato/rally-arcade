@@ -18,9 +18,11 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 ## Documentação
 
-- [`Docs/Mini GDD - Rally Arcade v2.md`](Docs/Mini%20GDD%20-%20Rally%20Arcade%20v2.md)
+- [`Docs/Mini GDD - Rally Arcade v2.md`](Docs/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — GDD oficial v2.1
 - [`Docs/Implementation Plan - Rally Arcade MVP.md`](Docs/Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md)
 - [`Docs/Handoff - Rally Arcade.md`](Docs/Handoff%20-%20Rally%20Arcade.md)
+- [`Docs/bak_old/Mini GDD - Rally Arcade v2.md`](Docs/bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2
+- [`Docs/old_Mini GDD - Rally Arcade v1.md`](Docs/old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md) — GDD v1 original
 
 ## O loop
 
