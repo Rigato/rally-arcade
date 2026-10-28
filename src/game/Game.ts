@@ -3,6 +3,7 @@ import { Car } from '../car/Car';
 import { CarView } from '../car/CarView';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { Loop } from '../core/Loop';
+import { DriftDust, type DriftDustState } from '../fx/DriftDust';
 import { clamp } from '../core/math';
 import { Input } from '../input/Input';
 import { Gates } from '../track/Gates';
@@ -62,6 +63,7 @@ export class Game {
   private readonly environment: Environment;
   private readonly car: Car;
   private readonly carView = new CarView();
+  private readonly driftDust = new DriftDust();
   private readonly input: Input;
   private readonly chaseCamera: ChaseCamera;
   private readonly race: Race;
@@ -94,6 +96,17 @@ export class Game {
     landingImpact: 0,
     trackS: 0,
     trackU: 0,
+  };
+
+  /** Estado reutilizado pela poeira; nenhum objeto novo por frame. */
+  private readonly dustState: DriftDustState = {
+    position: new THREE.Vector3(),
+    heading: 0,
+    velocity: new THREE.Vector3(),
+    speed: 0,
+    slipAngle: 0,
+    grounded: true,
+    surfaceId: 'gravel',
   };
 
   private state: RaceState = 'READY';
@@ -177,6 +190,7 @@ export class Game {
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.scene.add(this.carView.root);
     this.scene.add(this.carView.shadow);
+    this.scene.add(this.driftDust.points);
 
     this.chaseCamera = new ChaseCamera(undefined, this.cameraGroundAt);
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
@@ -236,6 +250,21 @@ export class Game {
     this.resizeObserver?.observe(container);
 
     this.applyDebugStartS();
+
+    // Hook só de QA: `?debug=1` expõe a contagem da poeira para os testes
+    // headless sem alterar a API pública do jogo.
+    if (isDebugMode()) {
+      const dust = this.driftDust;
+      (
+        window as Window & {
+          __rallyDust?: { readonly activeCount: number };
+        }
+      ).__rallyDust = {
+        get activeCount(): number {
+          return dust.activeCount;
+        },
+      };
+    }
   }
 
   start(): void {
@@ -323,6 +352,7 @@ export class Game {
     this.currentSurfaceId = this.track.surfaceAt(target, 0);
     this.carView.reset();
     this.carView.setPose(this.car.state.position, this.car.state.heading);
+    this.driftDust.reset();
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.environment.update(target);
     this.powerups.reset();
@@ -365,6 +395,7 @@ export class Game {
     this.scenery.dispose();
     this.obstacles.dispose();
     this.powerups.dispose();
+    this.driftDust.dispose();
 
     this.scene.traverse((object) => {
       if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
@@ -402,6 +433,7 @@ export class Game {
     this.currentSurfaceId = this.track.surfaceAt(this.track.startS, 0);
     this.carView.reset();
     this.carView.setPose(this.car.state.position, this.car.state.heading);
+    this.driftDust.reset();
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.environment.update(this.track.startS);
     this.powerups.reset();
@@ -523,6 +555,7 @@ export class Game {
     this.state = 'FINISHED';
     this.input.cancelAll();
     this.input.setRaceActive(false);
+    this.driftDust.reset();
     this.chaseCamera.setRumble(0);
     this.powerups.clearEffects();
     this.chaseCamera.setFovBoost(0);
@@ -583,6 +616,7 @@ export class Game {
     const state = this.car.state;
 
     this.state = 'RECOVERING';
+    this.driftDust.reset();
     this.recoveryElapsed = 0;
     this.recoveryTeleported = false;
     this.recoveryFaded = false;
@@ -671,6 +705,7 @@ export class Game {
     this.currentSurfaceId = this.track.surfaceAt(target, 0);
     this.carView.reset();
     this.carView.setPose(this.car.state.position, this.car.state.heading);
+    this.driftDust.reset();
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.chaseCamera.setRumble(0);
     this.environment.update(target);
@@ -680,14 +715,20 @@ export class Game {
     this.hud.setRecoveryPhase('returning');
   }
 
-  /** Trepidação contínua: distância lateral além da borda × velocidade. */
+  /**
+   * Trepidação contínua: distância lateral além da borda × velocidade,
+   * escalada pelo `bump` do piso atual (areia e fora de pista sacodem mais).
+   */
   private updateRumble(): void {
     const state = this.car.state;
     const half = this.track.widthAt(state.trackS) * 0.5;
     const offRoad = Math.max(0, Math.abs(state.trackU) - half);
+    const surfaceBump = SURFACES[this.currentSurfaceId].bump;
+    const bumpFactor = clamp(0.7 + 0.25 * surfaceBump, 0.7, 1.2);
     const intensity =
       clamp(offRoad / Math.max(RACE_TUNING.offTrackLimit, 0.1), 0, 1) *
-      clamp(state.speed / 15, 0, 1);
+      clamp(state.speed / 15, 0, 1) *
+      bumpFactor;
 
     // No ar o chão não está batendo no carro: o shake de pouso entra no render.
     this.chaseCamera.setRumble(state.grounded ? intensity : 0);
@@ -761,6 +802,20 @@ export class Game {
       airborne: this.car.state.airborne,
       landingImpact,
     });
+
+    // A poeira usa a pose interpolada para não tremer em relação ao carro.
+    this.dustState.position.copy(pose.position);
+    this.dustState.heading = pose.heading;
+    this.dustState.velocity.copy(this.car.state.velocity);
+    this.dustState.speed = this.car.state.speed;
+    this.dustState.slipAngle = this.car.telemetry.slipAngle;
+    this.dustState.grounded = this.car.state.grounded;
+    this.dustState.surfaceId = this.currentSurfaceId;
+    this.driftDust.setProjection(
+      this.renderer.domElement.height,
+      this.chaseCamera.camera.fov,
+    );
+    this.driftDust.update(frameDt, this.dustState);
 
     this.cameraState.position.copy(pose.position);
     this.cameraState.heading = pose.heading;
