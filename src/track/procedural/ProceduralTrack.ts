@@ -2,11 +2,15 @@
  * Gerador procedural de pistas do Rally Arcade.
  *
  * O gerador atual (`generateProceduralTrack`) usa uma gramática de segmentos:
- * retas curtas/médias/longas alternadas com curvas de cinco categorias
- * (longa, média, curta, cotovelo e hairpin), em ambos os sentidos. O traçado
- * é um caminho aberto A→B, sem pernas paralelas fixas. Cada candidato passa
- * por um teste de separação entre trechos não vizinhos (spatial hash, ≥36 m
- * entre centros), caixa de ~450×450 m e chegada a ≥100 m da largada.
+ * retas curtas/médias/longas alternadas com curvas de seis categorias
+ * (longa, média, curta, cotovelo, hairpin e kink), em ambos os sentidos. O
+ * traçado é um caminho aberto A→B, sem pernas paralelas fixas. Cada candidato
+ * passa por um teste de separação entre trechos não vizinhos (spatial hash,
+ * ≥40 m entre centros), caixa de ~650×650 m e chegada a ≥100 m da largada.
+ *
+ * A largura é montada por eventos ao longo da pista (base, longos estreitos,
+ * largos e choke points) e a elevação ganha faixas planas. A validação tem
+ * dois perfis: `v5` para o gerador novo e `legacy` para a pista fixa.
  *
  * O gerador antigo da "serpente" de quatro pernas continua exportado como
  * `generateLegacyProceduralTrack` porque a pista fixa `track01-v3` foi
@@ -35,14 +39,6 @@ import { createRng, type Rng } from './rng';
 const TAU = Math.PI * 2;
 const DENSE_STEP = 1;
 const CONTROL_SPACING = 3;
-const MIN_LENGTH = 800;
-const MAX_LENGTH = 1200;
-const MIN_ZONE_LENGTH = 190;
-const MAX_ZONE_LENGTH = 310;
-const MIN_TRACK_WIDTH = 8;
-const MAX_TRACK_WIDTH = 14;
-const MIN_RADIUS_PASS = 22;
-const MIN_RADIUS_WARN = 25;
 const KICKER_LANDING = 40;
 const KICKER_PLACEMENT_LANDING = 41;
 const KICKER_MAX_DEVIATION = 0.2;
@@ -51,23 +47,58 @@ const OBSTACLE_PLACEMENT_CLEARANCE = 5.2;
 const POWERUP_MIN_CLEARANCE = 1;
 const SELF_INTERSECTION_WINDOW = 30;
 const MAX_GRADE_PASS = 0.35;
-const MAX_GRADE_BUILD = 0.28;
+const MAX_GRADE_BUILD = 0.3;
 
 /** Separação mínima (centro a centro) entre trechos não vizinhos do caminho. */
-const SECTION_CLEARANCE = 36;
+const SECTION_CLEARANCE = 40;
 /** Trechos com menos que isto de distância ao longo da pista são "vizinhos". */
-const SECTION_ALONG_WINDOW = 46;
+const SECTION_ALONG_WINDOW = 85;
 /** Caixa máxima do traçado novo (m). */
-const MAX_LAYOUT_SIZE = 450;
+const MAX_LAYOUT_SIZE = 650;
 /** Distância mínima em linha reta entre largada e chegada (A→B de verdade). */
 const MIN_START_TO_FINISH = 100;
+
+/**
+ * Limites do gerador novo (v5). O perfil legado fica separado para que a
+ * pista fixa `track01-v3` continue reproduzível byte a byte.
+ */
+const MIN_LENGTH = 1300;
+const MAX_LENGTH = 1800;
+const MIN_ZONE_LENGTH = 300;
+const MAX_ZONE_LENGTH = 500;
+const MIN_TRACK_WIDTH = 4.4;
+const MAX_TRACK_WIDTH = 15.2;
+const MIN_RADIUS_PASS = 16;
+const MIN_RADIUS_WARN = 19;
+const MIN_POWERUPS = 6;
+const MAX_POWERUPS = 8;
+const MIN_OBSTACLES = 50;
+const MAX_OBSTACLES = 75;
+
+/** Perfil de validação legado — congelado junto com `track01-v3`. */
+const LEGACY_MIN_LENGTH = 800;
+const LEGACY_MAX_LENGTH = 1200;
+const LEGACY_MIN_ZONE_LENGTH = 190;
+const LEGACY_MAX_ZONE_LENGTH = 310;
+const LEGACY_MIN_TRACK_WIDTH = 8;
+const LEGACY_MAX_TRACK_WIDTH = 14;
+const LEGACY_MIN_RADIUS_PASS = 22;
+const LEGACY_MIN_RADIUS_WARN = 25;
+const LEGACY_MIN_POWERUPS = 4;
+const LEGACY_MAX_POWERUPS = 6;
+const LEGACY_MIN_OBSTACLES = 30;
+const LEGACY_MAX_OBSTACLES = 60;
+const LEGACY_SECTION_CLEARANCE = 36;
+
+export type ValidationProfile = 'v5' | 'legacy';
 
 export type CurveCategory =
   | 'long'
   | 'medium'
   | 'short'
   | 'elbow'
-  | 'hairpin';
+  | 'hairpin'
+  | 'kink';
 
 export type CurveDirection = 'left' | 'right';
 
@@ -86,6 +117,13 @@ export interface ProceduralStraightInfo {
   readonly endS: number;
 }
 
+export interface ProceduralWidthFeature {
+  readonly kind: 'choke' | 'narrow' | 'wide';
+  readonly startS: number;
+  readonly endS: number;
+  readonly width: number;
+}
+
 export interface ProceduralLayout {
   readonly curves: readonly ProceduralCurveInfo[];
   readonly straights: readonly ProceduralStraightInfo[];
@@ -93,6 +131,21 @@ export interface ProceduralLayout {
   readonly height: number;
   readonly rawLength: number;
   readonly trackLength: number;
+  /** Perfil de largura autorado (antes do clamp do `Track`). */
+  readonly widthAt?: (s: number) => number;
+  readonly widthFeatures?: readonly ProceduralWidthFeature[];
+  /** Fração da pista coberta por faixas planas. */
+  readonly flatFraction?: number;
+  readonly flatBands?: readonly { readonly startS: number; readonly endS: number }[];
+}
+
+export interface ProceduralFeatures {
+  readonly categories: Record<CurveCategory, number>;
+  readonly leftSweepDeg: number;
+  readonly rightSweepDeg: number;
+  readonly chokes: number;
+  readonly longNarrow: number;
+  readonly wide: number;
 }
 
 export interface ProceduralStats {
@@ -112,6 +165,9 @@ export interface ProceduralStats {
   readonly bboxWidth: number;
   readonly bboxHeight: number;
   readonly minSectionDistance: number;
+  /** Cobertura das faixas planas (0..1). */
+  readonly flatFraction: number;
+  readonly features: ProceduralFeatures | null;
 }
 
 interface Bump {
@@ -174,6 +230,60 @@ export interface ProceduralValidation {
 export interface ValidateOptions {
   /** Silencia os logs do construtor de `Track` (útil no gerador e nos testes). */
   readonly quiet?: boolean;
+  /** Perfil de limites: `v5` (padrão) ou `legacy` (pista fixa). */
+  readonly profile?: ValidationProfile;
+}
+
+interface ProfileLimits {
+  readonly minLength: number;
+  readonly maxLength: number;
+  readonly minZoneLength: number;
+  readonly maxZoneLength: number;
+  readonly minWidth: number;
+  readonly maxWidth: number;
+  readonly minRadiusPass: number;
+  readonly minRadiusWarn: number;
+  readonly minPowerups: number;
+  readonly maxPowerups: number;
+  readonly minObstacles: number;
+  readonly maxObstacles: number;
+  readonly sectionClearance: number;
+}
+
+const V5_LIMITS: ProfileLimits = {
+  minLength: MIN_LENGTH,
+  maxLength: MAX_LENGTH,
+  minZoneLength: MIN_ZONE_LENGTH,
+  maxZoneLength: MAX_ZONE_LENGTH,
+  minWidth: MIN_TRACK_WIDTH,
+  maxWidth: MAX_TRACK_WIDTH,
+  minRadiusPass: MIN_RADIUS_PASS,
+  minRadiusWarn: MIN_RADIUS_WARN,
+  minPowerups: MIN_POWERUPS,
+  maxPowerups: MAX_POWERUPS,
+  minObstacles: MIN_OBSTACLES,
+  maxObstacles: MAX_OBSTACLES,
+  sectionClearance: SECTION_CLEARANCE,
+};
+
+const LEGACY_LIMITS: ProfileLimits = {
+  minLength: LEGACY_MIN_LENGTH,
+  maxLength: LEGACY_MAX_LENGTH,
+  minZoneLength: LEGACY_MIN_ZONE_LENGTH,
+  maxZoneLength: LEGACY_MAX_ZONE_LENGTH,
+  minWidth: LEGACY_MIN_TRACK_WIDTH,
+  maxWidth: LEGACY_MAX_TRACK_WIDTH,
+  minRadiusPass: LEGACY_MIN_RADIUS_PASS,
+  minRadiusWarn: LEGACY_MIN_RADIUS_WARN,
+  minPowerups: LEGACY_MIN_POWERUPS,
+  maxPowerups: LEGACY_MAX_POWERUPS,
+  minObstacles: LEGACY_MIN_OBSTACLES,
+  maxObstacles: LEGACY_MAX_OBSTACLES,
+  sectionClearance: LEGACY_SECTION_CLEARANCE,
+};
+
+function limitsFor(profile: ValidationProfile): ProfileLimits {
+  return profile === 'legacy' ? LEGACY_LIMITS : V5_LIMITS;
 }
 
 /**
@@ -194,7 +304,10 @@ export function generateProceduralTrack(seed: number): TrackDef {
     if (!def) {
       continue;
     }
-    lastValidation = validateProceduralTrack(def, { quiet: true });
+    lastValidation = validateProceduralTrack(def, {
+      quiet: true,
+      profile: 'v5',
+    });
     if (lastValidation.ok) {
       return def;
     }
@@ -226,7 +339,10 @@ export function generateLegacyProceduralTrack(seed: number): TrackDef {
 
   for (let attempt = 0; attempt < 16; attempt += 1) {
     const def = buildCandidate(rng, seed);
-    lastValidation = validateProceduralTrack(def, { quiet: true });
+    lastValidation = validateProceduralTrack(def, {
+      quiet: true,
+      profile: 'legacy',
+    });
     if (lastValidation.ok) {
       return def;
     }
@@ -275,6 +391,15 @@ interface BuiltSegment {
 
 const DEG = Math.PI / 180;
 
+const CURVE_CATEGORIES: readonly CurveCategory[] = [
+  'long',
+  'medium',
+  'short',
+  'elbow',
+  'hairpin',
+  'kink',
+];
+
 const CURVE_RANGES: Record<
   CurveCategory,
   { radius: [number, number]; sweep: [number, number] }
@@ -283,7 +408,8 @@ const CURVE_RANGES: Record<
   medium: { radius: [45, 65], sweep: [35 * DEG, 90 * DEG] },
   short: { radius: [28, 38], sweep: [45 * DEG, 110 * DEG] },
   elbow: { radius: [26, 31], sweep: [75 * DEG, 120 * DEG] },
-  hairpin: { radius: [26, 30], sweep: [150 * DEG, 180 * DEG] },
+  hairpin: { radius: [20, 23], sweep: [160 * DEG, 180 * DEG] },
+  kink: { radius: [140, 220], sweep: [6 * DEG, 15 * DEG] },
 };
 
 function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
@@ -356,13 +482,13 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
   }
 
   const planarLength = raw[raw.length - 1].s;
-  const elevation = buildElevation(rng, planarLength);
-  const baseY = elevation(0);
+  const elevation = buildElevationV5(rng, planarLength);
+  const baseY = elevation.value(0);
   let maxSlope = 0;
 
   for (let i = 0; i < raw.length; i += 1) {
     const point = raw[i];
-    point.y = elevation(point.s) - baseY;
+    point.y = elevation.value(point.s) - baseY;
     if (i > 0) {
       const previous = raw[i - 1];
       const run = Math.max(0.001, point.s - previous.s);
@@ -397,7 +523,8 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
       endS: segment.endS,
     }));
 
-  const widthAt = buildWidthProfile(rng, curves);
+  const widthProfile = buildWidthProfileV5(rng, curves, total);
+  const widthAt = widthProfile.widthAt;
   const controlPoints = resampleControlPoints(raw, CONTROL_SPACING).map(
     (point) => ({
       x: point.x,
@@ -408,7 +535,7 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
   );
 
   const length = measureLength(controlPoints);
-  if (length < 900 || length > 1150) {
+  if (length < MIN_LENGTH || length > MAX_LENGTH) {
     return null;
   }
   const scale = length / total;
@@ -417,7 +544,7 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
   if (kickers.length === 0) {
     return null;
   }
-  const splitsAndZones = buildZonesAndSplits(length);
+  const splitsAndZones = buildZonesAndSplitsV5(rng, length);
   const powerups = placePowerupsOnTrack(
     rng,
     raw,
@@ -427,6 +554,9 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
     scale,
   );
   const obstacles = placeObstaclesOffTrack(rng, raw, widthAt, length, scale);
+  if (obstacles.length < MIN_OBSTACLES) {
+    return null;
+  }
 
   const def: TrackDef = {
     id: `proc-${seed}`,
@@ -446,16 +576,21 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
     height,
     rawLength: total,
     trackLength: length,
+    widthAt,
+    widthFeatures: widthProfile.features,
+    flatFraction: elevation.flatFraction,
+    flatBands: elevation.bands,
   });
 
   return def;
 }
 
 function planSegments(rng: Rng): readonly SegmentSpec[] | null {
-  const target = rng.range(980, 1080);
+  const target = rng.range(1490, 1600);
   const segments: SegmentSpec[] = [];
-  const featureStraight = rng.int(2, 6);
-  const planHairpins = rng.chance(0.42) ? 2 : 1;
+  const featureStraight = rng.int(2, 7);
+  const planHairpins = rng.int(1, 2);
+  const planKinks = rng.int(1, 3);
   const categoryCounts = new Map<CurveCategory, number>();
   const directionCounts: Record<'left' | 'right', number> = {
     left: 0,
@@ -469,33 +604,45 @@ function planSegments(rng: Rng): readonly SegmentSpec[] | null {
   let runLength = 0;
   let straightIndex = 0;
   let hairpins = 0;
+  let kinks = 0;
   let total = 0;
   let curveCount = 0;
 
-  while (total < target - 55 && straightIndex < 24) {
+  while (total < target - 70 && straightIndex < 44) {
     let straightLength: number;
     if (straightIndex === featureStraight) {
-      straightLength = rng.range(78, 92);
+      straightLength = rng.range(86, 108);
     } else if (rng.chance(0.3)) {
-      straightLength = rng.range(60, 88);
+      straightLength = rng.range(60, 96);
     } else {
-      straightLength = rng.range(22, 62);
+      straightLength = rng.range(24, 66);
     }
 
     segments.push({ kind: 'straight', length: straightLength });
     total += straightLength;
     straightIndex += 1;
 
-    if (total >= target - 55) {
+    if (total >= target - 70) {
       break;
     }
 
-    const category = pickCurveCategory(rng, categoryCounts, hairpins, planHairpins);
+    const category = pickCurveCategoryV5(
+      rng,
+      categoryCounts,
+      curveCount,
+      hairpins,
+      planHairpins,
+      kinks,
+      planKinks,
+    );
     if (category === null) {
       break;
     }
     if (category === 'hairpin') {
       hairpins += 1;
+    }
+    if (category === 'kink') {
+      kinks += 1;
     }
     categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
 
@@ -539,17 +686,20 @@ function planSegments(rng: Rng): readonly SegmentSpec[] | null {
     }
   }
 
-  const finalLength = clamp(target + 30 - total, 45, 90);
+  const finalLength = clamp(target + 25 - total, 40, 96);
   segments.push({ kind: 'straight', length: finalLength });
   total += finalLength;
 
-  if (curveCount < 8 || straightIndex < 6) {
+  if (curveCount < 10 || straightIndex < 8) {
     return null;
   }
 
-  // Pelo menos 3 categorias de curva em cada pista.
+  // Pelo menos 4 das 6 categorias em cada pista.
   const categoriesPresent = [...categoryCounts.keys()];
-  if (categoriesPresent.length < 3) {
+  if (categoriesPresent.length < 4) {
+    return null;
+  }
+  if (!categoryCounts.has('hairpin') || !categoryCounts.has('kink')) {
     return null;
   }
 
@@ -567,31 +717,43 @@ function planSegments(rng: Rng): readonly SegmentSpec[] | null {
   return segments;
 }
 
-function pickCurveCategory(
+function pickCurveCategoryV5(
   rng: Rng,
   counts: ReadonlyMap<CurveCategory, number>,
+  curveCount: number,
   hairpins: number,
   hairpinBudget: number,
+  kinks: number,
+  kinkBudget: number,
 ): CurveCategory | null {
-  const hairpinAllowed = hairpins < hairpinBudget && rng.chance(0.18);
-  if (hairpinAllowed) {
+  // Garante pelo menos um kink e um hairpin; depois respeita os orçamentos.
+  if (kinks < kinkBudget && kinks === 0 && curveCount >= 6) {
+    return 'kink';
+  }
+  if (kinks < kinkBudget && rng.chance(0.13)) {
+    return 'kink';
+  }
+  if (hairpins < hairpinBudget && hairpins === 0 && curveCount >= 9) {
+    return 'hairpin';
+  }
+  if (hairpins < hairpinBudget && rng.chance(0.13)) {
     return 'hairpin';
   }
 
   // Reforça categorias ainda ausentes na segunda metade da pista.
-  const totalCurves = [...counts.values()].reduce((sum, value) => sum + value, 0);
-  if (totalCurves >= 6 && counts.size < 3) {
-    const missing: CurveCategory[] = (['long', 'medium', 'short', 'elbow'] as const)
-      .filter((category) => !counts.has(category));
+  if (curveCount >= 7 && counts.size < 4) {
+    const missing: CurveCategory[] = (
+      ['long', 'medium', 'short', 'elbow'] as const
+    ).filter((category) => !counts.has(category));
     if (missing.length > 0) {
       return rng.pick(missing);
     }
   }
 
   const roll = rng.next();
-  if (roll < 0.3) return 'long';
+  if (roll < 0.32) return 'long';
   if (roll < 0.6) return 'medium';
-  if (roll < 0.82) return 'short';
+  if (roll < 0.8) return 'short';
   return 'elbow';
 }
 
@@ -707,53 +869,154 @@ function minSectionDistance(raw: readonly RawPoint[]): number {
   return best;
 }
 
-function buildWidthProfile(
+interface WidthEvent {
+  startS: number;
+  endS: number;
+  center: number;
+  half: number;
+  width: number;
+  transition: number;
+  kind: 'choke' | 'narrow' | 'wide';
+}
+
+interface WidthProfileV5 {
+  widthAt: (s: number) => number;
+  features: readonly ProceduralWidthFeature[];
+}
+
+function buildWidthProfileV5(
   rng: Rng,
   curves: readonly ProceduralCurveInfo[],
-): (s: number) => number {
+  total: number,
+): WidthProfileV5 {
+  const base = rng.range(10.5, 12);
   const basePhase = rng.range(0, TAU);
-  const narrowPhase = rng.range(0, TAU);
+  const events: WidthEvent[] = [];
+  const tightCurves = curves.filter(
+    (curve) => curve.category === 'hairpin' || curve.category === 'elbow',
+  );
 
-  return (s: number): number => {
-    let distanceToTight = Infinity;
-    let tightness = 0;
+  const fits = (
+    center: number,
+    half: number,
+    transition: number,
+    kind: 'choke' | 'narrow' | 'wide',
+  ): boolean => {
+    if (center - half - transition < 25 || center + half + transition > total - 25) {
+      return false;
+    }
+    for (const other of events) {
+      const minimum =
+        half + other.half + Math.max(transition, other.transition) + 12;
+      if (Math.abs(center - other.center) < minimum) {
+        return false;
+      }
+    }
+    if (kind === 'choke') {
+      for (const curve of tightCurves) {
+        if (
+          center + half + transition > curve.startS - 4 &&
+          center - half - transition < curve.endS + 4
+        ) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
 
-    for (const curve of curves) {
-      const weight =
-        curve.category === 'hairpin'
-          ? 1
-          : curve.category === 'elbow'
-            ? 0.8
-            : curve.category === 'short'
-              ? 0.45
-              : 0;
+  const addEvents = (
+    count: number,
+    kind: 'choke' | 'narrow' | 'wide',
+    lengthRange: [number, number],
+    widthRange: [number, number],
+  ): void => {
+    for (let index = 0; index < count; index += 1) {
+      const length = rng.range(lengthRange[0], lengthRange[1]);
+      const half = length * 0.5;
+      const transition = rng.range(30, 40);
+      let placed = false;
+
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        const center = rng.range(25 + half + transition, total - 25 - half - transition);
+        if (!fits(center, half, transition, kind)) {
+          continue;
+        }
+        events.push({
+          startS: center - half,
+          endS: center + half,
+          center,
+          half,
+          width: rng.range(widthRange[0], widthRange[1]),
+          transition,
+          kind,
+        });
+        placed = true;
+        break;
+      }
+
+      if (!placed) {
+        // Posições de reserva espaçadas (mantém a contagem mínima por pista).
+        const slot = (index + 1) / (count + 2);
+        const center = total * (0.25 + slot * 0.5);
+        const shift = kind === 'choke' ? 26 : kind === 'narrow' ? -34 : 0;
+        events.push({
+          startS: center + shift - half,
+          endS: center + shift + half,
+          center: center + shift,
+          half,
+          width: (widthRange[0] + widthRange[1]) * 0.5,
+          transition,
+          kind,
+        });
+      }
+    }
+  };
+
+  const chokeCount = rng.int(2, 3);
+  addEvents(chokeCount, 'choke', [50, 90], [4.6, 5.4]);
+  addEvents(1, 'narrow', [120, 220], [5.5, 7]);
+  addEvents(rng.int(1, 2), 'wide', [80, 160], [13, 15]);
+
+  events.sort((a, b) => a.center - b.center);
+
+  const widthAt = (s: number): number => {
+    let width = base + 0.35 * Math.sin(s * 0.007 + basePhase);
+
+    for (const event of events) {
+      let weight = 0;
+      if (s >= event.startS && s <= event.endS) {
+        weight = 1;
+      } else if (s < event.startS) {
+        weight = smoothstep(
+          clamp((s - (event.startS - event.transition)) / event.transition, 0, 1),
+        );
+      } else if (s > event.endS) {
+        weight = smoothstep(
+          clamp(
+            (event.endS + event.transition - s) / event.transition,
+            0,
+            1,
+          ),
+        );
+      }
       if (weight <= 0) {
         continue;
       }
-      if (s >= curve.startS && s <= curve.endS) {
-        distanceToTight = 0;
-        tightness = Math.max(tightness, weight);
-        continue;
-      }
-      const distance = Math.min(
-        Math.abs(s - curve.startS),
-        Math.abs(s - curve.endS),
-      );
-      if (distance < distanceToTight) {
-        distanceToTight = distance;
-      }
-      if (distance < 26) {
-        tightness = Math.max(tightness, weight);
-      }
+      width = lerp(width, event.width, weight);
     }
 
-    const base = 11.5 + 1.1 * Math.sin(s * 0.011 + basePhase);
-    const narrow =
-      (tightness >= 1 ? 8.9 : tightness >= 0.7 ? 9.3 : 9.8) +
-      0.4 * Math.sin(s * 0.17 + narrowPhase);
-    const blend = smoothstep(clamp(distanceToTight / 30, 0, 1));
-    const width = lerp(narrow, base, blend);
-    return clamp(width, 8.8, 13.2);
+    return clamp(width, 4.6, 15);
+  };
+
+  return {
+    widthAt,
+    features: events.map((event) => ({
+      kind: event.kind,
+      startS: event.startS,
+      endS: event.endS,
+      width: event.width,
+    })),
   };
 }
 
@@ -817,7 +1080,7 @@ function placePowerupsOnTrack(
   length: number,
   scale: number,
 ): readonly TrackPowerup[] {
-  const count = rng.int(4, 6);
+  const count = rng.int(MIN_POWERUPS, MAX_POWERUPS);
   const types: PowerupType[] = [
     rng.chance(0.5) ? 'turbo' : 'grip',
     rng.chance(0.5) ? 'turbo' : 'grip',
@@ -832,7 +1095,7 @@ function placePowerupsOnTrack(
   const placed: TrackPowerup[] = [];
   const total = raw[raw.length - 1].s;
 
-  for (let attempt = 0; attempt < 500 && placed.length < count; attempt += 1) {
+  for (let attempt = 0; attempt < 900 && placed.length < count; attempt += 1) {
     const rawS = rng.range(15, Math.max(20, total - 18));
     const s = rawS * scale;
     if (s > length - 12) {
@@ -847,14 +1110,16 @@ function placePowerupsOnTrack(
     ) {
       continue;
     }
-    if (placed.some((powerup) => Math.abs(powerup.s - s) < 24)) {
+    if (placed.some((powerup) => Math.abs(powerup.s - s) < 30)) {
       continue;
     }
 
     const halfWidth = widthAt(rawS) * 0.5;
+    // Prefere trechos com espaço para desviar; chokes muito estreitos ainda
+    // aceitam powerup centralizado.
     const magnitude = Math.min(
       halfWidth - POWERUP_MIN_CLEARANCE - 0.4,
-      rng.range(0.2, 0.55) * halfWidth,
+      rng.range(0.2, 0.6) * halfWidth,
     );
     if (magnitude <= 0.2) {
       continue;
@@ -869,9 +1134,9 @@ function placePowerupsOnTrack(
 
   // Fallback determinístico, sempre fora da zona de salto/aterrissagem.
   let slot = 0;
-  while (placed.length < 4) {
+  while (placed.length < count) {
     slot += 1;
-    let s = (length * slot) / 6;
+    let s = (length * slot) / (count + 1);
     for (const kicker of kickers) {
       if (s > kicker.s - 20 && s < kicker.s + kicker.length + 22) {
         s = kicker.s + kicker.length + 26;
@@ -880,13 +1145,19 @@ function placePowerupsOnTrack(
     if (s > length - 12) {
       s = length - 12;
     }
-    if (placed.some((powerup) => Math.abs(powerup.s - s) < 18)) {
-      s = clamp(s + 20, 10, length - 12);
+    while (
+      placed.some((powerup) => Math.abs(powerup.s - s) < 18) &&
+      s < length - 30
+    ) {
+      s += 22;
     }
+    const rawS = clamp(s / scale, 0, total);
+    const halfWidth = widthAt(rawS) * 0.5;
+    const magnitude = Math.max(0, Math.min(0.35, halfWidth - POWERUP_MIN_CLEARANCE - 0.4));
     placed.push({
       type: types[placed.length] ?? 'turbo',
       s,
-      u: 0,
+      u: magnitude,
     });
   }
 
@@ -901,11 +1172,11 @@ function placeObstaclesOffTrack(
   length: number,
   scale: number,
 ): readonly TrackObstacle[] {
-  const target = rng.int(32, 56);
+  const target = rng.int(MIN_OBSTACLES, MAX_OBSTACLES);
   const total = raw[raw.length - 1].s;
   const rawWidths = raw.map((point) => widthAt(point.s));
   const obstacles: ObstacleCandidate[] = [];
-  const maxAttempts = target * 40;
+  const maxAttempts = target * 220;
 
   for (let attempt = 0; attempt < maxAttempts && obstacles.length < target; attempt += 1) {
     const rawS = rng.range(8, Math.max(10, total - 8));
@@ -1254,6 +1525,129 @@ function buildElevation(
   };
 }
 
+interface ElevationV5 {
+  value: (s: number) => number;
+  flatFraction: number;
+  bands: readonly { startS: number; endS: number }[];
+}
+
+function buildElevationV5(rng: Rng, totalLength: number): ElevationV5 {
+  const longAmplitude = rng.range(4.2, 7.2);
+  const longWavelength = rng.range(320, 460);
+  const longPhase = rng.range(0, TAU);
+  const mediumAmplitude = rng.range(1.45, 2.9);
+  const mediumWavelength = rng.range(170, 240);
+  const mediumPhase = rng.range(0, TAU);
+
+  const crests: { center: number; half: number; height: number }[] = [];
+  const crestCount = rng.int(2, 4);
+
+  for (let i = 0; i < crestCount; i += 1) {
+    crests.push({
+      center: rng.range(70, Math.max(80, totalLength - 70)),
+      half: rng.range(15, 22),
+      height: rng.range(0.6, 1.1) * rng.sign(),
+    });
+  }
+
+  const baseValue = (s: number): number => {
+    let y =
+      longAmplitude * Math.sin((TAU * s) / longWavelength + longPhase) +
+      mediumAmplitude * Math.sin((TAU * s) / mediumWavelength + mediumPhase);
+
+    for (const crest of crests) {
+      const u = (s - (crest.center - crest.half)) / (crest.half * 2);
+      if (u <= 0 || u >= 1) {
+        continue;
+      }
+      const wave = Math.sin(Math.PI * u);
+      y += crest.height * wave * wave;
+    }
+
+    return y;
+  };
+
+  // 2–3 faixas planas ocupando 20–25% da pista. Pistas mais longas usam 3
+  // faixas para que cada uma caiba em 70–150 m.
+  const bandCount = totalLength > 1500 ? 3 : rng.int(2, 3);
+  const targetFraction = rng.range(0.2, 0.25);
+  const wanted = (targetFraction * totalLength) / bandCount;
+  let bandLength = clamp(wanted, 70, 150);
+  let sum = bandLength * bandCount;
+  if (sum < 0.2 * totalLength) {
+    bandLength = Math.min(150, (0.21 * totalLength) / bandCount);
+    sum = bandLength * bandCount;
+  }
+  if (sum > 0.25 * totalLength) {
+    bandLength = Math.max(70, (0.24 * totalLength) / bandCount);
+    sum = bandLength * bandCount;
+  }
+
+  const bands: { startS: number; endS: number; level: number; transition: number }[] = [];
+  const gap = 90;
+
+  for (let index = 0; index < bandCount; index += 1) {
+    let placed = false;
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      const start = rng.range(
+        70,
+        Math.max(80, totalLength - 70 - bandLength),
+      );
+      const end = start + bandLength;
+      const overlaps = bands.some(
+        (band) => start < band.endS + gap && end > band.startS - gap,
+      );
+      if (overlaps) {
+        continue;
+      }
+      bands.push({
+        startS: start,
+        endS: end,
+        level: baseValue((start + end) * 0.5),
+        transition: rng.range(25, 30),
+      });
+      placed = true;
+      break;
+    }
+    if (!placed) {
+      return {
+        value: baseValue,
+        flatFraction: 0,
+        bands: [],
+      };
+    }
+  }
+
+  bands.sort((a, b) => a.startS - b.startS);
+
+  const value = (s: number): number => {
+    for (const band of bands) {
+      if (s >= band.startS && s <= band.endS) {
+        return band.level;
+      }
+      if (s >= band.startS - band.transition && s < band.startS) {
+        const weight = smoothstep(
+          clamp((s - (band.startS - band.transition)) / band.transition, 0, 1),
+        );
+        return lerp(baseValue(s), band.level, weight);
+      }
+      if (s > band.endS && s <= band.endS + band.transition) {
+        const weight = smoothstep(
+          clamp((band.endS + band.transition - s) / band.transition, 0, 1),
+        );
+        return lerp(baseValue(s), band.level, weight);
+      }
+    }
+    return baseValue(s);
+  };
+
+  return {
+    value,
+    flatFraction: (bandLength * bandCount) / totalLength,
+    bands: bands.map((band) => ({ startS: band.startS, endS: band.endS })),
+  };
+}
+
 function buildWidthFunction(
   rng: Rng,
   hairpins: readonly HairpinInfo[],
@@ -1392,6 +1786,55 @@ function buildZonesAndSplits(length: number): {
   splits: readonly TrackSplit[];
 } {
   const bounds = [0, length * 0.25, length * 0.5, length * 0.75, length];
+  const zones: TrackZone[] = [];
+  const splits: TrackSplit[] = [];
+
+  for (let i = 0; i < 4; i += 1) {
+    const id: TrackZoneId = i % 2 === 0 ? 'forest' : 'desert';
+    zones.push({
+      start: bounds[i],
+      end: i === 3 ? length : bounds[i + 1],
+      id,
+      surface: id === 'forest' ? 'gravel' : 'sand',
+    });
+  }
+
+  for (let i = 0; i < 3; i += 1) {
+    const s = bounds[i + 1];
+    splits.push({
+      s,
+      name: `Parcial ${i + 1}`,
+      target: round1(s / 18),
+    });
+  }
+
+  return { zones, splits };
+}
+
+function buildZonesAndSplitsV5(
+  rng: Rng,
+  length: number,
+): {
+  zones: readonly TrackZone[];
+  splits: readonly TrackSplit[];
+} {
+  // Comprimento nominal por setor (340–470 m) com jitter de ±8%. Se a soma
+  // não casar com o comprimento final, escala proporcionalmente.
+  const weights = [0, 1, 2, 3].map(() => rng.range(0.92, 1.08));
+  const weightSum = weights.reduce((sum, value) => sum + value, 0);
+  let lengths = weights.map((weight) =>
+    clamp((weight / weightSum) * length, 340, 470),
+  );
+  const lengthSum = lengths.reduce((sum, value) => sum + value, 0);
+  const scale = length / lengthSum;
+  lengths = lengths.map((value) => value * scale);
+
+  const bounds = [0];
+  for (const zoneLength of lengths) {
+    bounds.push(bounds[bounds.length - 1] + zoneLength);
+  }
+  bounds[bounds.length - 1] = length;
+
   const zones: TrackZone[] = [];
   const splits: TrackSplit[] = [];
 
@@ -1644,8 +2087,13 @@ export function validateProceduralTrack(
 ): ProceduralValidation {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const limits = limitsFor(options.profile ?? 'v5');
+  const layout = layoutByDef.get(def) ?? null;
   const track = makeTrack(def, options.quiet === true);
   const length = track.length;
+  // O perfil v5 valida a largura autorada antes do clamp de segurança do
+  // `Track` (7–14 m). O legado continua usando a largura efetiva do sampler.
+  const widthAt = layout?.widthAt ?? ((s: number) => track.widthAt(s));
 
   const fail = (message: string): void => {
     errors.push(message);
@@ -1654,38 +2102,43 @@ export function validateProceduralTrack(
     warnings.push(message);
   };
 
-  if (length < MIN_LENGTH || length > MAX_LENGTH) {
+  if (length < limits.minLength || length > limits.maxLength) {
     fail(
-      `comprimento ${length.toFixed(1)} m fora de ${MIN_LENGTH}..${MAX_LENGTH} m`,
+      `comprimento ${length.toFixed(1)} m fora de ` +
+        `${limits.minLength}..${limits.maxLength} m`,
     );
   }
 
-  validateZones(track, def, length, fail);
+  validateZones(track, def, length, limits, fail);
   validateSplits(def, length, fail);
 
   let minWidth = Infinity;
   let maxWidth = -Infinity;
   for (let s = 0; s <= length; s += 2) {
-    const width = track.widthAt(s);
+    const width = widthAt(s);
     minWidth = Math.min(minWidth, width);
     maxWidth = Math.max(maxWidth, width);
   }
-  if (minWidth < MIN_TRACK_WIDTH - 0.01) {
-    fail(`largura mínima ${minWidth.toFixed(2)} m < ${MIN_TRACK_WIDTH} m`);
+  if (minWidth < limits.minWidth - 0.01) {
+    fail(`largura mínima ${minWidth.toFixed(2)} m < ${limits.minWidth} m`);
   }
-  if (maxWidth > MAX_TRACK_WIDTH + 0.01) {
-    fail(`largura máxima ${maxWidth.toFixed(2)} m > ${MAX_TRACK_WIDTH} m`);
+  if (maxWidth > limits.maxWidth + 0.01) {
+    fail(`largura máxima ${maxWidth.toFixed(2)} m > ${limits.maxWidth} m`);
   }
 
   const samples = collectSamples(track, length);
   const radius = computeRadius(samples);
-  if (radius.minRadius < MIN_RADIUS_PASS) {
+  if (radius.minRadius < limits.minRadiusPass) {
     fail(
-      `raio mínimo ${radius.minRadius.toFixed(1)} m (< ${MIN_RADIUS_PASS} m) ` +
+      `raio mínimo ${radius.minRadius.toFixed(1)} m ` +
+        `(< ${limits.minRadiusPass} m) ` +
         `em s=${radius.minRadiusS.toFixed(0)} m`,
     );
-  } else if (radius.minRadius < MIN_RADIUS_WARN) {
-    warn(`raio mínimo ${radius.minRadius.toFixed(1)} m (< ${MIN_RADIUS_WARN} m)`);
+  } else if (radius.minRadius < limits.minRadiusWarn) {
+    warn(
+      `raio mínimo ${radius.minRadius.toFixed(1)} m ` +
+        `(< ${limits.minRadiusWarn} m)`,
+    );
   }
 
   const intersection = findSelfIntersection(samples);
@@ -1702,8 +2155,9 @@ export function validateProceduralTrack(
   }
 
   validateKickers(track, def, length, fail, warn);
-  validatePowerups(track, def, length, fail);
-  validateObstacles(track, def, length, fail);
+  validatePowerups(def, length, widthAt, limits, fail);
+  validateObstacles(def, length, widthAt, limits, fail);
+  validateLayoutFeatures(layout, fail);
 
   const startSample = track.sampleAt(0);
   const startX = startSample.position.x;
@@ -1720,11 +2174,11 @@ export function validateProceduralTrack(
     );
   }
 
-  const tooClose = findTooCloseSections(samples);
-  if (tooClose && tooClose.distance < SECTION_CLEARANCE) {
+  const tooClose = findTooCloseSections(samples, limits.sectionClearance);
+  if (tooClose && tooClose.distance < limits.sectionClearance) {
     fail(
       `trechos não vizinhos a ${tooClose.distance.toFixed(1)} m ` +
-        `(mínimo ${SECTION_CLEARANCE} m, entre s=${tooClose.a.toFixed(0)} m ` +
+        `(mínimo ${limits.sectionClearance} m, entre s=${tooClose.a.toFixed(0)} m ` +
         `e s=${tooClose.b.toFixed(0)} m)`,
     );
   }
@@ -1767,7 +2221,120 @@ export function validateProceduralTrack(
       bboxWidth,
       bboxHeight,
       minSectionDistance: tooClose ? tooClose.distance : Infinity,
+      flatFraction: layout?.flatFraction ?? 0,
+      features: buildFeatures(layout),
     },
+  };
+}
+
+function validateLayoutFeatures(
+  layout: ProceduralLayout | null,
+  fail: (message: string) => void,
+): void {
+  if (!layout) {
+    return;
+  }
+
+  const categories = new Map<CurveCategory, number>();
+  let leftSweep = 0;
+  let rightSweep = 0;
+  let run = 0;
+  let lastDirection: CurveDirection | null = null;
+
+  for (const curve of layout.curves) {
+    categories.set(curve.category, (categories.get(curve.category) ?? 0) + 1);
+    if (curve.direction === 'left') {
+      leftSweep += curve.sweepDeg;
+    } else {
+      rightSweep += curve.sweepDeg;
+    }
+    if (curve.direction === lastDirection) {
+      run += 1;
+      if (run > 2) {
+        fail('mais de duas curvas seguidas no mesmo sentido');
+      }
+    } else {
+      run = 1;
+      lastDirection = curve.direction;
+    }
+  }
+
+  if (categories.size < 4) {
+    fail(`apenas ${categories.size} categorias de curva (mínimo 4)`);
+  }
+  const kinks = categories.get('kink') ?? 0;
+  if (kinks < 1 || kinks > 3) {
+    fail(`kinks: ${kinks} (esperado 1..3)`);
+  }
+  const totalSweep = leftSweep + rightSweep;
+  if (
+    totalSweep > 0 &&
+    (leftSweep / totalSweep < 0.3 || rightSweep / totalSweep < 0.3)
+  ) {
+    fail('sweep concentrado em um único sentido (<30% para o outro)');
+  }
+
+  const features = layout.widthFeatures ?? [];
+  const chokes = features.filter((feature) => feature.kind === 'choke');
+  if (chokes.length < 2 || chokes.length > 3) {
+    fail(`chokes: ${chokes.length} (esperado 2..3)`);
+  }
+  if (!features.some((feature) => feature.kind === 'narrow')) {
+    fail('faltou trecho longo estreito');
+  }
+  const wide = features.filter((feature) => feature.kind === 'wide').length;
+  if (wide < 1 || wide > 2) {
+    fail(`trechos largos: ${wide} (esperado 1..2)`);
+  }
+
+  for (const choke of chokes) {
+    for (const curve of layout.curves) {
+      if (curve.category !== 'hairpin' && curve.category !== 'elbow') {
+        continue;
+      }
+      if (choke.startS < curve.endS && choke.endS > curve.startS) {
+        fail('choke dentro de hairpin/cotovelo');
+      }
+    }
+  }
+
+  const flatFraction = layout.flatFraction ?? 0;
+  if (flatFraction > 0 && (flatFraction < 0.195 || flatFraction > 0.255)) {
+    fail(
+      `faixas planas cobrem ${(flatFraction * 100).toFixed(1)}% ` +
+        `(esperado 20..25%)`,
+    );
+  }
+}
+
+function buildFeatures(layout: ProceduralLayout | null): ProceduralFeatures | null {
+  if (!layout) {
+    return null;
+  }
+
+  const categories = Object.fromEntries(
+    CURVE_CATEGORIES.map((category) => [category, 0]),
+  ) as Record<CurveCategory, number>;
+  let leftSweepDeg = 0;
+  let rightSweepDeg = 0;
+
+  for (const curve of layout.curves) {
+    categories[curve.category] += 1;
+    if (curve.direction === 'left') {
+      leftSweepDeg += curve.sweepDeg;
+    } else {
+      rightSweepDeg += curve.sweepDeg;
+    }
+  }
+
+  const features = layout.widthFeatures ?? [];
+  return {
+    categories,
+    leftSweepDeg,
+    rightSweepDeg,
+    chokes: features.filter((feature) => feature.kind === 'choke').length,
+    longNarrow: features.filter((feature) => feature.kind === 'narrow').length,
+    wide: features.filter((feature) => feature.kind === 'wide').length,
   };
 }
 
@@ -1793,6 +2360,7 @@ function validateZones(
   track: Track,
   def: TrackDef,
   length: number,
+  limits: ProfileLimits,
   fail: (message: string) => void,
 ): void {
   if (def.zones.length !== 4) {
@@ -1812,10 +2380,10 @@ function validateZones(
     if (zone.surface !== expectedSurface) {
       fail(`superfície da zona ${i + 1} incompatível com ${zone.id}`);
     }
-    if (zoneLength < MIN_ZONE_LENGTH || zoneLength > MAX_ZONE_LENGTH) {
+    if (zoneLength < limits.minZoneLength || zoneLength > limits.maxZoneLength) {
       fail(
         `zona ${i + 1} tem ${zoneLength.toFixed(1)} m ` +
-          `(esperado ${MIN_ZONE_LENGTH}..${MAX_ZONE_LENGTH} m)`,
+          `(esperado ${limits.minZoneLength}..${limits.maxZoneLength} m)`,
       );
     }
     if (Math.abs(zone.start - (i === 0 ? 0 : def.zones[i - 1].end)) > 0.5) {
@@ -1954,8 +2522,9 @@ function findSelfIntersection(
 
 function findTooCloseSections(
   samples: readonly TrackSampleSummary[],
+  clearance: number,
 ): { a: number; b: number; distance: number } | null {
-  const cell = SECTION_CLEARANCE;
+  const cell = clearance;
   const cells = new Map<string, number[]>();
   let closest: { a: number; b: number; distance: number } | null = null;
 
@@ -2107,13 +2676,20 @@ function validateKickers(
 }
 
 function validatePowerups(
-  track: Track,
   def: TrackDef,
   length: number,
+  widthAt: (s: number) => number,
+  limits: ProfileLimits,
   fail: (message: string) => void,
 ): void {
-  if (def.powerups.length < 4 || def.powerups.length > 6) {
-    fail(`esperados 4..6 powerups, encontrados ${def.powerups.length}`);
+  if (
+    def.powerups.length < limits.minPowerups ||
+    def.powerups.length > limits.maxPowerups
+  ) {
+    fail(
+      `esperados ${limits.minPowerups}..${limits.maxPowerups} powerups, ` +
+        `encontrados ${def.powerups.length}`,
+    );
   }
 
   const types = new Set<PowerupType>();
@@ -2125,7 +2701,7 @@ function validatePowerups(
     if (powerup.s < 5 || powerup.s > length - 10) {
       fail(`powerup ${i + 1} fora da pista (s=${powerup.s.toFixed(1)})`);
     }
-    const halfWidth = track.widthAt(powerup.s) * 0.5;
+    const halfWidth = widthAt(powerup.s) * 0.5;
     if (Math.abs(powerup.u) > halfWidth - POWERUP_MIN_CLEARANCE + 0.001) {
       fail(
         `powerup ${i + 1} fora da pista (u=${powerup.u.toFixed(1)}, ` +
@@ -2143,13 +2719,20 @@ function validatePowerups(
 }
 
 function validateObstacles(
-  track: Track,
   def: TrackDef,
   length: number,
+  widthAt: (s: number) => number,
+  limits: ProfileLimits,
   fail: (message: string) => void,
 ): void {
-  if (def.obstacles.length < 30 || def.obstacles.length > 60) {
-    fail(`esperados 30..60 obstáculos, encontrados ${def.obstacles.length}`);
+  if (
+    def.obstacles.length < limits.minObstacles ||
+    def.obstacles.length > limits.maxObstacles
+  ) {
+    fail(
+      `esperados ${limits.minObstacles}..${limits.maxObstacles} obstáculos, ` +
+        `encontrados ${def.obstacles.length}`,
+    );
   }
 
   for (let i = 0; i < def.obstacles.length; i += 1) {
@@ -2169,7 +2752,7 @@ function validateObstacles(
       fail(`obstáculo ${i + 1} com tipo inválido`);
     }
 
-    const halfWidth = track.widthAt(obstacle.s) * 0.5;
+    const halfWidth = widthAt(obstacle.s) * 0.5;
     if (Math.abs(obstacle.u) < halfWidth + OBSTACLE_EDGE_CLEARANCE - 0.01) {
       fail(
         `obstáculo ${i + 1} a menos de ${OBSTACLE_EDGE_CLEARANCE} m da borda ` +
