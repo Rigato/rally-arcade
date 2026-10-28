@@ -6,7 +6,9 @@ import type { CameraTuning, CarState } from '../game/types';
 const HEADING_FALLBACK_SPEED = 2;
 const FOV_TAU = 0.25;
 /** Amplitude máxima do rumbling contínuo (m). */
-const RUMBLE_AMPLITUDE = 0.1;
+const RUMBLE_AMPLITUDE = 0.15;
+/** O Game escala o rumble pelo bump do piso (até 1,2). */
+const RUMBLE_MAX_INTENSITY = 1.2;
 /** Amplitude máxima do shake de impacto (m). */
 const SHAKE_AMPLITUDE = 0.12;
 /** Decaimento do shake (s). */
@@ -99,9 +101,13 @@ export class ChaseCamera {
     this.updateFov(carState.speed, dt);
   }
 
-  /** Rumbling contínuo do piso (0 = pista lisa, 1 = fora de pista em velocidade). */
+  /** Rumbling contínuo do piso (0 = pista lisa, 1,2 = fora de pista em velocidade). */
   setRumble(intensity: number): void {
-    this.rumble = clamp(Number.isFinite(intensity) ? intensity : 0, 0, 1);
+    this.rumble = clamp(
+      Number.isFinite(intensity) ? intensity : 0,
+      0,
+      RUMBLE_MAX_INTENSITY,
+    );
   }
 
   /** Injeta um shake transitório (impacto, pouso forte). 0..1 por chamada. */
