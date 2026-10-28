@@ -155,6 +155,16 @@ export interface CarTuning {
   slipGripFalloff: number;
   /** Redução de grip ao frear dentro da curva (0..1); ajuda a rotacionar. */
   brakeGripReduction: number;
+  /**
+   * Redução de grip proporcional ao esterço e à velocidade (0..1). Com esterço
+   * cheio a traseira solta e o carro rotaciona em vez de "colar" na curva.
+   */
+  steerGripReduction: number;
+  /**
+   * Guinada extra (rad/s) a esterço cheio, aplicada principalmente com pouco
+   * slip. Inicia a rotação sem transformar o carro em um pião.
+   */
+  yawBoost: number;
 }
 
 /** Ajustes visuais da carroceria (não participam da física). */

@@ -170,15 +170,28 @@ export class Car {
     if (startGrounded) {
       // --- Guinada ---
       // Cresce de zero até steerSpeedReference e cai levemente no topo.
+      const steerInput = clamp(input.steer, -1, 1);
       const lowSpeedFactor = clamp(speed / tuning.steerSpeedReference, 0, 1);
       const highSpeedFactor = 1 - tuning.steerHighSpeedReduction * speedRatio;
+      // O boost só ajuda a iniciar a rotação: ele some conforme o carro já
+      // está de lado, para o slip não virar pião incontrolável.
+      const entrySlip = Math.atan2(Math.abs(vLat), Math.abs(vLong) + 0.1);
+      const yawBoostFade = 1 - clamp(entrySlip / 0.5, 0, 1);
+      const yawBoost =
+        steerInput *
+        tuning.yawBoost *
+        lowSpeedFactor *
+        highSpeedFactor *
+        yawBoostFade *
+        surface.steerMultiplier;
       const yawTarget =
         speed > LOW_SPEED_YAW_THRESHOLD
-          ? clamp(input.steer, -1, 1) *
-            tuning.maxYawRate *
-            lowSpeedFactor *
-            highSpeedFactor *
-            surface.steerMultiplier
+          ? steerInput *
+              tuning.maxYawRate *
+              lowSpeedFactor *
+              highSpeedFactor *
+              surface.steerMultiplier +
+            yawBoost
           : 0;
 
       state.yawRate = lerp(
@@ -251,20 +264,29 @@ export class Car {
       }
 
       // --- Lateral ---
-      // Três efeitos somados:
+      // Quatro efeitos somados:
       // 1. handbrake solta a traseira;
       // 2. frear dentro da curva reduz o grip e ajuda a rotacionar;
-      // 3. quanto maior o ângulo de escorregamento, menos grip sobra — a
+      // 3. esterçar em velocidade solta a traseira (steerGripReduction);
+      // 4. quanto maior o ângulo de escorregamento, menos grip sobra — a
       //    derrapagem começa mais cedo e se sustenta, em vez de "colar".
       const slip = Math.atan2(Math.abs(vLat), Math.abs(vLong) + 0.1);
       const slipFalloff = 1 - tuning.slipGripFalloff * clamp(slip / 0.7, 0, 1);
       const brakeGrip = 1 - tuning.brakeGripReduction * brakeInput;
+      const steerGrip = Math.max(
+        0,
+        1 -
+          tuning.steerGripReduction *
+            Math.abs(clamp(input.steer, -1, 1)) *
+            lowSpeedFactor,
+      );
       const gripRate = Math.max(
         surface.grip *
           gripMultiplier *
           (input.handbrake ? tuning.handbrakeGripMultiplier : 1) *
           slipFalloff *
-          brakeGrip,
+          brakeGrip *
+          steerGrip,
         MIN_GRIP_RATE,
       );
       nextVLat = vLat * Math.exp(-gripRate * dt);
