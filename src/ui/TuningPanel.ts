@@ -117,6 +117,8 @@ export class TuningPanel {
     this.addNumber(folder, CAR_TUNING, 'airGravity', 'Gravidade no ar', 0, 50, 0.5);
     this.addNumber(folder, CAR_TUNING, 'slipGripFalloff', 'Grip × derrape', 0, 1, 0.01);
     this.addNumber(folder, CAR_TUNING, 'brakeGripReduction', 'Grip ao frear', 0, 1, 0.01);
+    this.addNumber(folder, CAR_TUNING, 'steerGripReduction', 'Grip ao esterçar', 0, 0.6, 0.01);
+    this.addNumber(folder, CAR_TUNING, 'yawBoost', 'Boost de guinada', 0, 2, 0.05);
   }
 
   private buildBodyFolder(): void {

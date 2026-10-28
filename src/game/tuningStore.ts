@@ -19,7 +19,7 @@ import type {
 } from './types';
 
 /** Chave única no localStorage. O sufixo permite migrar o formato no futuro. */
-export const TUNING_STORAGE_KEY = 'rally.tuning.v2';
+export const TUNING_STORAGE_KEY = 'rally.tuning.v3';
 
 interface TuningSnapshot {
   car: CarTuning;
@@ -129,7 +129,7 @@ function readStorage(): string | null {
 }
 
 /**
- * Lê `localStorage['rally.tuning.v1']` e aplica sobre os objetos mutáveis
+ * Lê o tuning salvo (`TUNING_STORAGE_KEY`) e aplica sobre os objetos mutáveis
  * exportados por `config.ts`, mantendo as referências.
  *
  * JSON inválido é ignorado (mantém o estado atual, geralmente os defaults).

@@ -25,20 +25,23 @@ export const CAR_TUNING: CarTuning = {
   maxSpeed: 34,
   dragCoefficient: 0.003,
   rollingResistance: 0.5,
-  maxYawRate: 2.15,
+  maxYawRate: 2.2,
   // Mais lento para entrar na curva: evita o efeito chicote no toque.
-  steerResponseTau: 0.16,
-  steerSpeedReference: 9,
+  steerResponseTau: 0.15,
+  steerSpeedReference: 8,
   steerHighSpeedReduction: 0.38,
   brakeMax: 12,
   brakeRampStart: 3.5,
   brakeRampDuration: 0.55,
   airGravity: 24,
-  // Carro mais solto de traseira, mas ainda recuperável no contra-esterço.
-  handbrakeGripMultiplier: 0.24,
+  // Carro claramente solto de traseira, mas ainda recuperável no contra-esterço.
+  handbrakeGripMultiplier: 0.23,
   handbrakeBrake: 3.5,
-  slipGripFalloff: 0.18,
-  brakeGripReduction: 0.12,
+  slipGripFalloff: 0.30,
+  brakeGripReduction: 0.15,
+  // Esterço cheio solta a traseira e o boost inicia a rotação.
+  steerGripReduction: 0.18,
+  yawBoost: 0.10,
 };
 
 /** Pisos da seção 4: grip (1/s), multiplicadores de aceleração/arrasto e bump. */
@@ -46,7 +49,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
   gravel: {
     id: 'gravel',
     label: 'Cascalho',
-    grip: 5.6,
+    grip: 4.6,
     acceleration: 1.0,
     drag: 1.0,
     bump: 0.6,
@@ -55,7 +58,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
   sand: {
     id: 'sand',
     label: 'Areia',
-    grip: 3.4,
+    grip: 2.9,
     acceleration: 0.85,
     drag: 1.25,
     bump: 0.9,
@@ -64,7 +67,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
   'forest-offroad': {
     id: 'forest-offroad',
     label: 'Fora da pista — floresta',
-    grip: 2.9,
+    grip: 2.2,
     acceleration: 0.8,
     drag: 1.7,
     bump: 1.4,
@@ -73,7 +76,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
   'desert-offroad': {
     id: 'desert-offroad',
     label: 'Fora da pista — deserto',
-    grip: 2.3,
+    grip: 1.8,
     acceleration: 0.7,
     drag: 2.0,
     bump: 1.8,
