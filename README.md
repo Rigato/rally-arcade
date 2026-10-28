@@ -6,7 +6,7 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 **Jogue agora:** <https://rigato.github.io/rally-arcade/>
 
-> Status: **MVP completo — M5, com powerups (M5b), controles touch de uma mão, pista A→B e gerador procedural variado**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. A pista fixa é uma seed procedural curada (1096,8 m), as pistas aleatórias agora misturam curvas de vários raios e os dois sentidos, e o touch usa 5 botões com combos de freio. O conjunto está em playtest para calibrar tempos e feeling.
+> Status: **MVP completo — M5, com powerups (M5b), controles touch de uma mão, pista A→B e ajustes v5 de curvas/física**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. As pistas aleatórias agora misturam seis tipos de curva, têm setores mais longos, relevo com platôs e largura agressiva com chokes; o carro está ~15% mais rápido e as áreas de escape freiam e sacodem mais. O conjunto está em playtest para calibrar tempos e feeling.
 
 ## Screenshots
 
@@ -25,9 +25,9 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 1. O carro começa **parado** em `s = 22 m`; o botão **GO!** central (ou um toque na tela) inicia o cronômetro. Depois disso o carro **acelera sozinho**.
 2. Dirigir, derrapar, pular e escolher a linha. Sair da pista custa tempo; a recuperação automática mantém o relógio correndo.
-3. A pista é **A→B**, com 4 setores intercalados (floresta → deserto → floresta → deserto). Em `s = 250`, `500` e `750 m` aparecem as **parciais 1, 2 e 3**, com tempo e diferença contra os alvos provisórios (13,9 s / 27,8 s / 41,7 s).
-4. Ao cruzar a faixa em `s ≈ 1093 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s. A largada e a chegada ficam em pontos distintos.
-5. A medalha vem do tempo final: **ouro ≤ 59,3 s**, **prata ≤ 67,6 s**, **bronze ≤ 77,1 s**. Sem medalha, o resultado mostra quantos segundos faltaram para o bronze.
+3. A pista é **A→B**, com 4 setores intercalados (floresta → deserto → floresta → deserto). Em `s = 250`, `500` e `750 m` aparecem as **parciais 1, 2 e 3**, com tempo e diferença contra os alvos provisórios (13,9 s / 27,8 s / 41,7 s). Nas pistas aleatórias os setores têm **340–470 m** e as parciais ficam em 25/50/75% do traçado.
+4. Na pista fixa, ao cruzar a faixa em `s ≈ 1093 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s. A largada e a chegada ficam em pontos distintos; nas pistas aleatórias a chegada fica no fim do traçado de ~1,5 km.
+5. Na pista fixa, a medalha vem do tempo final: **ouro ≤ 59,3 s**, **prata ≤ 67,6 s**, **bronze ≤ 77,1 s**. Sem medalha, o resultado mostra quantos segundos faltaram para o bronze.
 6. **CORRER DE NOVO** (ou o botão ↺ / tecla **R**) recoloca o carro na largada em menos de 1 s. O melhor tempo continua no topo do HUD.
 
 ## Controles
@@ -76,10 +76,18 @@ Dois tipos no MVP, com ativação imediata:
 | **Turbo** | velocidade máxima e aceleração × 1,3 + boost de FOV | 2,0 s | anel laranja |
 | **Grip extra** | grip lateral × 1,8 | 10 s | anel azul |
 
-- **4 pickups** autorados em `src/track/track01.ts`, distribuídos pela pista: turbo em `s ≈ 426,7`, grip em `s ≈ 475,7`, turbo em `s ≈ 800,6` e turbo em `s ≈ 1048,5`; nenhum imediatamente antes das rampas.
+- **4 pickups** autorados em `src/track/track01.ts`, distribuídos pela pista: turbo em `s ≈ 426,7`, grip em `s ≈ 475,7`, turbo em `s ≈ 800,6` e turbo em `s ≈ 1048,5`; nenhum imediatamente antes das rampas. Nas pistas aleatórias são **6–8 pickups**.
 - Pegar o mesmo tipo de novo **renova o timer** (nunca acumula); **tipos diferentes coexistem**. Cada pickup some ao ser coletado e volta no reinício (R), no retry e no teleporte `?s=`.
 - A coleta só vale em **RUNNING**; READY, RECOVERING e FINISHED não coletam. Na recuperação os timers ficam congelados.
 - O turbo não altera saltos, colisão, freio ou rampa: só velocidade, aceleração e o FOV da câmera (`CAMERA_TUNING.turboFovBoost`). O grip extra age só no grip lateral.
+
+## Carro, escape e poeira
+
+- **Velocidade/aceleração/freio:** 39,1 m/s (~141 km/h), 11,5 m/s² e 13,8 m/s² — +15% sobre a versão anterior.
+- **Fora de pista:** o carro fica limitado a **65%** da velocidade máxima na floresta e **62%** no deserto, com freio extra de 10/8 m/s². Na prática, entrar a 141 km/h estabiliza em ~91/87 km/h em ~2,1 s, sem corte instantâneo.
+- **Trepidação:** o rumble da câmera sobe para 0,15 m e é escalado pelo `bump` do piso; fora de pista sacode mais.
+- **Poeira:** pool de 64 partículas emitidas nas rodas traseiras quando há slip (>6°) e velocidade (>5 m/s). A quantidade cresce com o slip (pouca derrapagem = quase nada; 30°+ = poeira clara), a cor segue o piso e as partículas somem em menos de 1 s.
+- O tuning salvo usa `localStorage['rally.tuning.v4']`; valores antigos da v3 são ignorados.
 
 ## Painel de ajuste e debug
 
@@ -161,14 +169,21 @@ Na raiz, `scripts/` reúne `validate-track.ts`, `select-track.ts`, `freeze-track
 
 O gerador de pistas por seed fica em `src/track/procedural/`:
 
-- `generateProceduralTrack(seed)` usa uma **gramática de segmentos**: retas de ~20–90 m e curvas sorteadas entre cinco categorias — longa (R≈70–110 m), média (45–65 m), curta (28–38 m), cotovelo (26–31 m) e hairpin ocasional (26–30 m). Cada seed mistura pelo menos três categorias e curvas nos dois sentidos.
-- Candidatos são rejeitados se trechos não vizinhos ficarem a menos de **36 m** entre centros, se o layout passar de ~450×450 m ou se a chegada ficar a menos de **100 m** da largada. O resultado é sempre uma pista **A→B**.
+- `generateProceduralTrack(seed)` usa uma **gramática de segmentos**: retas de ~20–90 m e curvas sorteadas entre **seis categorias** — longa (R≈70–110 m), média (45–65 m), curta (28–38 m), cotovelo (26–31 m), **hairpin fechado (20–23 m)** e **mudança de rota / kink (R≈140–220 m, sweep 6–15°)**. Cada seed mistura pelo menos quatro categorias, curvas nos dois sentidos e 1–3 kinks.
+- Candidatos são rejeitados se trechos não vizinhos ficarem a menos de **40 m** entre centros, se o layout passar de ~650×650 m ou se a chegada ficar a menos de **100 m** da largada. O resultado é sempre uma pista **A→B**.
+- **Setores mais longos:** cada um tem **340–470 m** (35–65% acima dos ~250–290 m anteriores) e a pista total fica em **1518–1626 m**. São 6–8 powerups, 50–75 obstáculos e 1–2 rampas.
+- **Relevo:** amplitudes ~20% maiores, com 2–3 **platôs planos** de 70–150 m cobrindo 20–25% da pista.
+- **Largura agressiva:** base 10,5–12 m, trechos largos 13–15 m, longos estreitos 5,5–7 m e **chokes de 4,6–5,4 m**. O sampler (`Track.ts`) aceita **4,4–15,2 m**.
 - `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, separação, rampas, splits, powerups e obstáculos.
 - `generateLegacyProceduralTrack(seed)` preserva a serpentina antiga de 4 pernas, usada para reproduzir a pista fixa `track01-v3`. As pistas aleatórias usam o gerador novo.
 
-Validação atual: **100/100 seeds** (1–100), comprimento 1014–1148 m, raio mínimo 25,2–29,7 m, separação mínima 37,4 m e A→B de 159–584 m.
+Validação atual: **100/100 seeds** (1–100), comprimento **1517,8–1625,7 m**, setores **354,3–437,6 m**, raio mínimo **19,5–22,6 m**, largura **4,6–15,0 m**, separação mínima **40,1 m**, A→B **148,7–804,8 m** e 20,2–24,9% de pista plana.
 
 ![12 seeds procedurais](Docs/screenshots/proc-variety.png)
+
+![Choke point estreito](Docs/screenshots/track-choke.png)
+
+![Trecho largo](Docs/screenshots/track-wide.png)
 
 Teste as seeds e gere um preview top-down ou um contact sheet:
 
@@ -202,6 +217,8 @@ O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O dep
 - **Controles v3** (substituída): GO, auto-aceleração, 3 botões touch e teclado invertido corretamente.
 - **Controles v4** (em playtest): 5 botões touch com combos ◀F/▶F, menu MÃO à esquerda/direita e stack oculto no PC.
 - **Pista A→B** (em playtest): seed 91 congelada, 1096,8 m, 4 setores, raio mínimo 30,2 m, 2 rampas baixas, 3 parciais e 50 obstáculos.
-- **Protótipo procedural v2** (em validação): gramática de curvas longas/médias/curtas/cotovelo/hairpin nos dois sentidos, 100/100 seeds, contact sheet e botão 🎲 NOVA.
+- **Física v5** (em playtest): aceleração/velocidade/freio +15%, off-road com cap de 65%/62% e desaceleração suave, rumble mais forte.
+- **Poeira v5** (em playtest): partículas proporcionais ao slip, cores por piso e dissipação rápida.
+- **Protótipo procedural v3** (em validação): seis tipos de curva (incluindo kink), hairpin 20–23 m, setores de 340–470 m, platôs e chokes de 4,6 m; 100/100 seeds.
 
 Fora do MVP: progressão, loja, menu/editor de pistas procedurais, áudio e cenários extras.

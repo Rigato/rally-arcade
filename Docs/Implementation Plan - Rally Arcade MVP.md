@@ -615,3 +615,72 @@ O playtest seguinte trouxe três correções: os traçados procedurais estavam t
 - Validar o menu MÃO e a persistência no celular real (incluindo recarregar e trocar de lado no meio da sessão).
 - Avaliar se as curvas procedurais novas são variadas o suficiente e se algum raio curto/elbow ficou apertado demais na jogabilidade.
 - Recalibrar medalhas/parciais com tempos reais; a pista fixa continua a seed 91 antiga (se o novo gerador agradar, dá para congelar uma nova seed depois).
+
+## 27. Plano de ajustes v5 (Oct 28, 2026)
+
+O playtest aprovou o protótipo e pediu uma segunda camada de variedade e sensação: curvas mais distintas, setores mais longos, relevo mais forte, largura agressiva com choke points, carro mais rápido e poeira na derrapagem.
+
+### Curvas
+
+- **Hairpin mais fechado:** raio **19–23 m**, sweep **160–180°** (antes 26–30 m). O validador procedural passa a aceitar raio mínimo ~16 m; a pista fixa continua com o validador B1 separado.
+- **Nova categoria “mudança de rota” (`kink`):** curva muito curta e muito aberta, com raio **140–220 m** e sweep **6–15°** (arco de ~15–58 m). Cada pista tem **1–3**; ela muda levemente a direção de uma reta.
+- Cada pista usa **≥4 das 6 categorias**, curvas nos dois sentidos e no máximo 2 curvas seguidas para o mesmo lado.
+
+### Setores e comprimento
+
+- Comprimento-alvo: **1400–1750 m** (antes 1014–1148 m), aumento de ~35–55% no total.
+- Cada setor fica **35–65% mais longo** que os ~250–290 m atuais, com jitter de ±8% por setor. Limites de validação: setor **300–500 m**, pista **1300–1800 m**.
+- 4 setores, 3 parciais em 25/50/75%, **1–2 kickers**, **6–8 powerups** e **50–75 obstáculos** para acompanhar o comprimento.
+- Separação entre trechos sobe para **40 m** e a caixa máxima para **650×650 m**; a chegada continua a ≥100 m da largada.
+
+### Elevação
+
+- Amplitudes **×1,2**: onda longa 4,2–7,2 m, média 1,45–2,9 m, cristas 0,6–1,1 m.
+- **2–3 faixas planas** de 70–150 m, totalizando 20–25% da pista, com transições suaves de 25–30 m e |grade| < 2%.
+- Grade de construção máxima **30%**; validação aceita até **35%**.
+
+### Largura
+
+- Base **10,5–12 m**; trechos largos **13–15 m** (80–160 m).
+- **Longos estreitos 5,5–7 m** (120–220 m) e **choke points 4,6–5,4 m** (50–90 m), com transições de 30–40 m.
+- Cada pista tem **2–3 chokes**, ≥1 trecho longo estreito e 1–2 largos; chokes não ficam dentro de hairpin/cotovelo.
+- Validação de largura: **4,4–15,2 m**. Powerups e obstáculos se adaptam à largura local.
+
+### Carro e escape
+
+- `engineAcceleration` **10 → 11,5** (+15%), `maxSpeed` **34 → 39,1** (+15%), `brakeMax` **12 → 13,8** (+15%).
+- Off-road ganha **limite de velocidade** e **freio extra**: cap de **65%** da velocidade máxima na floresta e **62%** no deserto; desaceleração extra prevista em **6–7 m/s²**, calibrada para **10/8 m/s²** nos resultados para chegar ao cap em ~2,1 s.
+- `SurfaceDef` ganha `speedLimit` e `offRoadBrake`; o tuning salvo passa para `rally.tuning.v4` para os novos defaults não serem mascarados pelo v3.
+- A física de derrapagem/grip elogiada no playtest não muda.
+
+### Poeira e trepidação
+
+- Rumbling da câmera sobe de **0,10 → 0,15 m** e passa a ser escalado pelo `bump` do piso; fora de pista trepida mais, sem shake em pista lisa.
+- Sistema de poeira simples com pool de **64 partículas**: emissão proporcional ao slip (limiar ~6°, cheio ~30°) e à velocidade (>5 m/s); vida 0,45–0,9 s; tamanho 0,25–0,8 m; opacidade 0,25–0,5; cores de cascalho/areia/fora de pista. Reset no retry, teleporte e chegada.
+
+### Execução
+
+- Três worktrees: **curvas/setores** (gerador), **física/off-road** (Car/config/types/store) e **poeira/trepidação** (novo FX + Game/ChaseCamera).
+- Testes: 100 seeds válidas, contact sheet, screenshots de 3 seeds; simulação de aceleração/velocidade/freio/off-road; screenshots de poeira com slip baixo/alto; build, typecheck e validate:track.
+
+### Resultados da implementação v5
+
+- **Gerador:** 100/100 seeds válidas; pista **1517,8–1625,7 m**, setores **354,3–437,6 m**, raio mínimo **19,5–22,6 m**, largura **4,6–15,0 m**, separação **40,1 m**, A→B **148,7–804,8 m**, 20,2–24,9% de pista plana, 6–8 powerups e 50–75 obstáculos.
+- **Curvas:** hairpin autorado 20–23 m (medido 19,5–22,6 m), kink 140–220 m / 6–15°, 1–2 hairpins e 1–3 kinks por pista. Em 100 seeds, todas usam ≥4 das 6 categorias e os dois sentidos.
+- **Largura no jogo:** `Track.ts` ainda clampava 7–14 m; foi ajustado para **4,4–15,2 m**. Sem isso, os chokes de 4,6 m e os largos de 15 m seriam suavizados no render/física. A pista fixa (8,6–13,0 m) não mudou.
+- **Pista fixa:** `track01-v3` intocada; `freeze-track.ts` reproduz o arquivo byte a byte pelo perfil legado. `validate:track` continua OK.
+- **Física:** 11,5 m/s², 39,1 m/s e 13,8 m/s². Simulação: 0–100 km/h em **2,73 s** (antes 3,21 s), máxima **140,76 km/h**, frenagem de 39,1→0 em 2,49 s / 46,17 m. O freio ficou 15% mais forte, mas a distância aumentou 13,6% porque a energia cinética subiu ~32%.
+- **Off-road:** cap de 65% (floresta) e 62% (deserto), com `offRoadBrake` final **10,0/8,0 m/s²** (acima dos 6–7 do plano, para chegar ao cap em ~2,1 s com acelerador mantido). A 39,1 m/s: floresta estabiliza em 25,42 m/s (~91,5 km/h) em 2,13 s; deserto em 24,24 m/s (~87,3 km/h) em 2,41 s. Nenhum corte instantâneo.
+- **Rumble:** amplitude 0,15 m; fator de bump `clamp(0.7 + 0.25*bump, 0.7, 1.2)`, com `setRumble` aceitando até 1,2. Em pista lisa continua 0.
+- **Poeira:** pool de 64 partículas; emissão só no chão, >5 m/s e >6° de slip. Teste sintético: ~2,5 partículas médias a 10°, ~14,7 a 30°, zero a 0° ou 4 m/s; dissipa em ~0,73 s. No jogo merged, slip 37,8° gerou 13 partículas e voltou a 0 após soltar.
+- **Tuning:** chave `rally.tuning.v4`; o painel expõe `Limite vel. ×` e `Freio off-road` em Pisos.
+- **Testes:** typecheck, build, validate:track, 100 seeds, 5 botões touch, desktop sem controles, pista fixa e procedural no jogo; console sem erros.
+
+### Pendências do playtest v5
+
+- Testar no celular se os chokes de 4,6–5,4 m são desafiadores ou frustrantes e se os trechos largos de 13–15 m dão a sensação de alívio desejada.
+- Avaliar o hairpin de 19–23 m e o kink; talvez o hairpin ainda precise fechar ou abrir.
+- Ver se a nova velocidade (141 km/h) e o freio +15% deixam as curvas curtas controláveis; o teste deve ser no celular.
+- Validar a poeira e o rumble em movimento, além de confirmar se a poeira alta está sutil o suficiente.
+- Recalibrar medalhas/parciais das pistas procedurais de ~1,5 km; os alvos atuais escalam com o comprimento, mas a velocidade +15% mudou o ritmo.
+- A pista fixa continua com as medalhas antigas (59,3/67,6/77,1 s); o carro mais rápido pode deixá-las fáceis.
