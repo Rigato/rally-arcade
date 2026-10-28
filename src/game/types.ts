@@ -30,16 +30,6 @@ export interface SurfaceDef {
   steerMultiplier: number;
 }
 
-export type HandbrakeMode = 'drag' | 'button';
-
-/**
- * Esquema de freio no toque:
- * - `drag2d`: segurar acelera; arrastar na horizontal esterça; arrastar para
- *   baixo freia sem soltar o dedo (permite frear e virar ao mesmo tempo).
- * - `release`: esquema antigo; soltar o dedo aplica a rampa de freio.
- */
-export type ControlMode = 'drag2d' | 'release';
-
 /** Powerups do MVP: turbo (velocidade) e grip extra (derrapagem). */
 export type PowerupType = 'turbo' | 'grip';
 
@@ -58,7 +48,11 @@ export interface ActivePowerup {
  */
 export type ForcedSurface = SurfaceId | 'auto';
 
-/** Entrada normalizada do jogador. `steer` vai de -1 (esquerda) a +1 (direita). */
+/**
+ * Entrada normalizada do jogador. `steer` vai de -1 a +1 no referencial do
+ * carro (+1 = direita do carro); a câmera vê essa direita à esquerda na tela,
+ * então o botão ◀ envia +1 (ver `Input`).
+ */
 export interface InputState {
   throttle: boolean;
   steer: number;
@@ -185,25 +179,10 @@ export interface CameraTuning {
 }
 
 export interface InputTuning {
-  /** Esquema de freio no toque: `drag2d` (novo) ou `release` (antigo). */
-  controlMode: ControlMode;
-  /** Fração de min(innerWidth, innerHeight) para atingir o esterço máximo. */
-  steerLockScreenRatio: number;
-  steerDeadzonePx: number;
+  /** Constante de tempo (s) do esterço até o alvo de -1/0/+1. */
   steerSmoothingTau: number;
-  /** Expoente do esterço: >1 deixa o centro mais dócil e o fim mais forte. */
-  steerExponent: number;
-  /** Deslocamento (em múltiplos do lock) para acionar o freio de mão no modo drag. */
-  handbrakeScreenRatio: number;
-  handbrakeMode: HandbrakeMode;
-  /** Zona morta vertical antes de começar a frear no modo drag2d. */
-  brakeDeadzonePx: number;
-  /** Deslocamento vertical (px) para freio máximo. */
-  brakeTravelPx: number;
-  brakeExponent: number;
+  /** Constante de tempo (s) do freio até 0/1. */
   brakeSmoothingTau: number;
-  /** Mostra o guia visual do toque (anel + ponto). */
-  touchGuide: boolean;
 }
 
 export interface PowerupTuning {

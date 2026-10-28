@@ -1,7 +1,6 @@
 import type {
   ActivePowerup,
   CarTelemetry,
-  HandbrakeMode,
   PowerupType,
   RaceState,
 } from '../game/types';
@@ -29,7 +28,6 @@ export interface HudTrackInfo {
 }
 
 export interface HudOptions {
-  handbrakeMode?: HandbrakeMode;
   debug?: boolean;
   track?: HudTrackInfo;
 }
@@ -71,13 +69,19 @@ const DEFAULT_TRACK_INFO: HudTrackInfo = {
  * botões reativam pointer events, então toques no HUD nunca dirigem o carro.
  */
 export class Hud {
-  readonly handbrakeButton: HTMLButtonElement;
+  readonly goButton: HTMLButtonElement;
+  readonly steerLeftButton: HTMLButtonElement;
+  readonly steerRightButton: HTMLButtonElement;
+  readonly brakeButton: HTMLButtonElement;
 
   private readonly root: HTMLElement;
   private readonly timer: HTMLOutputElement;
   private readonly resetButton: HTMLButtonElement;
-  private readonly hint: HTMLParagraphElement;
+  private readonly goOverlay: HTMLElement;
+  private readonly controls: HTMLElement;
   private readonly bestTimeEl: HTMLElement;
+  private readonly newTrackButton: HTMLButtonElement;
+  private readonly fixedTrackButton: HTMLButtonElement;
   private readonly progressFill: HTMLElement;
   private readonly progressTrack: HTMLElement;
   private readonly progressDistance: HTMLElement;
@@ -126,7 +130,6 @@ export class Hud {
     this.root.replaceChildren();
 
     this.debugVisible = options.debug ?? false;
-    const handbrakeMode = options.handbrakeMode ?? 'drag';
     const track = options.track ?? DEFAULT_TRACK_INFO;
     this.trackStartS = track.startS;
     this.trackFinishS = Math.max(track.finishS, track.startS + 1);
@@ -211,9 +214,29 @@ export class Hud {
     progress.append(progressMeta, this.progressTrack);
     header.append(top, progress);
 
-    this.hint = document.createElement('p');
-    this.hint.className = 'hud__hint';
-    this.hint.textContent = 'TOQUE E ARRASTE';
+    const trackBar = document.createElement('div');
+    trackBar.className = 'hud__trackbar';
+
+    const newTrackButton = document.createElement('button');
+    newTrackButton.className = 'hud__track-button';
+    newTrackButton.type = 'button';
+    newTrackButton.textContent = '🎲 NOVA';
+    newTrackButton.title = 'Carregar pista procedural aleatória';
+    newTrackButton.setAttribute('aria-label', 'Carregar pista procedural aleatória');
+    newTrackButton.addEventListener('click', this.handleNewTrack);
+    this.newTrackButton = newTrackButton;
+
+    const fixedTrackButton = document.createElement('button');
+    fixedTrackButton.className = 'hud__track-button';
+    fixedTrackButton.type = 'button';
+    fixedTrackButton.textContent = 'FIXA';
+    fixedTrackButton.title = 'Voltar para a pista fixa';
+    fixedTrackButton.setAttribute('aria-label', 'Voltar para a pista fixa');
+    fixedTrackButton.addEventListener('click', this.handleFixedTrack);
+    this.fixedTrackButton = fixedTrackButton;
+
+    trackBar.append(newTrackButton, fixedTrackButton);
+    header.append(trackBar);
 
     this.splitBanner = document.createElement('div');
     this.splitBanner.className = 'hud__split';
@@ -232,15 +255,40 @@ export class Hud {
 
     this.splitBanner.append(this.splitNameEl, this.splitTimeEl, this.splitDeltaEl);
 
-    this.handbrakeButton = document.createElement('button');
-    this.handbrakeButton.className = 'hud__handbrake';
-    this.handbrakeButton.type = 'button';
-    this.handbrakeButton.setAttribute('aria-label', 'Freio de mão');
-    this.handbrakeButton.title = 'Freio de mão (Espaço)';
-    this.handbrakeButton.innerHTML =
-      '<span class="hud__handbrake-icon" aria-hidden="true">✋</span>' +
-      '<span class="hud__handbrake-label">FREIO</span>';
-    this.handbrakeButton.hidden = handbrakeMode !== 'button';
+    this.goOverlay = document.createElement('div');
+    this.goOverlay.className = 'hud__go';
+    this.goOverlay.setAttribute('aria-hidden', 'true');
+
+    this.goButton = document.createElement('button');
+    this.goButton.className = 'hud__go-button';
+    this.goButton.type = 'button';
+    this.goButton.setAttribute('aria-label', 'Largar corrida');
+
+    const goTitle = document.createElement('span');
+    goTitle.className = 'hud__go-title';
+    goTitle.textContent = 'GO!';
+
+    const goSub = document.createElement('span');
+    goSub.className = 'hud__go-sub';
+    goSub.textContent = 'TOQUE PARA LARGAR';
+
+    this.goButton.append(goTitle, goSub);
+    this.goOverlay.append(this.goButton);
+
+    const controls = document.createElement('div');
+    controls.className = 'hud__controls';
+    controls.setAttribute('aria-label', 'Controles de direção');
+
+    const steerGroup = document.createElement('div');
+    steerGroup.className = 'hud__steer';
+
+    this.steerLeftButton = this.createControlButton('left', '◀', 'Virar à esquerda');
+    this.steerRightButton = this.createControlButton('right', '▶', 'Virar à direita');
+    steerGroup.append(this.steerLeftButton, this.steerRightButton);
+
+    this.brakeButton = this.createControlButton('brake', 'FREIO', 'Frear');
+    controls.append(steerGroup, this.brakeButton);
+    this.controls = controls;
 
     this.debugPanel = document.createElement('div');
     this.debugPanel.className = 'hud__debug';
@@ -315,12 +363,12 @@ export class Hud {
 
     this.root.append(
       header,
-      this.hint,
       this.splitBanner,
       this.powerupsBar,
       this.powerupFlash,
       this.recoveryOverlay,
-      this.handbrakeButton,
+      this.goOverlay,
+      this.controls,
       this.debugPanel,
     );
     this.root.prepend(this.impactOverlay);
@@ -416,7 +464,22 @@ export class Hud {
   setState(state: RaceState): void {
     this.currentState = state;
     this.root.dataset.state = state;
-    this.hint.hidden = state !== 'READY';
+
+    const ready = state === 'READY';
+    const running = state === 'RUNNING';
+
+    this.goOverlay.hidden = !ready;
+    this.goOverlay.setAttribute('aria-hidden', ready ? 'false' : 'true');
+    this.goButton.disabled = !ready;
+
+    for (const button of [
+      this.steerLeftButton,
+      this.steerRightButton,
+      this.brakeButton,
+    ]) {
+      button.disabled = !running;
+    }
+    this.controls.setAttribute('aria-hidden', running ? 'false' : 'true');
 
     this.debugValues.state.textContent = state;
   }
@@ -543,10 +606,6 @@ export class Hud {
     this.updateDebugRows(telemetry);
   }
 
-  setHandbrakeMode(mode: HandbrakeMode): void {
-    this.handbrakeButton.hidden = mode !== 'button';
-  }
-
   isDebugVisible(): boolean {
     return this.debugVisible;
   }
@@ -574,8 +633,48 @@ export class Hud {
     this.hideSplit();
     this.clearPowerups();
     this.resetButton.removeEventListener('click', this.handleReset);
+    this.newTrackButton.removeEventListener('click', this.handleNewTrack);
+    this.fixedTrackButton.removeEventListener('click', this.handleFixedTrack);
     this.resetHandler = null;
   }
+
+  private createControlButton(
+    kind: 'left' | 'right' | 'brake',
+    label: string,
+    ariaLabel: string,
+  ): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.className = `hud__control hud__control--${kind}`;
+    button.type = 'button';
+    button.textContent = label;
+    button.setAttribute('aria-label', ariaLabel);
+    return button;
+  }
+
+  /** Abre a pista procedural com uma seed nova; preserva `debug=1`. */
+  private readonly handleNewTrack = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const url = new URL(window.location.href);
+    const seed = 1 + Math.floor(Math.random() * 100);
+    url.searchParams.set('track', 'proc');
+    url.searchParams.set('seed', String(seed));
+    url.searchParams.delete('s');
+    window.location.assign(url.toString());
+  };
+
+  /** Remove track/seed e volta para a pista fixa; preserva `debug=1`. */
+  private readonly handleFixedTrack = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('track');
+    url.searchParams.delete('seed');
+    url.searchParams.delete('s');
+    window.location.assign(url.toString());
+  };
 
   private createPowerupChip(type: PowerupType): {
     root: HTMLElement;

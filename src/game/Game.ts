@@ -28,7 +28,7 @@ import {
 } from './config';
 import { isDebugMode } from './debug';
 import { Race } from './Race';
-import type { CarState, ForcedSurface, HandbrakeMode, RaceState, SurfaceId } from './types';
+import type { CarState, ForcedSurface, RaceState, SurfaceId } from './types';
 
 const FPS_SMOOTHING_TAU = 0.5;
 /** Distância da faixa de chegada até o fim geométrico da spline (m). */
@@ -182,7 +182,6 @@ export class Game {
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
 
     this.hud = new Hud(hudRoot, {
-      handbrakeMode: INPUT_TUNING.handbrakeMode,
       debug: isDebugMode(),
       track: {
         startS: this.track.startS,
@@ -200,8 +199,11 @@ export class Game {
 
     this.input = new Input(this.renderer.domElement, {
       tuning: INPUT_TUNING,
-      handbrakeButton: this.hud.handbrakeButton,
-      onFirstThrottle: this.handleFirstThrottle,
+      goButton: this.hud.goButton,
+      steerLeftButton: this.hud.steerLeftButton,
+      steerRightButton: this.hud.steerRightButton,
+      brakeButton: this.hud.brakeButton,
+      onRaceStart: this.handleRaceStart,
       onReset: this.reset,
       onToggleTelemetry: () => {
         this.hud.toggleDebug();
@@ -309,6 +311,7 @@ export class Game {
 
     this.cancelRecovery();
     this.input.reset();
+    this.input.setRaceActive(false);
     this.car.reset(this.teleportPosition, heading);
     this.car.state.trackS = target;
     this.car.state.trackU = 0;
@@ -334,21 +337,6 @@ export class Game {
     this.hud.setProgress(target);
     this.hud.setState(this.state);
     this.hud.setTelemetry(this.car.telemetry, this.car.state.position, this.debugInfo);
-  }
-
-  /**
-   * Aplica o modo do freio de mão ao vivo: HUD, Input e o objeto de tuning
-   * compartilhado. Trocar para `drag` libera imediatamente o botão pressionado.
-   */
-  setHandbrakeMode(mode: HandbrakeMode): void {
-    INPUT_TUNING.handbrakeMode = mode;
-    this.hud.setHandbrakeMode(mode);
-    this.input.notifyTuningChanged();
-  }
-
-  /** Reaplica mudanças do painel que afetam o estado do Input (modo/guia). */
-  notifyInputTuningChanged(): void {
-    this.input.notifyTuningChanged();
   }
 
   dispose(): void {
@@ -389,18 +377,20 @@ export class Game {
     this.renderer.domElement.remove();
   }
 
-  private readonly handleFirstThrottle = (): void => {
+  private readonly handleRaceStart = (): void => {
     if (this.state !== 'READY') {
       return;
     }
 
     this.state = 'RUNNING';
+    this.input.setRaceActive(true);
     this.hud.setState(this.state);
   };
 
   private readonly reset = (): void => {
     this.cancelRecovery();
     this.input.reset();
+    this.input.setRaceActive(false);
     this.car.reset(this.track.startPose.position, this.track.startPose.heading);
     this.car.state.trackS = this.track.startS;
     this.car.state.trackU = 0;
@@ -527,6 +517,7 @@ export class Game {
 
     this.state = 'FINISHED';
     this.input.cancelAll();
+    this.input.setRaceActive(false);
     this.chaseCamera.setRumble(0);
     this.powerups.clearEffects();
     this.chaseCamera.setFovBoost(0);
@@ -596,6 +587,7 @@ export class Game {
 
     // "Pare a física": sem input, sem velocidade e sem rumbling da câmera.
     this.input.cancelAll();
+    this.input.setRaceActive(false);
     state.velocity.set(0, 0, 0);
     state.speed = 0;
     state.yawRate = 0;
@@ -649,6 +641,7 @@ export class Game {
     if (this.recoveryElapsed >= duration) {
       this.state = 'RUNNING';
       this.unstickElapsed = 0;
+      this.input.setRaceActive(true);
       this.hud.setRecovery(false);
       this.hud.setState(this.state);
     }
@@ -893,18 +886,16 @@ export class Game {
  * a pista fixa sem quebrar o boot.
  */
 function resolveTrackDef(): typeof TRACK_01 {
-  if (isDebugMode()) {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('track') === 'proc') {
-      const rawSeed = Number(params.get('seed') ?? '1');
-      const seed = Number.isFinite(rawSeed) && rawSeed > 0 ? Math.floor(rawSeed) : 1;
-      try {
-        const generated = generateProceduralTrack(seed);
-        console.info(`[Game] pista procedural seed=${seed} (${generated.id}).`);
-        return generated;
-      } catch (error) {
-        console.warn('[Game] falha no gerador procedural; usando a pista fixa.', error);
-      }
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('track') === 'proc') {
+    const rawSeed = Number(params.get('seed') ?? '1');
+    const seed = Number.isFinite(rawSeed) && rawSeed > 0 ? Math.floor(rawSeed) : 1;
+    try {
+      const generated = generateProceduralTrack(seed);
+      console.info(`[Game] pista procedural seed=${seed} (${generated.id}).`);
+      return generated;
+    } catch (error) {
+      console.warn('[Game] falha no gerador procedural; usando a pista fixa.', error);
     }
   }
 

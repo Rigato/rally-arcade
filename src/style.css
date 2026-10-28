@@ -252,30 +252,242 @@ body {
   outline-offset: 3px;
 }
 
-.hud__hint {
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--safe-bottom) + 22px);
-  transform: translateX(-50%);
-  margin: 0;
-  padding: 9px 18px;
-  border: 1px solid var(--panel-border);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--muted);
-  font-size: clamp(0.68rem, 2.9vw, 0.82rem);
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  line-height: 1.2;
-  text-align: center;
-  text-transform: uppercase;
-  white-space: nowrap;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+/*
+ * Botões de pista no topo, logo abaixo da barra de progresso. São pequenos e
+ * não capturam toque fora deles; nunca iniciam a corrida.
+ */
+.hud__trackbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
 }
 
-.hud__hint[hidden] {
+.hud__track-button {
+  min-height: 26px;
+  padding: 3px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: rgba(12, 18, 21, 0.7);
+  color: var(--muted);
+  font: inherit;
+  font-size: clamp(0.48rem, 2.1vw, 0.58rem);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.hud__track-button:hover {
+  background: rgba(32, 44, 50, 0.86);
+  color: var(--text);
+}
+
+.hud__track-button:active {
+  transform: scale(0.96);
+}
+
+.hud__track-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * Overlay central de largada. O véu não captura pointer (um toque em qualquer
+ * ponto do canvas inicia); só o botão GO! é clicável.
+ */
+.hud__go {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(
+    ellipse at 50% 52%,
+    rgba(4, 8, 10, 0.12) 0%,
+    rgba(4, 8, 10, 0.34) 68%,
+    rgba(4, 8, 10, 0.5) 100%
+  );
+  pointer-events: none;
+}
+
+.hud__go[hidden] {
   display: none;
+}
+
+.hud__go-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 156px;
+  min-height: 156px;
+  padding: 0 26px;
+  border: 2px solid rgba(255, 203, 71, 0.75);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 34%, #ffd35f, #e9ad25 78%);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.42),
+    0 0 36px rgba(255, 203, 71, 0.22);
+  color: #171205;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  animation: go-pulse 1.8s ease-in-out infinite;
+}
+
+.hud__go-button:active {
+  transform: scale(0.96);
+}
+
+.hud__go-button:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
+}
+
+.hud__go-title {
+  font-size: clamp(2.2rem, 11vw, 3.1rem);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 0.98;
+}
+
+.hud__go-sub {
+  max-width: 11ch;
+  font-size: clamp(0.5rem, 2.2vw, 0.6rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.25;
+  text-align: center;
+}
+
+@keyframes go-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 18px 48px rgba(0, 0, 0, 0.42),
+      0 0 30px rgba(255, 203, 71, 0.18);
+  }
+  50% {
+    transform: scale(1.035);
+    box-shadow:
+      0 18px 48px rgba(0, 0, 0, 0.42),
+      0 0 44px rgba(255, 203, 71, 0.34);
+  }
+}
+
+/*
+ * Barra inferior de controles: ◀ ▶ à esquerda, FREIO à direita. Alvos grandes
+ * para o polegar, com safe areas; os botões ficam fora da área do carro.
+ */
+.hud__controls {
+  position: absolute;
+  right: calc(var(--safe-right) + 16px);
+  bottom: calc(var(--safe-bottom) + 18px);
+  left: calc(var(--safe-left) + 16px);
+  z-index: 7;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.hud__steer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.hud__control {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  min-width: 64px;
+  min-height: 64px;
+  padding: 0;
+  border: 1px solid rgba(226, 238, 230, 0.32);
+  border-radius: 20px;
+  background: rgba(14, 22, 27, 0.72);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition:
+    transform 80ms ease,
+    background-color 80ms ease;
+}
+
+.hud__control--brake {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border-color: rgba(255, 154, 60, 0.55);
+  background: rgba(46, 28, 12, 0.76);
+  color: #ffb35c;
+  font-size: clamp(0.68rem, 3vw, 0.82rem);
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.hud__control:active:not(:disabled) {
+  transform: scale(0.93);
+  background: rgba(52, 68, 76, 0.9);
+}
+
+.hud__control--brake:active:not(:disabled) {
+  background: rgba(96, 58, 16, 0.92);
+}
+
+.hud__control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.hud__control:disabled {
+  opacity: 0.38;
+}
+
+.hud[data-state='READY'] .hud__controls,
+.hud[data-state='RECOVERING'] .hud__controls,
+.hud[data-state='FINISHED'] .hud__controls {
+  display: none;
+}
+
+@media (max-height: 680px) {
+  .hud__control {
+    width: 68px;
+    height: 68px;
+  }
+
+  .hud__control--brake {
+    width: 78px;
+    height: 78px;
+  }
+
+  .hud__go-button {
+    min-width: 132px;
+    min-height: 132px;
+  }
 }
 
 /*
@@ -457,15 +669,13 @@ body {
 }
 
 /*
- * Chips de powerup ativos (canto inferior esquerdo, acima da safe area).
- * Não capturam toque; o polegar continua dirigindo em qualquer ponto do canvas.
- * A barra fina embaixo mostra o tempo restante e some com o chip quando o
- * timer chega a zero.
+ * Chips de powerup ativos: topo esquerdo, abaixo da barra de progresso,
+ * longe dos botões de direção. Não capturam toque.
  */
 .hud__powerups {
   position: absolute;
+  top: calc(var(--safe-top) + 124px);
   left: calc(var(--safe-left) + 12px);
-  bottom: calc(var(--safe-bottom) + 14px);
   z-index: 6;
   display: flex;
   flex-direction: column;
@@ -556,8 +766,8 @@ body {
  */
 .hud__powerup-flash {
   position: absolute;
+  top: calc(var(--safe-top) + 200px);
   left: calc(var(--safe-left) + 12px);
-  bottom: calc(var(--safe-bottom) + 82px);
   z-index: 7;
   padding: 3px 9px;
   border: 1px solid var(--powerup);
@@ -868,10 +1078,6 @@ body {
   outline-offset: 3px;
 }
 
-.hud[data-state='FINISHED'] .hud__handbrake {
-  display: none;
-}
-
 @keyframes results-in {
   from {
     opacity: 0;
@@ -915,7 +1121,7 @@ body {
 
 .hud__debug {
   position: absolute;
-  top: calc(var(--safe-top) + 68px);
+  top: calc(var(--safe-top) + 204px);
   left: calc(var(--safe-left) + 12px);
   display: flex;
   flex-direction: column;
@@ -963,66 +1169,11 @@ body {
   text-align: right;
 }
 
-.hud__handbrake {
-  position: absolute;
-  right: calc(var(--safe-right) + 16px);
-  bottom: calc(var(--safe-bottom) + 16px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  width: 74px;
-  height: 74px;
-  min-width: 74px;
-  min-height: 74px;
-  padding: 0;
-  border: 1px solid rgba(255, 203, 71, 0.42);
-  border-radius: 50%;
-  background: rgba(38, 31, 16, 0.72);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
-  color: var(--accent);
-  font: inherit;
-  cursor: pointer;
-  pointer-events: auto;
-  touch-action: none;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition:
-    transform 90ms ease,
-    background-color 90ms ease;
-}
-
-.hud__handbrake[hidden] {
-  display: none;
-}
-
-.hud__handbrake-icon {
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.hud__handbrake-label {
-  font-size: 0.52rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-}
-
-.hud__handbrake:active {
-  transform: scale(0.92);
-  background: rgba(92, 70, 20, 0.86);
-}
-
-.hud__handbrake:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
 /*
  * Painel de tuning (lil-gui) — só existe com ?debug=1 / #debug.
- * Fica no canto inferior esquerdo, acima do HUD, com scroll interno para caber
- * em portrait. O botão de reset (topo direito) e a maior parte da tela seguem
- * livres para dirigir.
+ * Fica acima dos botões de direção (canto inferior esquerdo), com scroll
+ * interno para caber em portrait. O reset (topo direito) e a pista seguem
+ * livres.
  */
 #tuning-panel.lil-gui {
   --width: min(320px, calc(100vw - 100px));
@@ -1042,11 +1193,10 @@ body {
   position: fixed;
   top: auto;
   right: auto;
-  bottom: calc(var(--safe-bottom) + 8px);
+  bottom: calc(var(--safe-bottom) + 112px);
   left: calc(var(--safe-left) + 8px);
-  /* Deixa a coluna do freio de mão (74 px + margem) livre no canto direito. */
   width: min(320px, calc(100vw - 100px));
-  max-height: min(56dvh, 470px);
+  max-height: min(52dvh, 440px);
   overflow: hidden;
   border: 1px solid var(--panel-border);
   border-radius: 12px;
@@ -1161,8 +1311,10 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .hud__reset,
-  .hud__handbrake {
+  .hud__control,
+  .hud__go-button {
     transition: none;
+    animation: none;
   }
 
   .hud__split.is-active,
@@ -1174,107 +1326,4 @@ body {
     animation: none;
     opacity: 1;
   }
-}
-
-/*
- * Guia visual do toque (drag2d). Fica abaixo do HUD e nunca captura eventos.
- * O anel é centrado no ponto de encosto; o ponto mostra esterço (X) e freio (Y).
- */
-.touch-guide {
-  position: fixed;
-  inset: 0;
-  z-index: 9;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.touch-guide[hidden] {
-  display: none;
-}
-
-.touch-guide__ring {
-  position: absolute;
-  width: var(--guide-size);
-  height: var(--guide-size);
-  border: 1px solid rgba(242, 246, 243, 0.28);
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(14, 20, 24, 0.04) 0%,
-    rgba(14, 20, 24, 0) 62%,
-    rgba(14, 20, 24, 0.12) 100%
-  );
-  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.16);
-  transform: translate(-50%, -50%);
-  transition:
-    border-color 100ms ease,
-    box-shadow 100ms ease;
-}
-
-.touch-guide__axis {
-  position: absolute;
-  background: rgba(242, 246, 243, 0.14);
-  transform: translate(-50%, -50%);
-}
-
-.touch-guide__axis--x {
-  width: var(--guide-size);
-  height: 1px;
-}
-
-.touch-guide__axis--y {
-  width: 1px;
-  height: var(--guide-size);
-}
-
-.touch-guide__dot {
-  position: absolute;
-  width: 22px;
-  height: 22px;
-  border: 2px solid rgba(242, 246, 243, 0.8);
-  border-radius: 50%;
-  background: rgba(242, 246, 243, 0.12);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
-  transform: translate(-50%, -50%);
-  transition:
-    background-color 80ms ease,
-    border-color 80ms ease,
-    transform 40ms linear;
-}
-
-.touch-guide__dot[data-state='brake'] {
-  border-color: #ff9a3c;
-  background: rgba(255, 154, 60, 0.46);
-}
-
-.touch-guide__dot[data-state='handbrake'] {
-  border-color: #ff6250;
-  background: rgba(255, 98, 80, 0.5);
-}
-
-.touch-guide__brake-label {
-  position: absolute;
-  color: rgba(255, 154, 60, 0.6);
-  font-size: 0.48rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  transform: translate(-50%, -50%);
-}
-
-.touch-guide:not(.touch-guide--brake) .touch-guide__brake-label {
-  display: none;
-}
-
-.touch-guide--braking .touch-guide__ring {
-  border-color: rgba(255, 154, 60, 0.55);
-  box-shadow:
-    inset 0 0 22px rgba(255, 122, 26, 0.18),
-    0 0 18px rgba(255, 122, 26, 0.08);
-}
-
-.touch-guide--handbrake .touch-guide__ring {
-  border-color: rgba(255, 98, 80, 0.7);
-  box-shadow:
-    inset 0 0 22px rgba(255, 98, 80, 0.2),
-    0 0 18px rgba(255, 98, 80, 0.1);
 }
