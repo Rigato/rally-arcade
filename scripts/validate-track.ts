@@ -169,7 +169,7 @@ for (const kicker of kickers) {
 const splits = track.def.splits;
 notes.push(`parciais: ${splits.map((split) => `${split.name}@${format(split.s, 0)}`).join(', ')}`);
 check(splits.length === 3, `esperadas 3 parciais, encontradas ${splits.length}`);
-const expectedTargets = [8.2, 16.5, 24.7];
+const expectedTargets = [8.9, 17.9, 26.8];
 for (let i = 0; i < splits.length; i += 1) {
   check(splits[i].s > 0 && splits[i].s < length, `parcial ${i + 1} fora da pista`);
   check(splits[i].name.length > 0, `parcial ${i + 1} sem nome`);
@@ -186,8 +186,8 @@ for (let i = 0; i < splits.length; i += 1) {
 const medals = track.def.medals;
 notes.push(`medalhas: ouro ${format(medals.gold)} s, prata ${format(medals.silver)} s, bronze ${format(medals.bronze)} s`);
 check(
-  medals.gold === 36 && medals.silver === 42 && medals.bronze === 48,
-  `medalhas fora de 36/42/48: ${medals.gold}/${medals.silver}/${medals.bronze}`,
+  medals.gold === 39 && medals.silver === 45 && medals.bronze === 51,
+  `medalhas fora de 39/45/51: ${medals.gold}/${medals.silver}/${medals.bronze}`,
 );
 check(
   length / medals.gold <= 39.1,

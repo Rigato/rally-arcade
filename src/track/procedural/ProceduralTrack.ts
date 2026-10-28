@@ -4,7 +4,7 @@
  * O gerador atual (`generateProceduralTrack`) usa uma gramática de segmentos:
  * retas curtas/médias/longas alternadas com curvas de sete categorias
  * (longa, média, curta, cotovelo, hairpin, hairpin extremo e kink), em ambos
- * os sentidos. Toda pista recebe exatamente um hairpin extremo de 14–15 m de
+ * os sentidos. Toda pista recebe exatamente um hairpin extremo de 13–14 m de
  * raio, precedido por 45–60 m de reta e seguido por ≥35 m, com largura local
  * de 5,2–6,2 m. O traçado é um caminho aberto A→B, sem pernas paralelas fixas.
  * Cada candidato passa por um teste de separação entre trechos não vizinhos
@@ -75,12 +75,13 @@ const MIN_RADIUS_PASS = 8;
 const MIN_RADIUS_WARN = 10;
 
 /**
- * Hairpin extremo: mais fechado que o normal (20–23 m). O raio fica no topo
- * da faixa 12–15 m para que as pernas de retorno fiquem a 28–30 m e os ombros
- * visuais de 12 m por lado apenas se toquem em vez de se sobrepor.
+ * Hairpin extremo: mais fechado que o normal (20–23 m). O raio fica em
+ * 13–14 m para que as pernas de retorno fiquem a ~26–28 m; os ombros visuais
+ * de 12 m por lado passam a se sobrepor em parte do arco, o que o teste visual
+ * aceita como apron contínuo (o usuário pediu o hairpin mais fechado).
  */
-const EXTREME_MIN_RADIUS = 14;
-const EXTREME_MAX_RADIUS = 15;
+const EXTREME_MIN_RADIUS = 13;
+const EXTREME_MAX_RADIUS = 14;
 const EXTREME_MIN_SWEEP = Math.PI * (170 / 180);
 const EXTREME_MAX_SWEEP = Math.PI * (185 / 180);
 const EXTREME_APPROACH_MIN = 45;
@@ -89,7 +90,7 @@ const EXTREME_EXIT_MIN = 35;
 const EXTREME_EXIT_MAX = 60;
 const EXTREME_START_FINISH_CLEARANCE = 80;
 /** Separação aceitável entre as duas pernas de um hairpin extremo. */
-const EXTREME_LEG_CLEARANCE = 26;
+const EXTREME_LEG_CLEARANCE = 24;
 const EXTREME_WIDTH_RANGE: [number, number] = [5.2, 6.2];
 const MIN_POWERUPS = 6;
 const MAX_POWERUPS = 8;
@@ -503,7 +504,7 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
   }
 
   // Pernas do hairpin extremo (uma de cada lado da curva) podem ficar a
-  // 26–30 m: é o próprio formato do hairpin, não uma seção cruzando outra.
+  // 26–28 m: é o próprio formato do hairpin, não uma seção cruzando outra.
   const extremeRanges = built
     .filter(
       (segment) =>
@@ -574,8 +575,8 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
   if (length < MIN_LENGTH || length > MAX_LENGTH) {
     return null;
   }
-  // Mantém o ouro na faixa física aprovada (42,2–45,3 s) em todas as pistas
-  // aleatórias: 1517 m → 42,2 s; 1626 m → 45,3 s.
+  // Mantém o ouro na faixa física aprovada (45,2–48,3 s) em todas as pistas
+  // aleatórias: 1517 m → 45,2 s; 1626 m → 48,3 s.
   if (length < 1517 || length > 1626) {
     return null;
   }
@@ -2293,7 +2294,7 @@ function pickObstacleType(
 
 /** Medalhas do gerador novo, na escala física do carro (maxSpeed 39,1 m/s). */
 function buildMedalsV5(length: number): MedalTargets {
-  const gold = round1(36 + 10 * clamp((length - 1300) / (1650 - 1300), 0, 1));
+  const gold = round1(39 + 10 * clamp((length - 1300) / 350, 0, 1));
   return {
     gold,
     silver: round1(gold + 6),
@@ -2579,8 +2580,8 @@ function validateLayoutFeatures(
   }
 
   for (const extreme of extremes) {
-    if (extreme.radius < 12 - 0.01 || extreme.radius > 15 + 0.01) {
-      fail(`hairpin extremo com raio ${extreme.radius.toFixed(1)} m (esperado 12..15)`);
+    if (extreme.radius < 13 - 0.01 || extreme.radius > 14 + 0.01) {
+      fail(`hairpin extremo com raio ${extreme.radius.toFixed(1)} m (esperado 13..14)`);
     }
     if (extreme.sweepDeg < 170 - 0.01 || extreme.sweepDeg > 185 + 0.01) {
       fail(

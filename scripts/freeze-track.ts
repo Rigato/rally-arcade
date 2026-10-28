@@ -109,12 +109,12 @@ const def: TrackDef = {
   splits: [250, 500, 750].map((s, index) => ({
     s,
     name: `Parcial ${index + 1}`,
-    target: [8.2, 16.5, 24.7][index] ?? 0,
+    target: [8.9, 17.9, 26.8][index] ?? 0,
   })),
   medals: {
-    gold: 36,
-    silver: 42,
-    bronze: 48,
+    gold: 39,
+    silver: 45,
+    bronze: 51,
   },
 };
 

@@ -14,10 +14,10 @@ export interface DriftDustState {
   surfaceId: SurfaceId;
 }
 
-const POOL_SIZE = 80;
-const MAX_RATE = 34;
-const SLIP_START_DEG = 5;
-const SLIP_RANGE_DEG = 22;
+const POOL_SIZE = 96;
+const MAX_RATE = 55;
+const SLIP_START_DEG = 4;
+const SLIP_RANGE_DEG = 20;
 const SPEED_START = 5;
 const SPEED_RANGE = 20;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -75,8 +75,8 @@ const FRAGMENT_SHADER = /* glsl */ `
  * Poeira de derrapagem em um único `THREE.Points` com pool fixo.
  *
  * Nada é alocado durante o frame: os atributos vivem em typed arrays e são
- * reenviados inteiros (80 partículas é um custo desprezível). A emissão só
- * acontece com o carro no chão, acima de 5 m/s e com slip acima de 5°.
+ * reenviados inteiros (96 partículas é um custo desprezível). A emissão só
+ * acontece com o carro no chão, acima de 5 m/s e com slip acima de 4°.
  */
 export class DriftDust {
   readonly points: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
@@ -234,7 +234,7 @@ export class DriftDust {
 
       const v = i * 3;
       this.velocities[v] *= drag;
-      this.velocities[v + 1] = this.velocities[v + 1] * verticalDrag - 0.25 * dt;
+      this.velocities[v + 1] = this.velocities[v + 1] * verticalDrag - 0.20 * dt;
       this.velocities[v + 2] *= drag;
 
       this.positions[v] += this.velocities[v] * dt;
@@ -277,15 +277,15 @@ export class DriftDust {
     const forwardJitter = (Math.random() * 2 - 1) * 0.15;
     this.velocities[v] =
       -state.velocity.x * 0.12 + rightX * lateralJitter + forwardX * forwardJitter;
-    this.velocities[v + 1] = 1.0 + Math.random() * 1.0;
+    this.velocities[v + 1] = 1.3 + Math.random() * 1.2;
     this.velocities[v + 2] =
       -state.velocity.z * 0.12 + rightZ * lateralJitter + forwardZ * forwardJitter;
 
     this.ages[index] = 0;
-    this.lives[index] = 0.50 + Math.random() * 0.45;
-    this.baseSizes[index] = 0.30 + Math.random() * 0.35;
-    this.growths[index] = 1.5 + Math.random() * 0.5;
-    this.baseAlphas[index] = 0.28 + Math.random() * 0.27;
+    this.lives[index] = 0.60 + Math.random() * 0.50;
+    this.baseSizes[index] = 0.40 + Math.random() * 0.45;
+    this.growths[index] = 1.6 + Math.random() * 0.6;
+    this.baseAlphas[index] = 0.34 + Math.random() * 0.31;
     this.sizes[index] = this.baseSizes[index];
     this.alphas[index] = this.baseAlphas[index];
 

@@ -940,16 +940,45 @@ export class Game {
   };
 }
 
+const TRACK_SEED_MIN = 1;
+const TRACK_SEED_MAX = 100;
+
+/** Seed explícita válida (1–100) ou `null` quando ausente/fora do intervalo. */
+function parseTrackSeed(raw: string | null): number | null {
+  if (raw === null || raw.trim() === '') {
+    return null;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const seed = Math.floor(value);
+  return seed >= TRACK_SEED_MIN && seed <= TRACK_SEED_MAX ? seed : null;
+}
+
+function randomTrackSeed(): number {
+  return TRACK_SEED_MIN + Math.floor(Math.random() * (TRACK_SEED_MAX - TRACK_SEED_MIN + 1));
+}
+
 /**
- * Pista fixa por padrão. Em debug, `?track=proc&seed=N` gera uma pista
- * procedural determinística para o protótipo; se a geração falhar, volta para
- * a pista fixa sem quebrar o boot.
+ * Pista procedural por padrão: abrir o jogo sem `track` sorteia uma seed 1–100
+ * a cada reload (a URL não é reescrita). `?track=proc&seed=N` é determinística e
+ * compartilhável; `?track=fixed` carrega a pista fixa. Se a geração falhar,
+ * volta para a pista fixa sem quebrar o boot.
  */
 function resolveTrackDef(): typeof TRACK_01 {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('track') === 'proc') {
-    const rawSeed = Number(params.get('seed') ?? '1');
-    const seed = Number.isFinite(rawSeed) && rawSeed > 0 ? Math.floor(rawSeed) : 1;
+  const track = params.get('track');
+
+  if (track === 'fixed') {
+    console.info('[Game] pista fixa track01-v3.');
+    return TRACK_01;
+  }
+
+  if (track === 'proc' || track === null) {
+    const seed = parseTrackSeed(params.get('seed')) ?? randomTrackSeed();
     try {
       const generated = generateProceduralTrack(seed);
       console.info(`[Game] pista procedural seed=${seed} (${generated.id}).`);

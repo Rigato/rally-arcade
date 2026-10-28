@@ -908,13 +908,13 @@ export class Hud {
     window.location.assign(url.toString());
   };
 
-  /** Remove track/seed e volta para a pista fixa; preserva `debug=1`. */
+  /** Força `track=fixed`, remove seed/s e preserva debug/touch. */
   private readonly handleFixedTrack = (event: MouseEvent): void => {
     event.preventDefault();
     event.stopPropagation();
 
     const url = new URL(window.location.href);
-    url.searchParams.delete('track');
+    url.searchParams.set('track', 'fixed');
     url.searchParams.delete('seed');
     url.searchParams.delete('s');
     window.location.assign(url.toString());

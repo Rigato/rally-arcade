@@ -726,3 +726,46 @@ O playtest aprovou kink, larguras e distâncias. O hairpin normal de 20–23 m f
 - Testar se o hairpin de 14–15 m já obriga a frear o suficiente ou se precisa descer para **12–13 m** (aceitando mais sobreposição de ombros ou reduzindo o ombro local).
 - Confirmar a experiência de ouro: 42,2–45,3 s nas procedurais e 36 s na fixa; ajustar prata/bronze e parciais depois.
 - Avaliar a poeira v6 em movimento; se ainda estiver fraca, subir `MAX_RATE` para ~37–40.
+
+## 29. Default procedural, hairpin 13–14 m, +3 s e poeira ousada v7 (Oct 28, 2026)
+
+O playtest aprovou o hairpin extremo de 14–15 m, mas pediu mais um pouco de aperto; as medalhas ficaram difíceis e o usuário pediu +3 s em cada uma; a poeira ainda estava fraca. Ele também pediu para o jogo abrir direto em uma pista procedural aleatória, deixando a fixa no botão.
+
+### Default procedural
+
+- Abrir `/` (ou `?debug=1`, `?s=...` sem `track`) sorteia uma **procedural 1–100** a cada carregamento; a URL não é reescrita.
+- `?track=fixed` carrega a pista fixa; **FIXA** agora navega para `?track=fixed` preservando `debug`/`touch`.
+- `?track=proc&seed=N` continua determinística (1–100); `?track=proc` sem seed e seed inválida sorteiam.
+- 3 aberturas seguidas: seeds 50, 70 e 85. `FIXA` do default carregou `track01-v3`; `NOVA` do fixo carregou `proc-13`; `proc-7` determinística; console limpo.
+
+### Hairpin extremo
+
+- Raio **13–14 m** (medido 12,7–13,8 m após a spline), sweep 170–185°, 1 por pista, normais 0–1, largura 5,2–6,2 m, aproximação 45–60 m e saída 35–60 m.
+- A folga das pernas do próprio extremo caiu de 26 para **24 m**; o resto continua 40 m.
+- Os ombros de 12 m formam um apron contínuo no apex; aceito para ganhar o aperto pedido.
+
+### Medalhas +3 s
+
+- Procedurais: `gold = 39 + 10 * clamp((length - 1300)/350, 0, 1)`; nas 100 seeds (1518,3–1623,7 m) fica **45,2–48,2 s**; prata 51,2–54,2; bronze 57,2–60,2.
+- Pista fixa: **39/45/51 s**; parciais **8,9/17,9/26,8 s**; parciais procedurais no ritmo do ouro.
+- Resultado no jogo: fixa 39/45/51; seed 1 **46,5/52,5/58,5**.
+- `freeze-track.ts` reproduz `track01.ts` byte a byte.
+
+### Poeira v7
+
+- Pool **96**; taxa **55/s**; limiar **4°**; saturação **24°**; vida 0,60–1,10 s; tamanho 0,40–0,85 m; crescimento 1,6–2,2×; alpha 0,34–0,65; subida 1,3–2,5 m/s; gravidade 0,20 m/s².
+- Sintético a 20 m/s: 10° média **9,03** / máx 13; 30° média **29,76** / máx 38; 0° e 4° zero; dissipação 0,82–1,00 s.
+- No jogo: reta 0; 11° ≈ 1–4; 29,9° ≈ **19–26** ativos, rastro contínuo e mais alto; não cobre o carro.
+
+### Testes
+
+- 100/100 seeds válidas; 1 hairpin extremo por seed; raio 12,7–13,8 m.
+- `typecheck`, `build`, `validate:track` OK; pista fixa 1096,8 m e medalhas 39/45/51.
+- Default random, FIXA, NOVA, `?track=fixed`, `?track=proc&seed=7`, resultados de medalha, dust e touch/desktop no headless; console limpo.
+
+### Pendências
+
+- Testar o hairpin de 13–14 m; se ainda estiver fácil, descer para 12–13 m e reduzir o ombro local.
+- Confirmar o ouro +3 s (fixa 39; procedurais 45,2–48,2) e as parciais.
+- Avaliar se a poeira v7 está no ponto ou exagerada; ajustar `MAX_RATE`/tamanho.
+- Confirmar que abrir `/` em procedural aleatória é o comportamento desejado no uso diário.
