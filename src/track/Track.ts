@@ -4,8 +4,12 @@ import type { SurfaceId, TrackDef, TrackZone } from '../game/types';
 import { TRACK_01 } from './track01';
 
 const SAMPLE_STEP = 1;
-const MIN_WIDTH = 7;
-const MAX_WIDTH = 14;
+/**
+ * Limites de largura aceitos pelo sampler. O gerador v5 usa chokes de ~4,6 m
+ * e trechos largos de ~15 m; a pista fixa continua dentro da faixa antiga.
+ */
+const MIN_WIDTH = 4.4;
+const MAX_WIDTH = 15.2;
 /** Margem lateral que ainda conta como pista para a física. */
 const TRACK_MARGIN = 0.35;
 const PROJECT_HINT_RADIUS = 20;
