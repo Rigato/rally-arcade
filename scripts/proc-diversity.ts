@@ -45,6 +45,7 @@ const CATEGORIES: readonly CurveCategory[] = [
   'short',
   'elbow',
   'hairpin',
+  'hairpin-extreme',
   'kink',
 ];
 
@@ -160,6 +161,7 @@ function printTable(items: readonly Row[]): void {
       'cur'.padStart(4),
       'elb'.padStart(4),
       'hair'.padStart(4),
+      'ext'.padStart(4),
       'kink'.padStart(4),
       'L°'.padStart(5),
       'R°'.padStart(5),
@@ -187,6 +189,7 @@ function printTable(items: readonly Row[]): void {
         String(row.counts.short).padStart(4),
         String(row.counts.elbow).padStart(4),
         String(row.counts.hairpin).padStart(4),
+        String(row.counts['hairpin-extreme']).padStart(4),
         String(row.counts.kink).padStart(4),
         row.leftSweep.toFixed(0).padStart(5),
         row.rightSweep.toFixed(0).padStart(5),
@@ -378,7 +381,7 @@ function writeContactSheet(items: readonly Row[], path: string): void {  const s
     );
 
     const label = `#${row.seed} ${row.length.toFixed(0)} m · r${row.minRadius.toFixed(0)} · A→B ${row.startToFinish.toFixed(0)} m`;
-    const counts = `L${row.counts.long} M${row.counts.medium} C${row.counts.short} E${row.counts.elbow} H${row.counts.hairpin} K${row.counts.kink}`;
+    const counts = `L${row.counts.long} M${row.counts.medium} C${row.counts.short} E${row.counts.elbow} H${row.counts.hairpin} X${row.counts['hairpin-extreme']} K${row.counts.kink}`;
     const balance = `chk ${row.chokes} · est ${row.longNarrow} · larg ${row.wide} · plano ${(row.flatFraction * 100).toFixed(0)}% · esq ${row.leftSweep.toFixed(0)}° / dir ${row.rightSweep.toFixed(0)}°`;
     parts.push(
       `<text x="${originX + 12}" y="${originY + 20}" fill="#f0ece0" font-family="monospace" font-size="11">${label}</text>`,

@@ -169,13 +169,30 @@ for (const kicker of kickers) {
 const splits = track.def.splits;
 notes.push(`parciais: ${splits.map((split) => `${split.name}@${format(split.s, 0)}`).join(', ')}`);
 check(splits.length === 3, `esperadas 3 parciais, encontradas ${splits.length}`);
+const expectedTargets = [8.2, 16.5, 24.7];
 for (let i = 0; i < splits.length; i += 1) {
   check(splits[i].s > 0 && splits[i].s < length, `parcial ${i + 1} fora da pista`);
   check(splits[i].name.length > 0, `parcial ${i + 1} sem nome`);
   if (i > 0) {
     check(splits[i].s > splits[i - 1].s, `parcial ${i + 1} fora de ordem`);
   }
+  check(
+    Math.abs(splits[i].target - expectedTargets[i]) < 0.01,
+    `parcial ${i + 1} com alvo ${splits[i].target} s (esperado ${expectedTargets[i]} s)`,
+  );
 }
+
+// Medalhas na escala física do carro (maxSpeed 39,1 m/s).
+const medals = track.def.medals;
+notes.push(`medalhas: ouro ${format(medals.gold)} s, prata ${format(medals.silver)} s, bronze ${format(medals.bronze)} s`);
+check(
+  medals.gold === 36 && medals.silver === 42 && medals.bronze === 48,
+  `medalhas fora de 36/42/48: ${medals.gold}/${medals.silver}/${medals.bronze}`,
+);
+check(
+  length / medals.gold <= 39.1,
+  `ouro fisicamente impossível: ${format(length / medals.gold)} m/s de média`,
+);
 
 // Powerups: 4+, dentro da pista e longe de rampas/curvas fortes.
 const powerups = track.def.powerups;

@@ -2,11 +2,14 @@
  * Gerador procedural de pistas do Rally Arcade.
  *
  * O gerador atual (`generateProceduralTrack`) usa uma gramática de segmentos:
- * retas curtas/médias/longas alternadas com curvas de seis categorias
- * (longa, média, curta, cotovelo, hairpin e kink), em ambos os sentidos. O
- * traçado é um caminho aberto A→B, sem pernas paralelas fixas. Cada candidato
- * passa por um teste de separação entre trechos não vizinhos (spatial hash,
- * ≥40 m entre centros), caixa de ~650×650 m e chegada a ≥100 m da largada.
+ * retas curtas/médias/longas alternadas com curvas de sete categorias
+ * (longa, média, curta, cotovelo, hairpin, hairpin extremo e kink), em ambos
+ * os sentidos. Toda pista recebe exatamente um hairpin extremo de 14–15 m de
+ * raio, precedido por 45–60 m de reta e seguido por ≥35 m, com largura local
+ * de 5,2–6,2 m. O traçado é um caminho aberto A→B, sem pernas paralelas fixas.
+ * Cada candidato passa por um teste de separação entre trechos não vizinhos
+ * (spatial hash, ≥40 m entre centros; as duas pernas de um hairpin extremo são
+ * isentas a partir de 26 m), caixa de ~650×650 m e chegada a ≥100 m da largada.
  *
  * A largura é montada por eventos ao longo da pista (base, longos estreitos,
  * largos e choke points) e a elevação ganha faixas planas. A validação tem
@@ -68,8 +71,26 @@ const MIN_ZONE_LENGTH = 300;
 const MAX_ZONE_LENGTH = 500;
 const MIN_TRACK_WIDTH = 4.4;
 const MAX_TRACK_WIDTH = 15.2;
-const MIN_RADIUS_PASS = 16;
-const MIN_RADIUS_WARN = 19;
+const MIN_RADIUS_PASS = 8;
+const MIN_RADIUS_WARN = 10;
+
+/**
+ * Hairpin extremo: mais fechado que o normal (20–23 m). O raio fica no topo
+ * da faixa 12–15 m para que as pernas de retorno fiquem a 28–30 m e os ombros
+ * visuais de 12 m por lado apenas se toquem em vez de se sobrepor.
+ */
+const EXTREME_MIN_RADIUS = 14;
+const EXTREME_MAX_RADIUS = 15;
+const EXTREME_MIN_SWEEP = Math.PI * (170 / 180);
+const EXTREME_MAX_SWEEP = Math.PI * (185 / 180);
+const EXTREME_APPROACH_MIN = 45;
+const EXTREME_APPROACH_MAX = 60;
+const EXTREME_EXIT_MIN = 35;
+const EXTREME_EXIT_MAX = 60;
+const EXTREME_START_FINISH_CLEARANCE = 80;
+/** Separação aceitável entre as duas pernas de um hairpin extremo. */
+const EXTREME_LEG_CLEARANCE = 26;
+const EXTREME_WIDTH_RANGE: [number, number] = [5.2, 6.2];
 const MIN_POWERUPS = 6;
 const MAX_POWERUPS = 8;
 const MIN_OBSTACLES = 50;
@@ -98,6 +119,7 @@ export type CurveCategory =
   | 'short'
   | 'elbow'
   | 'hairpin'
+  | 'hairpin-extreme'
   | 'kink';
 
 export type CurveDirection = 'left' | 'right';
@@ -368,7 +390,7 @@ interface CurveSpec {
 
 interface StraightSpec {
   readonly kind: 'straight';
-  readonly length: number;
+  length: number;
 }
 
 type SegmentSpec = CurveSpec | StraightSpec;
@@ -397,6 +419,7 @@ const CURVE_CATEGORIES: readonly CurveCategory[] = [
   'short',
   'elbow',
   'hairpin',
+  'hairpin-extreme',
   'kink',
 ];
 
@@ -409,6 +432,10 @@ const CURVE_RANGES: Record<
   short: { radius: [28, 38], sweep: [45 * DEG, 110 * DEG] },
   elbow: { radius: [26, 31], sweep: [75 * DEG, 120 * DEG] },
   hairpin: { radius: [20, 23], sweep: [160 * DEG, 180 * DEG] },
+  'hairpin-extreme': {
+    radius: [EXTREME_MIN_RADIUS, EXTREME_MAX_RADIUS],
+    sweep: [EXTREME_MIN_SWEEP, EXTREME_MAX_SWEEP],
+  },
   kink: { radius: [140, 220], sweep: [6 * DEG, 15 * DEG] },
 };
 
@@ -475,8 +502,17 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
     return null;
   }
 
+  // Pernas do hairpin extremo (uma de cada lado da curva) podem ficar a
+  // 26–30 m: é o próprio formato do hairpin, não uma seção cruzando outra.
+  const extremeRanges = built
+    .filter(
+      (segment) =>
+        segment.kind === 'curve' && segment.category === 'hairpin-extreme',
+    )
+    .map((segment) => ({ startS: segment.startS, endS: segment.endS }));
+
   // Rejeita trechos que passam perto demais de outros trechos não vizinhos.
-  const clearance = minSectionDistance(raw);
+  const clearance = minSectionDistance(raw, extremeRanges);
   if (clearance < SECTION_CLEARANCE) {
     return null;
   }
@@ -538,13 +574,25 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
   if (length < MIN_LENGTH || length > MAX_LENGTH) {
     return null;
   }
+  // Mantém o ouro na faixa física aprovada (42,2–45,3 s) em todas as pistas
+  // aleatórias: 1517 m → 42,2 s; 1626 m → 45,3 s.
+  if (length < 1517 || length > 1626) {
+    return null;
+  }
   const scale = length / total;
 
-  const kickers = placeKickersOnStraights(rng, straights, length, scale);
+  const kickers = placeKickersOnStraights(
+    rng,
+    straights,
+    curves,
+    length,
+    scale,
+  );
   if (kickers.length === 0) {
     return null;
   }
-  const splitsAndZones = buildZonesAndSplitsV5(rng, length);
+  const medals = buildMedalsV5(length);
+  const splitsAndZones = buildZonesAndSplitsV5(rng, length, medals.gold);
   const powerups = placePowerupsOnTrack(
     rng,
     raw,
@@ -566,7 +614,7 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
     obstacles,
     powerups,
     splits: splitsAndZones.splits,
-    medals: buildMedals(length),
+    medals,
   };
 
   layoutByDef.set(def, {
@@ -589,17 +637,11 @@ function planSegments(rng: Rng): readonly SegmentSpec[] | null {
   const target = rng.range(1490, 1600);
   const segments: SegmentSpec[] = [];
   const featureStraight = rng.int(2, 7);
-  const planHairpins = rng.int(1, 2);
+  const planHairpins = rng.int(0, 1);
   const planKinks = rng.int(1, 3);
   const categoryCounts = new Map<CurveCategory, number>();
-  const directionCounts: Record<'left' | 'right', number> = {
-    left: 0,
-    right: 0,
-  };
   let turnBalance = 0;
   let totalTurn = 0;
-  let leftTurn = 0;
-  let rightTurn = 0;
   let lastDirection: 1 | -1 = rng.sign() as 1 | -1;
   let runLength = 0;
   let straightIndex = 0;
@@ -676,14 +718,8 @@ function planSegments(rng: Rng): readonly SegmentSpec[] | null {
     });
     total += radius * sweep;
     curveCount += 1;
-    directionCounts[turn > 0 ? 'right' : 'left'] += 1;
     turnBalance += turn * sweep;
     totalTurn += sweep;
-    if (turn > 0) {
-      rightTurn += sweep;
-    } else {
-      leftTurn += sweep;
-    }
   }
 
   const finalLength = clamp(target + 25 - total, 40, 96);
@@ -694,27 +730,186 @@ function planSegments(rng: Rng): readonly SegmentSpec[] | null {
     return null;
   }
 
-  // Pelo menos 4 das 6 categorias em cada pista.
-  const categoriesPresent = [...categoryCounts.keys()];
-  if (categoriesPresent.length < 4) {
+  if (!insertExtremeHairpin(rng, segments)) {
     return null;
   }
-  if (!categoryCounts.has('hairpin') || !categoryCounts.has('kink')) {
+
+  // Recalcula depois do hairpin extremo (que entra no meio da lista).
+  const curves = segments.filter(
+    (segment): segment is CurveSpec => segment.kind === 'curve',
+  );
+  const straights = segments.filter(
+    (segment): segment is StraightSpec => segment.kind === 'straight',
+  );
+  if (curves.length < 11 || straights.length < 9) {
+    return null;
+  }
+
+  // Pelo menos 4 das 7 categorias em cada pista.
+  const categoriesPresent = new Set(curves.map((curve) => curve.category));
+  if (categoriesPresent.size < 4) {
+    return null;
+  }
+  if (!categoriesPresent.has('kink')) {
+    return null;
+  }
+  const extremeCount = curves.filter(
+    (curve) => curve.category === 'hairpin-extreme',
+  ).length;
+  const hairpinCount = curves.filter(
+    (curve) => curve.category === 'hairpin',
+  ).length;
+  if (extremeCount !== 1 || hairpinCount > 1) {
     return null;
   }
 
   // Curvas para os dois lados e sem sequência totalmente unilateral.
-  if (directionCounts.left < 2 || directionCounts.right < 2) {
+  let leftCount = 0;
+  let rightCount = 0;
+  let leftTurnTotal = 0;
+  let rightTurnTotal = 0;
+  for (const curve of curves) {
+    if (curve.turn > 0) {
+      rightCount += 1;
+      rightTurnTotal += curve.sweep;
+    } else {
+      leftCount += 1;
+      leftTurnTotal += curve.sweep;
+    }
+  }
+  if (leftCount < 2 || rightCount < 2) {
     return null;
   }
-  if (totalTurn > 0) {
-    // Nenhum dos sentidos pode dominar o traçado (evita pista "one-sided").
-    if (leftTurn / totalTurn < 0.3 || rightTurn / totalTurn < 0.3) {
+  const totalCurveTurn = leftTurnTotal + rightTurnTotal;
+  if (totalCurveTurn > 0) {
+    if (
+      leftTurnTotal / totalCurveTurn < 0.3 ||
+      rightTurnTotal / totalCurveTurn < 0.3
+    ) {
       return null;
     }
   }
 
   return segments;
+}
+
+/**
+ * Insere o hairpin extremo no meio de uma reta já planejada, com retas
+ * próprias de aproximação (45–60 m) e saída (35–60 m). Como essas retas têm
+ * menos de 70 m, o planejador de rampas nunca coloca um kicker nelas.
+ */
+function insertExtremeHairpin(rng: Rng, segments: SegmentSpec[]): boolean {
+  const approach = rng.range(EXTREME_APPROACH_MIN, EXTREME_APPROACH_MAX);
+  const exit = rng.range(EXTREME_EXIT_MIN, EXTREME_EXIT_MAX);
+  const radius = rng.range(EXTREME_MIN_RADIUS, EXTREME_MAX_RADIUS);
+  const sweep = rng.range(EXTREME_MIN_SWEEP, EXTREME_MAX_SWEEP);
+  const arc = radius * sweep;
+
+  let total = 0;
+  for (const segment of segments) {
+    total +=
+      segment.kind === 'straight'
+        ? segment.length
+        : segment.radius * segment.sweep;
+  }
+
+  const candidates: number[] = [];
+  let prefix = 0;
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (segment.kind === 'straight') {
+      const newTotal = total - segment.length + approach + arc + exit;
+      const extremeStart = prefix + approach;
+      const extremeEnd = extremeStart + arc;
+      if (
+        extremeStart >= EXTREME_START_FINISH_CLEARANCE + 10 &&
+        newTotal - extremeEnd >= EXTREME_START_FINISH_CLEARANCE + 10 &&
+        newTotal <= MAX_LENGTH - 30 &&
+        prefix > 0
+      ) {
+        candidates.push(index);
+      }
+    }
+    prefix +=
+      segment.kind === 'straight' ? segment.length : segment.radius * segment.sweep;
+  }
+
+  if (candidates.length === 0) {
+    return false;
+  }
+
+  const index = rng.pick(candidates);
+  const before = segments[index - 1];
+  const after = segments[index + 1];
+  const beforeTurn = before?.kind === 'curve' ? before.turn : null;
+  const afterTurn = after?.kind === 'curve' ? after.turn : null;
+  let turn: 1 | -1 = rng.sign() as 1 | -1;
+  if (beforeTurn === turn && afterTurn === turn) {
+    turn = turn === 1 ? -1 : 1;
+  }
+
+  segments.splice(
+    index,
+    1,
+    { kind: 'straight', length: approach },
+    { kind: 'curve', category: 'hairpin-extreme', radius, sweep, turn },
+    { kind: 'straight', length: exit },
+  );
+
+  // Reequilibra as demais retas para o comprimento planejado não crescer
+  // ~100 m com o bloco novo (mantém as pistas em 1518–1626 m).
+  const otherStraights = segments
+    .map((segment, segmentIndex) => ({ segment, segmentIndex }))
+    .filter(
+      ({ segment, segmentIndex }) =>
+        segment.kind === 'straight' &&
+        segmentIndex !== index &&
+        segmentIndex !== index + 2,
+    )
+    .map(({ segment }) => segment as StraightSpec);
+  const sumOthers = otherStraights.reduce(
+    (sum, segment) => sum + segment.length,
+    0,
+  );
+  const curveSum = segments
+    .filter(
+      (segment): segment is CurveSpec => segment.kind === 'curve',
+    )
+    .reduce((sum, curve) => sum + curve.radius * curve.sweep, 0);
+  const wantedOthers = total - curveSum - approach - exit;
+  if (sumOthers <= 0 || wantedOthers <= 0) {
+    return false;
+  }
+  const factor = clamp(wantedOthers / sumOthers, 0.5, 1.2);
+  if (Math.abs(factor - 1) > 0.001) {
+    for (const straight of otherStraights) {
+      straight.length = clamp(straight.length * factor, 22, 110);
+    }
+  }
+
+  // Recalcula posição do extremo e garante os 80 m de folga nas pontas.
+  let prefix2 = 0;
+  let extremeStart = 0;
+  let extremeEnd = 0;
+  let newTotal = 0;
+  for (const segment of segments) {
+    const segmentLength =
+      segment.kind === 'straight' ? segment.length : segment.radius * segment.sweep;
+    if (segment.kind === 'curve' && segment.category === 'hairpin-extreme') {
+      extremeStart = prefix2;
+      extremeEnd = prefix2 + segmentLength;
+    }
+    prefix2 += segmentLength;
+  }
+  newTotal = prefix2;
+  if (
+    extremeStart < EXTREME_START_FINISH_CLEARANCE ||
+    newTotal - extremeEnd < EXTREME_START_FINISH_CLEARANCE
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function pickCurveCategoryV5(
@@ -827,8 +1022,15 @@ function planarBounds(raw: readonly RawPoint[]): {
 /**
  * Menor distância entre dois trechos não vizinhos, usando spatial hash.
  * Retorna `Infinity` quando o caminho tem menos de dois trechos distantes.
+ *
+ * Pares que cruzam um hairpin extremo (uma perna de cada lado da curva) são
+ * aceitos a partir de `EXTREME_LEG_CLEARANCE`, pois a proximidade é inerente
+ * ao formato de 180°.
  */
-function minSectionDistance(raw: readonly RawPoint[]): number {
+function minSectionDistance(
+  raw: readonly RawPoint[],
+  extremeRanges: readonly { startS: number; endS: number }[],
+): number {
   const cell = SECTION_CLEARANCE;
   const cells = new Map<string, number[]>();
   let best = Infinity;
@@ -851,6 +1053,12 @@ function minSectionDistance(raw: readonly RawPoint[]): number {
           }
           const distance = Math.hypot(point.x - other.x, point.z - other.z);
           if (distance < best) {
+            if (
+              distance >= EXTREME_LEG_CLEARANCE &&
+              straddlesExtremeHairpin(other.s, point.s, extremeRanges)
+            ) {
+              continue;
+            }
             best = distance;
           }
         }
@@ -867,6 +1075,17 @@ function minSectionDistance(raw: readonly RawPoint[]): number {
   }
 
   return best;
+}
+
+/** `true` quando o intervalo [fromS, toS] contém um hairpin extremo inteiro. */
+function straddlesExtremeHairpin(
+  fromS: number,
+  toS: number,
+  extremeRanges: readonly { startS: number; endS: number }[],
+): boolean {
+  return extremeRanges.some(
+    (range) => fromS < range.startS && toS > range.endS,
+  );
 }
 
 interface WidthEvent {
@@ -892,8 +1111,15 @@ function buildWidthProfileV5(
   const base = rng.range(10.5, 12);
   const basePhase = rng.range(0, TAU);
   const events: WidthEvent[] = [];
+  const extremeEvents: WidthEvent[] = [];
+  const extremeCurves = curves.filter(
+    (curve) => curve.category === 'hairpin-extreme',
+  );
   const tightCurves = curves.filter(
-    (curve) => curve.category === 'hairpin' || curve.category === 'elbow',
+    (curve) =>
+      curve.category === 'hairpin' ||
+      curve.category === 'hairpin-extreme' ||
+      curve.category === 'elbow',
   );
 
   const fits = (
@@ -909,6 +1135,16 @@ function buildWidthProfileV5(
       const minimum =
         half + other.half + Math.max(transition, other.transition) + 12;
       if (Math.abs(center - other.center) < minimum) {
+        return false;
+      }
+    }
+    // O hairpin extremo tem largura própria (5,2–6,2 m) e não recebe choke,
+    // trecho estreito nem largo por cima.
+    for (const curve of extremeCurves) {
+      if (
+        center + half + transition > curve.startS - 6 &&
+        center - half - transition < curve.endS + 6
+      ) {
         return false;
       }
     }
@@ -978,12 +1214,25 @@ function buildWidthProfileV5(
   addEvents(1, 'narrow', [120, 220], [5.5, 7]);
   addEvents(rng.int(1, 2), 'wide', [80, 160], [13, 15]);
 
+  for (const curve of extremeCurves) {
+    const half = (curve.endS - curve.startS) * 0.5;
+    extremeEvents.push({
+      startS: curve.startS,
+      endS: curve.endS,
+      center: curve.startS + half,
+      half,
+      width: rng.range(EXTREME_WIDTH_RANGE[0], EXTREME_WIDTH_RANGE[1]),
+      transition: 22,
+      kind: 'narrow',
+    });
+  }
+
   events.sort((a, b) => a.center - b.center);
 
   const widthAt = (s: number): number => {
     let width = base + 0.35 * Math.sin(s * 0.007 + basePhase);
 
-    for (const event of events) {
+    for (const event of [...events, ...extremeEvents]) {
       let weight = 0;
       if (s >= event.startS && s <= event.endS) {
         weight = 1;
@@ -1023,12 +1272,26 @@ function buildWidthProfileV5(
 function placeKickersOnStraights(
   rng: Rng,
   straights: readonly ProceduralStraightInfo[],
+  curves: readonly ProceduralCurveInfo[],
   length: number,
   scale: number,
 ): readonly TrackKicker[] {
   const desired = rng.chance(0.7) ? 2 : 1;
+  // Nunca coloca rampa na aproximação/saída do hairpin extremo.
+  const reserved = curves
+    .filter((curve) => curve.category === 'hairpin-extreme')
+    .flatMap((curve) => [
+      { startS: curve.startS - 12, endS: curve.startS + 12 },
+      { startS: curve.endS - 12, endS: curve.endS + 12 },
+    ]);
   const candidates = shuffle(
-    straights.filter((straight) => straight.endS - straight.startS >= 70),
+    straights.filter(
+      (straight) =>
+        straight.endS - straight.startS >= 70 &&
+        !reserved.some(
+          (range) => straight.endS > range.startS && straight.startS < range.endS,
+        ),
+    ),
     rng,
   );
   const kickers: TrackKicker[] = [];
@@ -1814,6 +2077,7 @@ function buildZonesAndSplits(length: number): {
 function buildZonesAndSplitsV5(
   rng: Rng,
   length: number,
+  gold: number,
 ): {
   zones: readonly TrackZone[];
   splits: readonly TrackSplit[];
@@ -1853,7 +2117,7 @@ function buildZonesAndSplitsV5(
     splits.push({
       s,
       name: `Parcial ${i + 1}`,
-      target: round1(s / 18),
+      target: round1((gold * s) / length),
     });
   }
 
@@ -2027,6 +2291,17 @@ function pickObstacleType(
   return 'tree';
 }
 
+/** Medalhas do gerador novo, na escala física do carro (maxSpeed 39,1 m/s). */
+function buildMedalsV5(length: number): MedalTargets {
+  const gold = round1(36 + 10 * clamp((length - 1300) / (1650 - 1300), 0, 1));
+  return {
+    gold,
+    silver: round1(gold + 6),
+    bronze: round1(gold + 12),
+  };
+}
+
+/** Fórmula antiga — só o gerador legado (pista fixa congelada) usa isto. */
 function buildMedals(length: number): MedalTargets {
   const gold = round1(length / 18.5);
   return {
@@ -2110,7 +2385,7 @@ export function validateProceduralTrack(
   }
 
   validateZones(track, def, length, limits, fail);
-  validateSplits(def, length, fail);
+  validateSplits(def, length, options.profile ?? 'v5', fail);
 
   let minWidth = Infinity;
   let maxWidth = -Infinity;
@@ -2157,7 +2432,13 @@ export function validateProceduralTrack(
   validateKickers(track, def, length, fail, warn);
   validatePowerups(def, length, widthAt, limits, fail);
   validateObstacles(def, length, widthAt, limits, fail);
-  validateLayoutFeatures(layout, fail);
+  validateLayoutFeatures(
+    layout,
+    length,
+    widthAt,
+    def.kickers,
+    fail,
+  );
 
   const startSample = track.sampleAt(0);
   const startX = startSample.position.x;
@@ -2174,7 +2455,21 @@ export function validateProceduralTrack(
     );
   }
 
-  const tooClose = findTooCloseSections(samples, limits.sectionClearance);
+  const tooClose = findTooCloseSections(
+    samples,
+    limits.sectionClearance,
+    layout
+      ? (a, b, distance) => {
+          if (distance < EXTREME_LEG_CLEARANCE) {
+            return false;
+          }
+          const extremes = layout.curves.filter(
+            (curve) => curve.category === 'hairpin-extreme',
+          );
+          return straddlesExtremeHairpin(a, b, extremes);
+        }
+      : undefined,
+  );
   if (tooClose && tooClose.distance < limits.sectionClearance) {
     fail(
       `trechos não vizinhos a ${tooClose.distance.toFixed(1)} m ` +
@@ -2229,6 +2524,9 @@ export function validateProceduralTrack(
 
 function validateLayoutFeatures(
   layout: ProceduralLayout | null,
+  length: number,
+  widthAt: (s: number) => number,
+  kickers: readonly TrackKicker[],
   fail: (message: string) => void,
 ): void {
   if (!layout) {
@@ -2265,6 +2563,89 @@ function validateLayoutFeatures(
   const kinks = categories.get('kink') ?? 0;
   if (kinks < 1 || kinks > 3) {
     fail(`kinks: ${kinks} (esperado 1..3)`);
+  }
+
+  const extremes = layout.curves.filter(
+    (curve) => curve.category === 'hairpin-extreme',
+  );
+  const normalHairpins = layout.curves.filter(
+    (curve) => curve.category === 'hairpin',
+  );
+  if (extremes.length !== 1) {
+    fail(`hairpins extremos: ${extremes.length} (esperado exatamente 1)`);
+  }
+  if (normalHairpins.length > 1) {
+    fail(`hairpins normais: ${normalHairpins.length} (esperado 0..1)`);
+  }
+
+  for (const extreme of extremes) {
+    if (extreme.radius < 12 - 0.01 || extreme.radius > 15 + 0.01) {
+      fail(`hairpin extremo com raio ${extreme.radius.toFixed(1)} m (esperado 12..15)`);
+    }
+    if (extreme.sweepDeg < 170 - 0.01 || extreme.sweepDeg > 185 + 0.01) {
+      fail(
+        `hairpin extremo com sweep ${extreme.sweepDeg.toFixed(1)}° ` +
+          `(esperado 170..185)`,
+      );
+    }
+    if (extreme.startS < EXTREME_START_FINISH_CLEARANCE - 0.5) {
+      fail(
+        `hairpin extremo começa a ${extreme.startS.toFixed(1)} m da largada ` +
+          `(mínimo ${EXTREME_START_FINISH_CLEARANCE} m)`,
+      );
+    }
+    if (length - extreme.endS < EXTREME_START_FINISH_CLEARANCE - 0.5) {
+      fail(
+        `hairpin extremo termina a ${(length - extreme.endS).toFixed(1)} m ` +
+          `da chegada (mínimo ${EXTREME_START_FINISH_CLEARANCE} m)`,
+      );
+    }
+
+    const approach = layout.straights.find(
+      (straight) => Math.abs(straight.endS - extreme.startS) < 1,
+    );
+    const exit = layout.straights.find(
+      (straight) => Math.abs(straight.startS - extreme.endS) < 1,
+    );
+    if (!approach || !exit) {
+      fail('hairpin extremo sem retas de aproximação/saída identificáveis');
+    } else {
+      const approachLength = approach.endS - approach.startS;
+      const exitLength = exit.endS - exit.startS;
+      if (approachLength < 45 - 0.5 || approachLength > 60 + 0.5) {
+        fail(
+          `reta de aproximação do hairpin extremo com ${approachLength.toFixed(1)} m ` +
+            `(esperado 45..60 m)`,
+        );
+      }
+      if (exitLength < 35 - 0.5) {
+        fail(
+          `reta de saída do hairpin extremo com ${exitLength.toFixed(1)} m ` +
+            `(esperado >=35 m)`,
+        );
+      }
+      for (const kicker of kickers) {
+        if (
+          kicker.s > approach.startS - 5 &&
+          kicker.s < extreme.startS + 5
+        ) {
+          fail('kicker na aproximação do hairpin extremo');
+        }
+      }
+    }
+
+    let localMin = Infinity;
+    let localMax = -Infinity;
+    for (let s = extreme.startS; s <= extreme.endS; s += 1) {
+      localMin = Math.min(localMin, widthAt(s));
+      localMax = Math.max(localMax, widthAt(s));
+    }
+    if (localMin < EXTREME_WIDTH_RANGE[0] - 0.06 || localMax > EXTREME_WIDTH_RANGE[1] + 0.06) {
+      fail(
+        `largura no hairpin extremo ${localMin.toFixed(2)}..${localMax.toFixed(2)} m ` +
+          `(esperado ${EXTREME_WIDTH_RANGE[0]}..${EXTREME_WIDTH_RANGE[1]} m)`,
+      );
+    }
   }
   const totalSweep = leftSweep + rightSweep;
   if (
@@ -2403,12 +2784,15 @@ function validateZones(
 function validateSplits(
   def: TrackDef,
   length: number,
+  profile: ValidationProfile,
   fail: (message: string) => void,
 ): void {
   if (def.splits.length !== 3) {
     fail(`esperadas 3 parciais, encontradas ${def.splits.length}`);
     return;
   }
+
+  const expectedGold = profile === 'v5' ? buildMedalsV5(length).gold : null;
 
   for (let i = 0; i < def.splits.length; i += 1) {
     const split = def.splits[i];
@@ -2424,6 +2808,15 @@ function validateSplits(
     }
     if (i > 0 && split.s <= def.splits[i - 1].s) {
       fail('parciais fora de ordem');
+    }
+    if (expectedGold !== null) {
+      const wanted = round1((expectedGold * split.s) / length);
+      if (Math.abs(split.target - wanted) > 0.11) {
+        fail(
+          `parcial ${i + 1} com alvo ${split.target} s ` +
+            `(esperado ${wanted} s para o ouro de ${expectedGold} s)`,
+        );
+      }
     }
   }
 }
@@ -2523,6 +2916,7 @@ function findSelfIntersection(
 function findTooCloseSections(
   samples: readonly TrackSampleSummary[],
   clearance: number,
+  exempt?: (a: number, b: number, distance: number) => boolean,
 ): { a: number; b: number; distance: number } | null {
   const cell = clearance;
   const cells = new Map<string, number[]>();
@@ -2545,6 +2939,9 @@ function findTooCloseSections(
             continue;
           }
           const distance = Math.hypot(point.x - other.x, point.z - other.z);
+          if (exempt && exempt(other.s, point.s, distance)) {
+            continue;
+          }
           if (!closest || distance < closest.distance) {
             closest = { a: other.s, b: point.s, distance };
           }

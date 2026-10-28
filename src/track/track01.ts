@@ -430,9 +430,9 @@ export const TRACK_01: TrackDef = {
     { type: 'turbo', s: 1048.5, u: -2.14 },
   ],
   splits: [
-    { s: 250, name: 'Parcial 1', target: 13.9 },
-    { s: 500, name: 'Parcial 2', target: 27.8 },
-    { s: 750, name: 'Parcial 3', target: 41.7 },
+    { s: 250, name: 'Parcial 1', target: 8.2 },
+    { s: 500, name: 'Parcial 2', target: 16.5 },
+    { s: 750, name: 'Parcial 3', target: 24.7 },
   ],
-  medals: { gold: 59.3, silver: 67.6, bronze: 77.1 },
+  medals: { gold: 36, silver: 42, bronze: 48 },
 };

@@ -37,6 +37,8 @@ const svgPath = resolve(
 interface Row {
   seed: number;
   validation: ProceduralValidation;
+  gold: number;
+  splits: string;
   elapsedMs: number;
 }
 
@@ -54,7 +56,7 @@ for (let i = 0; i < count; i += 1) {
       quiet: true,
       profile: 'v5',
     });
-    rows.push({ seed, validation, elapsedMs });
+    rows.push({ seed, validation, gold: def.medals.gold, splits: def.splits.map((split) => split.target.toFixed(1)).join('/'), elapsedMs });
 
     if (!validation.ok) {
       failures.push(
@@ -89,6 +91,8 @@ for (let i = 0; i < count; i += 1) {
           features: null,
         },
       },
+      gold: 0,
+      splits: '-',
       elapsedMs: performance.now() - start,
     });
     failures.push(
@@ -119,11 +123,13 @@ function printTable(items: readonly Row[]): void {
     'plano',
     'chk/nar/lrg',
     'cats',
+    'ext',
     'grade',
     'obst.',
     'pow.',
     'kicks',
-    'splits',
+    'parciais (s)',
+    'ouro',
     'sep',
     'larg→cheg',
     'ms',
@@ -140,18 +146,20 @@ function printTable(items: readonly Row[]): void {
       header[5].padStart(6),
       header[6].padStart(11),
       header[7].padStart(4),
-      header[8].padStart(6),
-      header[9].padStart(5),
+      header[8].padStart(3),
+      header[9].padStart(6),
       header[10].padStart(5),
       header[11].padStart(5),
-      header[12].padStart(6),
-      header[13].padStart(5),
-      header[14].padStart(9),
-      header[15].padStart(6),
-      header[16].padStart(3),
+      header[12].padStart(5),
+      header[13].padStart(15),
+      header[14].padStart(5),
+      header[15].padStart(5),
+      header[16].padStart(9),
+      header[17].padStart(6),
+      header[18].padStart(3),
     ].join(' '),
   );
-  console.log('-'.repeat(128));
+  console.log('-'.repeat(140));
 
   for (const row of items) {
     const s = row.validation.stats;
@@ -169,11 +177,13 @@ function printTable(items: readonly Row[]): void {
         `${(s.flatFraction * 100).toFixed(0)}%`.padStart(6),
         `${features?.chokes ?? 0}/${features?.longNarrow ?? 0}/${features?.wide ?? 0}`.padStart(11),
         String(categories).padStart(4),
+        String(features?.categories['hairpin-extreme'] ?? 0).padStart(3),
         `${(s.maxGrade * 100).toFixed(0)}%`.padStart(6),
         String(s.obstacles).padStart(5),
         String(s.powerups).padStart(5),
         String(s.kickers).padStart(5),
-        String(s.splits).padStart(6),
+        `${row.splits}`.padStart(15),
+        `${row.gold.toFixed(1)}`.padStart(5),
         `${s.minSectionDistance.toFixed(0)}m`.padStart(5),
         `${s.startToFinish.toFixed(0)}m`.padStart(9),
         row.elapsedMs.toFixed(0).padStart(6),
@@ -232,6 +242,23 @@ function printSummary(items: readonly Row[], errors: readonly string[]): void {
       `Categorias: ${[...categoryTotals.entries()]
         .map(([category, count]) => `${category}=${count}`)
         .join(', ')}`,
+    );
+    const extremeCounts = valid.map(
+      (row) => row.validation.stats.features?.categories['hairpin-extreme'] ?? 0,
+    );
+    const normalHairpins = valid.map(
+      (row) => row.validation.stats.features?.categories.hairpin ?? 0,
+    );
+    console.log(
+      `Hairpins extremos por seed: ${range(extremeCounts)} ` +
+        `(1 por seed: ${extremeCounts.every((count) => count === 1) ? 'OK' : 'FALHOU'}) | ` +
+        `normais: ${range(normalHairpins)}`,
+    );
+    console.log(
+      `Ouro: ${range(valid.map((row) => row.gold))} s | ` +
+        `prata: ${range(valid.map((row) => row.gold + 6))} s | ` +
+        `bronze: ${range(valid.map((row) => row.gold + 12))} s | ` +
+        `parciais: ${valid[0]?.splits} s (seed ${valid[0]?.seed})`,
     );
   }
 
