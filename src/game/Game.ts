@@ -200,9 +200,14 @@ export class Game {
     this.input = new Input(this.renderer.domElement, {
       tuning: INPUT_TUNING,
       goButton: this.hud.goButton,
-      steerLeftButton: this.hud.steerLeftButton,
-      steerRightButton: this.hud.steerRightButton,
-      brakeButton: this.hud.brakeButton,
+      // +1 = esquerda na tela; combos ◀F/▶F somam freio ao mesmo pointer.
+      controls: [
+        { element: this.hud.steerLeftButton, steer: 1 },
+        { element: this.hud.steerRightButton, steer: -1 },
+        { element: this.hud.leftBrakeButton, steer: 1, brake: true },
+        { element: this.hud.rightBrakeButton, steer: -1, brake: true },
+        { element: this.hud.brakeButton, brake: true },
+      ],
       onRaceStart: this.handleRaceStart,
       onReset: this.reset,
       onToggleTelemetry: () => {
