@@ -171,79 +171,24 @@ export class TuningPanel {
   private buildInputFolder(): void {
     const folder = this.gui.addFolder('Input');
 
-    const controlController = folder
-      .add(INPUT_TUNING, 'controlMode', {
-        'Arrastar 2D (novo)': 'drag2d',
-        'Soltar para frear': 'release',
-      })
-      .name('Esquema de toque');
-    controlController.onChange(() => {
-      this.game.notifyInputTuningChanged();
-      this.scheduleSave();
-    });
-    this.controllers.push(controlController);
-
-    this.addNumber(
-      folder,
-      INPUT_TUNING,
-      'steerLockScreenRatio',
-      'Lock (tela)',
-      0.05,
-      0.6,
-      0.01,
-    );
-    this.addNumber(folder, INPUT_TUNING, 'steerDeadzonePx', 'Deadzone (px)', 0, 40, 1);
-    this.addNumber(folder, INPUT_TUNING, 'steerExponent', 'Curva esterço', 1, 3, 0.05);
     this.addNumber(
       folder,
       INPUT_TUNING,
       'steerSmoothingTau',
-      'Suavização tau',
+      'Suavização esterço',
       0.01,
       0.5,
       0.01,
     );
-    this.addNumber(
-      folder,
-      INPUT_TUNING,
-      'handbrakeScreenRatio',
-      'HB desloc. ×',
-      0.5,
-      2,
-      0.05,
-    );
-    this.addNumber(folder, INPUT_TUNING, 'brakeDeadzonePx', 'Freio deadzone', 0, 40, 1);
-    this.addNumber(folder, INPUT_TUNING, 'brakeTravelPx', 'Freio curso', 20, 140, 5);
-    this.addNumber(folder, INPUT_TUNING, 'brakeExponent', 'Freio curva', 1, 3, 0.05);
     this.addNumber(
       folder,
       INPUT_TUNING,
       'brakeSmoothingTau',
-      'Freio tau',
+      'Suavização freio',
       0.01,
       0.4,
       0.01,
     );
-
-    const guideController = folder.add(INPUT_TUNING, 'touchGuide').name('Guia de toque');
-    guideController.onChange(() => {
-      this.game.notifyInputTuningChanged();
-      this.scheduleSave();
-    });
-    this.controllers.push(guideController);
-
-    const modeController = folder
-      .add(INPUT_TUNING, 'handbrakeMode', {
-        Deslocamento: 'drag',
-        Botão: 'button',
-      })
-      .name('Freio de mão');
-
-    modeController.onChange(() => {
-      this.game.setHandbrakeMode(INPUT_TUNING.handbrakeMode);
-      this.scheduleSave();
-    });
-    this.controllers.push(modeController);
   }
 
   private buildSurfaceFolder(): void {
@@ -434,7 +379,6 @@ export class TuningPanel {
     }
 
     resetTuning();
-    this.game.setHandbrakeMode(INPUT_TUNING.handbrakeMode);
 
     for (const controller of this.controllers) {
       controller.updateDisplay();

@@ -102,18 +102,8 @@ export const CAMERA_TUNING: CameraTuning = {
 };
 
 export const INPUT_TUNING: InputTuning = {
-  controlMode: 'drag2d',
-  steerLockScreenRatio: 0.34,
-  steerDeadzonePx: 12,
   steerSmoothingTau: 0.16,
-  steerExponent: 1.35,
-  handbrakeScreenRatio: 1.15,
-  handbrakeMode: 'drag',
-  brakeDeadzonePx: 10,
-  brakeTravelPx: 70,
-  brakeExponent: 1.2,
   brakeSmoothingTau: 0.1,
-  touchGuide: true,
 };
 
 /** Rolagem/pitch apenas visuais da carroceria. */

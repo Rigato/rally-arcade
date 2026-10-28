@@ -68,7 +68,7 @@ function currentSnapshot(): TuningSnapshot {
  * Copia apenas os campos numéricos de `defaults` para `target`.
  *
  * - Campo ausente, `NaN`, `Infinity` ou de outro tipo → usa o default.
- * - Campos string (`id`, `label`, `handbrakeMode`) são ignorados aqui.
+ * - Campos string (`id`, `label`) são ignorados aqui.
  * - Campos novos em `target` que não existam em `defaults` são preservados.
  * - As referências de `target` nunca são trocadas.
  */
@@ -113,20 +113,6 @@ function applySnapshot(data: unknown): void {
   for (const id of SURFACE_IDS) {
     applyNumericFields(SURFACES[id], DEFAULTS.surfaces[id], surfacesData[id]);
   }
-
-  const inputData = isRecord(root.input) ? root.input : {};
-  INPUT_TUNING.handbrakeMode =
-    inputData.handbrakeMode === 'button' || inputData.handbrakeMode === 'drag'
-      ? inputData.handbrakeMode
-      : DEFAULTS.input.handbrakeMode;
-  INPUT_TUNING.controlMode =
-    inputData.controlMode === 'release' || inputData.controlMode === 'drag2d'
-      ? inputData.controlMode
-      : DEFAULTS.input.controlMode;
-  INPUT_TUNING.touchGuide =
-    typeof inputData.touchGuide === 'boolean'
-      ? inputData.touchGuide
-      : DEFAULTS.input.touchGuide;
 }
 
 function readStorage(): string | null {
