@@ -50,7 +50,10 @@ for (let i = 0; i < count; i += 1) {
   try {
     const def = generateProceduralTrack(seed);
     const elapsedMs = performance.now() - start;
-    const validation = validateProceduralTrack(def, { quiet: true });
+    const validation = validateProceduralTrack(def, {
+      quiet: true,
+      profile: 'v5',
+    });
     rows.push({ seed, validation, elapsedMs });
 
     if (!validation.ok) {
@@ -82,6 +85,8 @@ for (let i = 0; i < count; i += 1) {
           bboxWidth: 0,
           bboxHeight: 0,
           minSectionDistance: 0,
+          flatFraction: 0,
+          features: null,
         },
       },
       elapsedMs: performance.now() - start,
@@ -111,11 +116,15 @@ function printTable(items: readonly Row[]): void {
     'zonas',
     'raio min',
     'larg. min/max',
+    'plano',
+    'chk/nar/lrg',
+    'cats',
     'grade',
     'obst.',
     'pow.',
     'kicks',
     'splits',
+    'sep',
     'larg→cheg',
     'ms',
     'ok',
@@ -129,19 +138,27 @@ function printTable(items: readonly Row[]): void {
       header[3].padStart(8),
       header[4].padStart(12),
       header[5].padStart(6),
-      header[6].padStart(5),
-      header[7].padStart(5),
-      header[8].padStart(5),
-      header[9].padStart(6),
-      header[10].padStart(9),
-      header[11].padStart(6),
-      header[12].padStart(3),
+      header[6].padStart(11),
+      header[7].padStart(4),
+      header[8].padStart(6),
+      header[9].padStart(5),
+      header[10].padStart(5),
+      header[11].padStart(5),
+      header[12].padStart(6),
+      header[13].padStart(5),
+      header[14].padStart(9),
+      header[15].padStart(6),
+      header[16].padStart(3),
     ].join(' '),
   );
-  console.log('-'.repeat(88));
+  console.log('-'.repeat(128));
 
   for (const row of items) {
     const s = row.validation.stats;
+    const features = s.features;
+    const categories = features
+      ? Object.values(features.categories).filter((count) => count > 0).length
+      : 0;
     console.log(
       [
         String(row.seed).padStart(4),
@@ -149,11 +166,15 @@ function printTable(items: readonly Row[]): void {
         String(s.zones).padStart(5),
         `${s.minRadius.toFixed(1)}m`.padStart(8),
         `${s.minWidth.toFixed(1)}/${s.maxWidth.toFixed(1)}`.padStart(12),
+        `${(s.flatFraction * 100).toFixed(0)}%`.padStart(6),
+        `${features?.chokes ?? 0}/${features?.longNarrow ?? 0}/${features?.wide ?? 0}`.padStart(11),
+        String(categories).padStart(4),
         `${(s.maxGrade * 100).toFixed(0)}%`.padStart(6),
         String(s.obstacles).padStart(5),
         String(s.powerups).padStart(5),
         String(s.kickers).padStart(5),
         String(s.splits).padStart(6),
+        `${s.minSectionDistance.toFixed(0)}m`.padStart(5),
         `${s.startToFinish.toFixed(0)}m`.padStart(9),
         row.elapsedMs.toFixed(0).padStart(6),
         row.validation.ok ? 'yes' : 'NO',
@@ -192,6 +213,25 @@ function printSummary(items: readonly Row[], errors: readonly string[]): void {
       `Obstáculos: ${range(valid.map((row) => row.validation.stats.obstacles))} | ` +
         `powerups: ${range(valid.map((row) => row.validation.stats.powerups))} | ` +
         `kickers: ${range(valid.map((row) => row.validation.stats.kickers))}`,
+    );
+    console.log(
+      `Faixas planas: ${range(valid.map((row) => row.validation.stats.flatFraction * 100))}% | ` +
+        `chokes: ${range(valid.map((row) => row.validation.stats.features?.chokes ?? 0))} | ` +
+        `longos estreitos: ${range(valid.map((row) => row.validation.stats.features?.longNarrow ?? 0))} | ` +
+        `largos: ${range(valid.map((row) => row.validation.stats.features?.wide ?? 0))}`,
+    );
+    const categoryTotals = new Map<string, number>();
+    for (const row of valid) {
+      const categories = row.validation.stats.features?.categories;
+      if (!categories) continue;
+      for (const [category, count] of Object.entries(categories)) {
+        categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + count);
+      }
+    }
+    console.log(
+      `Categorias: ${[...categoryTotals.entries()]
+        .map(([category, count]) => `${category}=${count}`)
+        .join(', ')}`,
     );
   }
 

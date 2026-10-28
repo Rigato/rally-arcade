@@ -37,7 +37,7 @@ function readArg(name: string): string | undefined {
 
 const count = Math.max(1, Number.parseInt(readArg('--count') ?? '12', 10) || 12);
 const startSeed = Number.parseInt(readArg('--start') ?? '1', 10) || 1;
-const svgPath = resolve(readArg('--svg') ?? '/tmp/opencode/proc-sheet.svg');
+const svgPath = resolve(readArg('--svg') ?? '/tmp/opencode/proc-sheet-v5.svg');
 
 const CATEGORIES: readonly CurveCategory[] = [
   'long',
@@ -45,6 +45,7 @@ const CATEGORIES: readonly CurveCategory[] = [
   'short',
   'elbow',
   'hairpin',
+  'kink',
 ];
 
 interface Row {
@@ -60,6 +61,10 @@ interface Row {
   bboxHeight: number;
   startToFinish: number;
   minSectionDistance: number;
+  flatFraction: number;
+  chokes: number;
+  longNarrow: number;
+  wide: number;
   elapsedMs: number;
   ok: boolean;
 }
@@ -74,7 +79,10 @@ for (let index = 0; index < count; index += 1) {
 
   try {
     const def = generateProceduralTrack(seed);
-    const validation = validateProceduralTrack(def, { quiet: true });
+    const validation = validateProceduralTrack(def, {
+      quiet: true,
+      profile: 'v5',
+    });
     const layout = getProceduralLayout(def);
 
     if (!layout) {
@@ -110,6 +118,10 @@ for (let index = 0; index < count; index += 1) {
       bboxHeight: validation.stats.bboxHeight,
       startToFinish: validation.stats.startToFinish,
       minSectionDistance: validation.stats.minSectionDistance,
+      flatFraction: validation.stats.flatFraction,
+      chokes: validation.stats.features?.chokes ?? 0,
+      longNarrow: validation.stats.features?.longNarrow ?? 0,
+      wide: validation.stats.features?.wide ?? 0,
       elapsedMs: performance.now() - start,
       ok: validation.ok,
     });
@@ -130,7 +142,7 @@ writeContactSheet(rows, svgPath);
 
 console.log(`\nContact sheet SVG: ${svgPath}`);
 console.log(
-  'PNG opcional: convert /tmp/opencode/proc-sheet.svg /tmp/opencode/proc-sheet.png',
+  `PNG: chromium --headless --no-sandbox --hide-scrollbars --window-size=1360,900 --screenshot=${svgPath.replace(/[.]svg$/, '.png')} file://${svgPath}`,
 );
 
 if (failures.length > 0) {
@@ -148,8 +160,13 @@ function printTable(items: readonly Row[]): void {
       'cur'.padStart(4),
       'elb'.padStart(4),
       'hair'.padStart(4),
+      'kink'.padStart(4),
       'L°'.padStart(5),
       'R°'.padStart(5),
+      'chk'.padStart(3),
+      'est'.padStart(3),
+      'larg'.padStart(4),
+      'plano'.padStart(5),
       'caixa'.padStart(9),
       'A→B'.padStart(6),
       'sep'.padStart(5),
@@ -170,8 +187,13 @@ function printTable(items: readonly Row[]): void {
         String(row.counts.short).padStart(4),
         String(row.counts.elbow).padStart(4),
         String(row.counts.hairpin).padStart(4),
+        String(row.counts.kink).padStart(4),
         row.leftSweep.toFixed(0).padStart(5),
         row.rightSweep.toFixed(0).padStart(5),
+        String(row.chokes).padStart(3),
+        String(row.longNarrow).padStart(3),
+        String(row.wide).padStart(4),
+        `${(row.flatFraction * 100).toFixed(0)}%`.padStart(5),
         `${row.bboxWidth.toFixed(0)}×${row.bboxHeight.toFixed(0)}`.padStart(9),
         `${row.startToFinish.toFixed(0)}m`.padStart(6),
         `${row.minSectionDistance.toFixed(1)}`.padStart(5),
@@ -219,6 +241,12 @@ function printSummary(items: readonly Row[], errors: readonly string[]): void {
     `Comprimento: ${range(valid.map((row) => row.length))} m | ` +
       `raio mínimo: ${range(valid.map((row) => row.minRadius))} m | ` +
       `A→B: ${range(valid.map((row) => row.startToFinish))} m`,
+  );
+  console.log(
+    `Chokes: ${range(valid.map((row) => row.chokes))} | ` +
+      `longos estreitos: ${range(valid.map((row) => row.longNarrow))} | ` +
+      `largos: ${range(valid.map((row) => row.wide))} | ` +
+      `faixas planas: ${range(valid.map((row) => row.flatFraction * 100))}%`,
   );
   console.log(
     `Caixa: até ${Math.max(
@@ -350,11 +378,12 @@ function writeContactSheet(items: readonly Row[], path: string): void {  const s
     );
 
     const label = `#${row.seed} ${row.length.toFixed(0)} m · r${row.minRadius.toFixed(0)} · A→B ${row.startToFinish.toFixed(0)} m`;
-    const counts = `L${row.counts.long} M${row.counts.medium} C${row.counts.short} E${row.counts.elbow} H${row.counts.hairpin}`;
-    const balance = `esq ${row.leftSweep.toFixed(0)}° / dir ${row.rightSweep.toFixed(0)}°`;
+    const counts = `L${row.counts.long} M${row.counts.medium} C${row.counts.short} E${row.counts.elbow} H${row.counts.hairpin} K${row.counts.kink}`;
+    const balance = `chk ${row.chokes} · est ${row.longNarrow} · larg ${row.wide} · plano ${(row.flatFraction * 100).toFixed(0)}% · esq ${row.leftSweep.toFixed(0)}° / dir ${row.rightSweep.toFixed(0)}°`;
     parts.push(
       `<text x="${originX + 12}" y="${originY + 20}" fill="#f0ece0" font-family="monospace" font-size="11">${label}</text>`,
-      `<text x="${originX + 12}" y="${originY + cellHeight - 20}" fill="#9fc9a8" font-family="monospace" font-size="10">${counts} · ${balance}</text>`,
+      `<text x="${originX + 12}" y="${originY + cellHeight - 28}" fill="#9fc9a8" font-family="monospace" font-size="10">${counts}</text>`,
+      `<text x="${originX + 12}" y="${originY + cellHeight - 14}" fill="#7fa989" font-family="monospace" font-size="8.5">${balance}</text>`,
     );
   });
 

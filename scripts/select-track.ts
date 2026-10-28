@@ -111,7 +111,10 @@ for (let seed = 1; seed <= 100; seed += 1) {
   const finish = track.sampleAt(length);
   const fx = finish.position.x;
   const fz = finish.position.z;
-  const validation = validateProceduralTrack(def, { quiet: true });
+  const validation = validateProceduralTrack(def, {
+    quiet: true,
+    profile: 'legacy',
+  });
 
   rows.push({
     seed,
