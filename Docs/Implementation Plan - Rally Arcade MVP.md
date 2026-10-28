@@ -479,3 +479,40 @@ A integração de debug está pronta: `?debug=1&track=proc&seed=1` carrega a pis
 - Track id fixo atualizado para `track01-v2`, resetando o melhor tempo antigo.
 - `RACE_TUNING.medals` recebe as medalhas da pista no boot; o painel ainda ajusta em runtime.
 - Deploy atual: commit `e7d041b`, Pages verde, smoke test live em fixed e `proc seed=1` sem erros de console.
+
+## 24. Revisão pós-playtest PC (Oct 28, 2026)
+
+O teste seguinte foi no PC, com teclado. O controle ficou confortável, mas revelou decisões novas:
+
+### Touch
+
+- A corrida começa com o carro **parado** e um botão **GO!** central; tocar na tela ou no GO inicia o cronômetro.
+- Depois do GO, o carro **acelera sozinho sempre**; o jogador só esterça e freia.
+- Touch passa a usar **3 botões**: esquerda, direita e freio. Segurar; frear+esterçar exige dois dedos, decisão consciente para manter o controle simples.
+- O esquema antigo de arrastar/guia de toque sai do fluxo. O freio de mão fica no teclado (Espaço) por enquanto; não há 4º botão no touch.
+
+### Teclado
+
+- A inversão do esterço precisa ser corrigida: **A/← deve virar para a esquerda na tela**, D/→ para a direita. O sinal atual está trocado pela convenção câmera/mundo.
+- O carro acelera sozinho depois do start também no PC; W/↑/Enter iniciam, S/↓ freiam, R reinicia.
+
+### Derrapagem
+
+- O carro ainda está "no trilho". A próxima rodada reduz grip base, aumenta a queda de grip com o slip e adiciona redução de grip com esterço/velocidade, com o objetivo de **20–35° de slip** em esterço cheio e recuperação por contra-esterço/freio. Os parâmetros ficam no painel.
+
+### Pista
+
+- **Circuito fechado reprovado.** A pista fixa passa a ser **A→B**.
+- A base será uma seed procedural curada (a linguagem das seeds foi aprovada), congelada em `track01.ts` como pista fixa; a pista deve ter 4 setores, ~1 km, 3 parciais, rampas baixas e curvas amplas.
+- O `Obstacles` continua gerando a lista a partir das zonas; a lista autorada do `TrackDef` fica como documentação/validação por enquanto.
+
+### Botão de pista aleatória
+
+- Na pista de teste, um botão no topo gera um seed aleatório **1–100** e carrega a pista procedural; um controle secundário volta à pista fixa.
+- O carregamento procedural deve funcionar sem `?debug=1`; o painel de tuning continua opt-in.
+
+### Execução
+
+- Três worktrees em paralelo: controles/GO/botões, física de derrapagem, pista A→B.
+- O limite do modelo free continua estourado; fallback combinado para DeepSeek V4.1 Flash do Go, reasoning low.
+- Integração, testes e deploy ficam pendentes até o retorno dos três trabalhos.
