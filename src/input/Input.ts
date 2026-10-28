@@ -2,22 +2,35 @@ import { clamp, dampAlpha } from '../core/math';
 import { INPUT_TUNING } from '../game/config';
 import type { InputState, InputTuning } from '../game/types';
 
+export interface InputControlBinding {
+  /** Botão do HUD (pode ser nulo quando o elemento não existe). */
+  element: HTMLElement | null;
+  /** +1 = esquerda na tela, -1 = direita, 0 = sem esterço. */
+  steer?: 0 | 1 | -1;
+  /** Este botão também freia (combos ◀F / ▶F e FREIO puro). */
+  brake?: boolean;
+}
+
 export interface InputOptions {
   /** Tuning mutável; o painel de debug pode alterar os campos ao vivo. */
   tuning?: InputTuning;
   /** Botão central GO!. */
   goButton?: HTMLElement | null;
-  /** Botões de esterço e freio (DOM do HUD). */
-  steerLeftButton?: HTMLElement | null;
-  steerRightButton?: HTMLElement | null;
-  brakeButton?: HTMLElement | null;
+  /**
+   * Botões de toque ligados a um ou mais controles. Cada elemento aceita um
+   * pointer próprio, então dá para segurar ◀ e FREIO com dois dedos.
+   */
+  controls?: ReadonlyArray<InputControlBinding>;
   /** Chamado quando o jogador pede para largar (GO, toque no canvas ou tecla). */
   onRaceStart?: () => void;
   onReset?: () => void;
   onToggleTelemetry?: () => void;
 }
 
-type HoldControl = 'left' | 'right' | 'brake';
+interface HoldControl {
+  steer: number;
+  brake: boolean;
+}
 
 const STEER_KEYS_LEFT = new Set(['KeyA', 'ArrowLeft']);
 const STEER_KEYS_RIGHT = new Set(['KeyD', 'ArrowRight']);
@@ -48,8 +61,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
  *   disparam `onRaceStart`; o Game só então passa para RUNNING.
  * - Depois do start o acelerador é automático (`setRaceActive(true)`); frear
  *   corta o motor dentro do próprio Car.
- * - Touch: três botões DOM (◀, ▶, FREIO), com pointer capture e suporte a
- *   múltiplos pointers (esterçar + frear com dois dedos).
+ * - Touch: cinco botões DOM (◀, ▶, ◀+FREIO, ▶+FREIO, FREIO), com pointer
+ *   capture e suporte a múltiplos pointers (esterçar + frear com dois dedos).
+ *   Os combos resolvem frear e virar com um dedo só. Não há drag steering.
  * - Teclado: A/← esterça para a esquerda na tela, D/→ para a direita,
  *   S/↓ freia, Espaço é freio de mão, R reinicia e H alterna a telemetria.
  *
@@ -63,9 +77,7 @@ export class Input {
   private readonly canvas: HTMLElement;
   private readonly tuning: InputTuning;
   private readonly goButton: HTMLElement | null;
-  private readonly steerLeftButton: HTMLElement | null;
-  private readonly steerRightButton: HTMLElement | null;
-  private readonly brakeButton: HTMLElement | null;
+  private readonly controlBindings: ReadonlyArray<InputControlBinding>;
   private readonly onRaceStart: (() => void) | null;
   private readonly onReset: (() => void) | null;
   private readonly onToggleTelemetry: (() => void) | null;
@@ -73,7 +85,7 @@ export class Input {
   private raceActive = false;
   private steerTarget = 0;
 
-  /** Pointers ativos nos botões (permite um dedo por botão). */
+  /** Pointers ativos nos botões (um dedo por botão, vários dedos no total). */
   private readonly pointerControls = new Map<number, HoldControl>();
   private readonly releaseListeners: Array<() => void> = [];
 
@@ -89,9 +101,7 @@ export class Input {
     this.canvas = canvas;
     this.tuning = options.tuning ?? INPUT_TUNING;
     this.goButton = options.goButton ?? null;
-    this.steerLeftButton = options.steerLeftButton ?? null;
-    this.steerRightButton = options.steerRightButton ?? null;
-    this.brakeButton = options.brakeButton ?? null;
+    this.controlBindings = options.controls ?? [];
     this.onRaceStart = options.onRaceStart ?? null;
     this.onReset = options.onReset ?? null;
     this.onToggleTelemetry = options.onToggleTelemetry ?? null;
@@ -107,9 +117,12 @@ export class Input {
     canvas.addEventListener('contextmenu', this.handleContextMenu);
 
     this.bindHold(this.goButton, 'start');
-    this.bindHold(this.steerLeftButton, 'left');
-    this.bindHold(this.steerRightButton, 'right');
-    this.bindHold(this.brakeButton, 'brake');
+    for (const binding of this.controlBindings) {
+      this.bindHold(binding.element, {
+        steer: binding.steer ?? 0,
+        brake: binding.brake ?? false,
+      });
+    }
 
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
@@ -207,6 +220,9 @@ export class Input {
       return;
     }
 
+    const isStart = control === 'start';
+    const hold: HoldControl | null = isStart ? null : control;
+
     const onDown = (event: PointerEvent): void => {
       if (event.pointerType === 'mouse' && event.button !== 0) {
         return;
@@ -215,12 +231,12 @@ export class Input {
       event.preventDefault();
       event.stopPropagation();
 
-      if (control === 'start') {
+      if (isStart || hold === null) {
         this.onRaceStart?.();
         return;
       }
 
-      this.pointerControls.set(event.pointerId, control);
+      this.pointerControls.set(event.pointerId, hold);
       try {
         element.setPointerCapture?.(event.pointerId);
       } catch {
@@ -230,14 +246,14 @@ export class Input {
     };
 
     const onUp = (event: PointerEvent): void => {
-      if (control === 'start') {
+      if (isStart) {
         return;
       }
 
       event.preventDefault();
       event.stopPropagation();
 
-      if (this.pointerControls.get(event.pointerId) === control) {
+      if (this.pointerControls.get(event.pointerId) === hold) {
         this.pointerControls.delete(event.pointerId);
       }
       this.releasePointer(event.pointerId);
@@ -258,11 +274,8 @@ export class Input {
   }
 
   private releasePointer(pointerId: number): void {
-    for (const element of [
-      this.steerLeftButton,
-      this.steerRightButton,
-      this.brakeButton,
-    ]) {
+    for (const binding of this.controlBindings) {
+      const element = binding.element;
       if (element?.hasPointerCapture?.(pointerId)) {
         try {
           element.releasePointerCapture(pointerId);
@@ -271,15 +284,6 @@ export class Input {
         }
       }
     }
-  }
-
-  private hasPointerControl(control: HoldControl): boolean {
-    for (const value of this.pointerControls.values()) {
-      if (value === control) {
-        return true;
-      }
-    }
-    return false;
   }
 
   private refreshState(): void {
@@ -297,20 +301,27 @@ export class Input {
       }
     }
 
-    const left = this.hasPointerControl('left');
-    const right = this.hasPointerControl('right');
-
-    if (left && !right) {
-      this.steerTarget = 1;
-    } else if (right && !left) {
-      this.steerTarget = -1;
-    } else if (!left && !right) {
-      this.steerTarget = clamp(keySteer, -1, 1);
-    } else {
-      this.steerTarget = 0;
+    /*
+     * Cada botão contribui com seu esterço (◀F = +1, ▶F = -1) e com freio.
+     * Somar mantém ◀ + ▶ = 0 quando os dois dedos seguram as setas puras.
+     */
+    let pointerSteer = 0;
+    let pointerBrake = false;
+    for (const control of this.pointerControls.values()) {
+      pointerSteer += control.steer;
+      if (control.brake) {
+        pointerBrake = true;
+      }
     }
 
-    this.keyBrake = this.hasPointerControl('brake') || this.hasKey(BRAKE_KEYS);
+    const hasPointerSteer = pointerSteer !== 0;
+    this.steerTarget = clamp(
+      hasPointerSteer ? pointerSteer : keySteer,
+      -1,
+      1,
+    );
+
+    this.keyBrake = pointerBrake || this.hasKey(BRAKE_KEYS);
     this.keyHandbrake = keyHandbrake;
 
     this.brakeTarget = this.keyBrake ? 1 : 0;

@@ -10,6 +10,48 @@ import { formatDelta, formatTime } from './format';
 
 const RAD_TO_DEG = 180 / Math.PI;
 const IMPACT_FLASH_MS = 160;
+/** Chave de persistência do lado do stack de toque (canhoto/destro). */
+const CONTROLS_SIDE_STORAGE_KEY = 'rally.controls.side.v1';
+
+export type ControlsSide = 'right' | 'left';
+
+/**
+ * Decide se o dispositivo deve receber os controles de toque.
+ *
+ * Regra: ponteiro grosso (celular/tablet) OU (há toque E não há hover) —
+ * um notebook com touchscreen e mouse continua no layout de desktop.
+ *
+ * Override de QA por query string, sem afetar o resto da URL:
+ *   ?touch=1  força mostrar os controles
+ *   ?touch=0  força esconder
+ */
+export function isTouchControlsDevice(): boolean {
+  const override = new URLSearchParams(window.location.search).get('touch');
+  if (override === '1') {
+    return true;
+  }
+  if (override === '0') {
+    return false;
+  }
+
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+  const touchWithoutHover =
+    navigator.maxTouchPoints > 0 && window.matchMedia('(hover: none)').matches;
+
+  return coarsePointer || touchWithoutHover;
+}
+
+/** Lado salvo (padrão: direita/destro). */
+function readStoredControlsSide(): ControlsSide {
+  try {
+    return window.localStorage.getItem(CONTROLS_SIDE_STORAGE_KEY) === 'left'
+      ? 'left'
+      : 'right';
+  } catch {
+    return 'right';
+  }
+}
+
 const SPLIT_BANNER_MS = 2500;
 const POWERUP_FLASH_MS = 750;
 const POWERUP_LABELS: Record<PowerupType, string> = {
@@ -72,9 +114,19 @@ export class Hud {
   readonly goButton: HTMLButtonElement;
   readonly steerLeftButton: HTMLButtonElement;
   readonly steerRightButton: HTMLButtonElement;
+  readonly leftBrakeButton: HTMLButtonElement;
+  readonly rightBrakeButton: HTMLButtonElement;
   readonly brakeButton: HTMLButtonElement;
 
   private readonly root: HTMLElement;
+  private readonly touchUi: HTMLElement;
+  private readonly handButton: HTMLButtonElement;
+  private readonly handMenu: HTMLElement;
+  private readonly handRightOption: HTMLButtonElement;
+  private readonly handLeftOption: HTMLButtonElement;
+  private readonly touchMode: boolean;
+  private controlsSide: ControlsSide = 'right';
+  private handMenuOpen = false;
   private readonly timer: HTMLOutputElement;
   private readonly resetButton: HTMLButtonElement;
   private readonly goOverlay: HTMLElement;
@@ -128,6 +180,14 @@ export class Hud {
     this.root = root;
     this.root.classList.add('hud');
     this.root.replaceChildren();
+
+    // Deteção antes de anexar ao DOM: o CSS já nasce no layout certo, sem
+    // flash dos controles de toque em desktop.
+    this.touchMode = isTouchControlsDevice();
+    this.root.dataset.touch = this.touchMode ? 'true' : 'false';
+    // Espelho no <html> para o painel de tuning (fora do HUD) saber desviar.
+    document.documentElement.dataset.touch = this.touchMode ? 'true' : 'false';
+    this.controlsSide = readStoredControlsSide();
 
     this.debugVisible = options.debug ?? false;
     const track = options.track ?? DEFAULT_TRACK_INFO;
@@ -270,25 +330,92 @@ export class Hud {
 
     const goSub = document.createElement('span');
     goSub.className = 'hud__go-sub';
-    goSub.textContent = 'TOQUE PARA LARGAR';
+    goSub.textContent = this.touchMode ? 'TOQUE PARA LARGAR' : 'CLIQUE OU ENTER';
 
     this.goButton.append(goTitle, goSub);
     this.goOverlay.append(this.goButton);
+
+    /*
+     * Stack de toque, alinhado ao canto inferior direito por padrão. O
+     * gatilho "MÃO" fica acima dos botões e abre o seletor de lado; só ele
+     * aparece em READY, então o jogador escolhe a mão antes de largar.
+     */
+    this.touchUi = document.createElement('div');
+    this.touchUi.className = 'hud__touch';
+    this.touchUi.dataset.side = this.controlsSide;
+
+    this.handMenu = document.createElement('div');
+    this.handMenu.className = 'hud__hand-menu';
+    this.handMenu.setAttribute('role', 'group');
+    this.handMenu.setAttribute('aria-label', 'Lado dos controles de toque');
+    this.handMenu.hidden = true;
+
+    const handMenuTitle = document.createElement('span');
+    handMenuTitle.className = 'hud__hand-menu-title';
+    handMenuTitle.textContent = 'MÃO';
+
+    this.handRightOption = this.createHandOption('right', 'DIREITA');
+    this.handLeftOption = this.createHandOption('left', 'ESQUERDA');
+    this.handMenu.append(
+      handMenuTitle,
+      this.handRightOption,
+      this.handLeftOption,
+    );
+
+    this.handButton = document.createElement('button');
+    this.handButton.className = 'hud__hand-button';
+    this.handButton.type = 'button';
+    this.handButton.textContent = 'MÃO';
+    this.handButton.setAttribute('aria-label', 'Escolher lado dos controles');
+    this.handButton.setAttribute('aria-expanded', 'false');
+    this.handButton.setAttribute('aria-controls', 'hud-hand-menu');
+    this.handMenu.id = 'hud-hand-menu';
+    this.handButton.addEventListener('pointerdown', this.stopTouchPropagation);
+    this.handButton.addEventListener('click', this.handleHandToggle);
 
     const controls = document.createElement('div');
     controls.className = 'hud__controls';
     controls.setAttribute('aria-label', 'Controles de direção');
 
-    const steerGroup = document.createElement('div');
-    steerGroup.className = 'hud__steer';
-
-    this.steerLeftButton = this.createControlButton('left', '◀', 'Virar à esquerda');
-    this.steerRightButton = this.createControlButton('right', '▶', 'Virar à direita');
-    steerGroup.append(this.steerLeftButton, this.steerRightButton);
-
+    this.steerLeftButton = this.createControlButton(
+      'left',
+      '◀',
+      'Virar à esquerda',
+    );
+    this.steerRightButton = this.createControlButton(
+      'right',
+      '▶',
+      'Virar à direita',
+    );
+    this.leftBrakeButton = this.createControlButton(
+      'left-brake',
+      '◀',
+      'Virar à esquerda freando',
+      'F',
+    );
+    this.rightBrakeButton = this.createControlButton(
+      'right-brake',
+      '▶',
+      'Virar à direita freando',
+      'F',
+    );
     this.brakeButton = this.createControlButton('brake', 'FREIO', 'Frear');
-    controls.append(steerGroup, this.brakeButton);
+
+    controls.append(
+      this.steerLeftButton,
+      this.steerRightButton,
+      this.leftBrakeButton,
+      this.rightBrakeButton,
+      this.brakeButton,
+    );
     this.controls = controls;
+
+    const handDock = document.createElement('div');
+    handDock.className = 'hud__hand';
+    handDock.append(this.handMenu, this.handButton);
+
+    this.touchUi.append(handDock, controls);
+    this.applyControlsSide();
 
     this.debugPanel = document.createElement('div');
     this.debugPanel.className = 'hud__debug';
@@ -368,7 +495,7 @@ export class Hud {
       this.powerupFlash,
       this.recoveryOverlay,
       this.goOverlay,
-      this.controls,
+      this.touchUi,
       this.debugPanel,
     );
     this.root.prepend(this.impactOverlay);
@@ -462,6 +589,10 @@ export class Hud {
   }
 
   setState(state: RaceState): void {
+    if (state !== this.currentState) {
+      this.closeHandMenu();
+    }
+
     this.currentState = state;
     this.root.dataset.state = state;
 
@@ -475,6 +606,8 @@ export class Hud {
     for (const button of [
       this.steerLeftButton,
       this.steerRightButton,
+      this.leftBrakeButton,
+      this.rightBrakeButton,
       this.brakeButton,
     ]) {
       button.disabled = !running;
@@ -635,21 +768,132 @@ export class Hud {
     this.resetButton.removeEventListener('click', this.handleReset);
     this.newTrackButton.removeEventListener('click', this.handleNewTrack);
     this.fixedTrackButton.removeEventListener('click', this.handleFixedTrack);
+    this.handButton.removeEventListener('pointerdown', this.stopTouchPropagation);
+    this.handButton.removeEventListener('click', this.handleHandToggle);
     this.resetHandler = null;
   }
 
   private createControlButton(
-    kind: 'left' | 'right' | 'brake',
+    kind: 'left' | 'right' | 'left-brake' | 'right-brake' | 'brake',
     label: string,
     ariaLabel: string,
+    badge?: string,
   ): HTMLButtonElement {
     const button = document.createElement('button');
     button.className = `hud__control hud__control--${kind}`;
     button.type = 'button';
-    button.textContent = label;
     button.setAttribute('aria-label', ariaLabel);
+
+    if (badge) {
+      const glyph = document.createElement('span');
+      glyph.className = 'hud__control-glyph';
+      glyph.textContent = label;
+      const badgeEl = document.createElement('span');
+      badgeEl.className = 'hud__control-badge';
+      badgeEl.textContent = badge;
+      badgeEl.setAttribute('aria-hidden', 'true');
+      button.append(glyph, badgeEl);
+    } else {
+      button.textContent = label;
+    }
+
     return button;
   }
+
+  private createHandOption(
+    side: ControlsSide,
+    label: string,
+  ): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.className = 'hud__hand-option';
+    button.type = 'button';
+    button.textContent = label;
+    button.dataset.side = side;
+    button.setAttribute('aria-pressed', 'false');
+    button.addEventListener('pointerdown', this.stopTouchPropagation);
+    button.addEventListener('click', () => {
+      this.setControlsSide(side);
+      this.closeHandMenu();
+    });
+    return button;
+  }
+
+  /** Aplica o lado atual ao stack e destaca a opção no menu. */
+  private applyControlsSide(): void {
+    this.touchUi.dataset.side = this.controlsSide;
+    document.documentElement.dataset.controlsSide = this.controlsSide;
+    this.handRightOption.setAttribute(
+      'aria-pressed',
+      this.controlsSide === 'right' ? 'true' : 'false',
+    );
+    this.handLeftOption.setAttribute(
+      'aria-pressed',
+      this.controlsSide === 'left' ? 'true' : 'false',
+    );
+    this.handButton.setAttribute(
+      'aria-label',
+      `Escolher lado dos controles (atual: ${
+        this.controlsSide === 'right' ? 'direita' : 'esquerda'
+      })`,
+    );
+  }
+
+  /** Troca o lado na hora e persiste para o próximo carregamento. */
+  setControlsSide(side: ControlsSide): void {
+    if (side === this.controlsSide) {
+      return;
+    }
+
+    this.controlsSide = side;
+    this.applyControlsSide();
+
+    try {
+      window.localStorage.setItem(CONTROLS_SIDE_STORAGE_KEY, side);
+    } catch {
+      // Modo privado/armazenamento bloqueado: vale só para esta sessão.
+    }
+  }
+
+  getControlsSide(): ControlsSide {
+    return this.controlsSide;
+  }
+
+  private openHandMenu(): void {
+    this.handMenuOpen = true;
+    this.handMenu.hidden = false;
+    this.handButton.setAttribute('aria-expanded', 'true');
+    this.touchUi.classList.add('is-menu-open');
+  }
+
+  private closeHandMenu(): void {
+    if (!this.handMenuOpen) {
+      return;
+    }
+
+    this.handMenuOpen = false;
+    this.handMenu.hidden = true;
+    this.handButton.setAttribute('aria-expanded', 'false');
+    this.touchUi.classList.remove('is-menu-open');
+  }
+
+  private readonly handleHandToggle = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (this.handMenuOpen) {
+      this.closeHandMenu();
+    } else {
+      this.openHandMenu();
+    }
+  };
+
+  /**
+   * Toques no gatilho/painel não podem chegar ao canvas (que inicia a corrida).
+   * O HUD já tem `pointer-events: none`; isto é a segunda barreira.
+   */
+  private readonly stopTouchPropagation = (event: Event): void => {
+    event.stopPropagation();
+  };
 
   /** Abre a pista procedural com uma seed nova; preserva `debug=1`. */
   private readonly handleNewTrack = (event: MouseEvent): void => {

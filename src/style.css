@@ -387,44 +387,174 @@ body {
 }
 
 /*
- * Barra inferior de controles: ◀ ▶ à esquerda, FREIO à direita. Alvos grandes
- * para o polegar, com safe areas; os botões ficam fora da área do carro.
+ * Stack de toque (5 botões) no canto inferior, default à direita. O gatilho
+ * "MÃO" fica acima do stack e abre o seletor de lado; nada disto existe em
+ * desktop (`data-touch="false"`).
+ *
+ * Grade 2 colunas: ◀ ▶ / ◀F ▶F / FREIO (2 colunas). Largura ~118 px e altura
+ * ~184 px no padrão; em telas baixas reduz para ~101 × 160 px.
  */
-.hud__controls {
+.hud__touch {
+  --touch-btn: 56px;
+  --touch-brake-h: 60px;
+  --touch-gap: 6px;
   position: absolute;
-  right: calc(var(--safe-right) + 16px);
-  bottom: calc(var(--safe-bottom) + 18px);
-  left: calc(var(--safe-left) + 16px);
+  right: calc(var(--safe-right) + 10px);
+  bottom: calc(var(--safe-bottom) + 12px);
   z-index: 7;
   display: flex;
+  flex-direction: column;
   align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   pointer-events: none;
 }
 
-.hud__steer {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
+.hud__touch[data-side='left'] {
+  right: auto;
+  left: calc(var(--safe-left) + 10px);
+  align-items: flex-start;
+}
+
+.hud[data-touch='false'] .hud__touch {
+  display: none;
+}
+
+.hud[data-state='RECOVERING'] .hud__touch,
+.hud[data-state='FINISHED'] .hud__touch {
+  display: none;
+}
+
+.hud__controls {
+  display: grid;
+  grid-template-columns: repeat(2, var(--touch-btn));
+  gap: var(--touch-gap);
   pointer-events: none;
+}
+
+/* O stack só dirige em RUNNING; em READY fica só o gatilho do menu. */
+.hud[data-state='READY'] .hud__controls {
+  display: none;
+}
+
+.hud__hand {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  pointer-events: none;
+}
+
+.hud__touch[data-side='left'] .hud__hand {
+  justify-content: flex-start;
+}
+
+.hud__hand-button {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: rgba(12, 18, 21, 0.72);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.54rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.hud__hand-button[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: rgba(255, 203, 71, 0.92);
+  color: #171205;
+}
+
+.hud__hand-button:focus-visible,
+.hud__hand-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hud__hand-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 122px;
+  padding: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: rgba(12, 18, 21, 0.94);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  pointer-events: auto;
+  touch-action: manipulation;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.hud__touch[data-side='left'] .hud__hand-menu {
+  right: auto;
+  left: 0;
+}
+
+.hud__hand-menu[hidden] {
+  display: none;
+}
+
+.hud__hand-menu-title {
+  padding: 1px 4px 2px;
+  color: var(--muted);
+  font-size: 0.48rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.hud__hand-option {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(32, 44, 50, 0.9);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.hud__hand-option[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: rgba(255, 203, 71, 0.16);
+  color: var(--accent);
 }
 
 .hud__control {
-  display: grid;
-  place-items: center;
-  width: 76px;
-  height: 76px;
-  min-width: 64px;
-  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-btn);
+  height: var(--touch-btn);
+  min-width: 48px;
+  min-height: 48px;
   padding: 0;
   border: 1px solid rgba(226, 238, 230, 0.32);
-  border-radius: 20px;
+  border-radius: 16px;
   background: rgba(14, 22, 27, 0.72);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
   color: var(--text);
   font: inherit;
-  font-size: 1.65rem;
+  font-size: 1.5rem;
   font-weight: 800;
   line-height: 1;
   cursor: pointer;
@@ -437,14 +567,44 @@ body {
     background-color 80ms ease;
 }
 
+/* Combos ◀F / ▶F: distinguíveis sem depender só da cor (borda + badge). */
+.hud__control--left-brake,
+.hud__control--right-brake {
+  border-color: rgba(255, 154, 60, 0.8);
+  background: rgba(58, 36, 14, 0.82);
+  color: #ffd7a3;
+}
+
+.hud__control-glyph {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.hud__control-badge {
+  margin-top: 2px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 154, 60, 0.92);
+  color: #241203;
+  font-size: 0.42rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
 .hud__control--brake {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  border-color: rgba(255, 154, 60, 0.55);
-  background: rgba(46, 28, 12, 0.76);
-  color: #ffb35c;
-  font-size: clamp(0.68rem, 3vw, 0.82rem);
+  grid-column: 1 / -1;
+  width: 100%;
+  height: var(--touch-brake-h);
+  min-height: 54px;
+  border-radius: 16px;
+  border-color: rgba(255, 154, 60, 0.9);
+  background: linear-gradient(180deg, #ffb455, #e98a24);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.34),
+    0 0 20px rgba(255, 154, 60, 0.22);
+  color: #241203;
+  font-size: 0.76rem;
   font-weight: 900;
   letter-spacing: 0.1em;
 }
@@ -454,8 +614,13 @@ body {
   background: rgba(52, 68, 76, 0.9);
 }
 
+.hud__control--left-brake:active:not(:disabled),
+.hud__control--right-brake:active:not(:disabled) {
+  background: rgba(96, 58, 16, 0.94);
+}
+
 .hud__control--brake:active:not(:disabled) {
-  background: rgba(96, 58, 16, 0.92);
+  background: linear-gradient(180deg, #ffc470, #d97a16);
 }
 
 .hud__control:focus-visible {
@@ -467,21 +632,15 @@ body {
   opacity: 0.38;
 }
 
-.hud[data-state='READY'] .hud__controls,
-.hud[data-state='RECOVERING'] .hud__controls,
-.hud[data-state='FINISHED'] .hud__controls {
-  display: none;
-}
-
-@media (max-height: 680px) {
-  .hud__control {
-    width: 68px;
-    height: 68px;
+@media (max-height: 680px), (max-width: 360px) {
+  .hud__touch {
+    --touch-btn: 48px;
+    --touch-brake-h: 54px;
+    --touch-gap: 5px;
   }
 
-  .hud__control--brake {
-    width: 78px;
-    height: 78px;
+  .hud__control {
+    border-radius: 14px;
   }
 
   .hud__go-button {
@@ -1209,6 +1368,23 @@ body {
 #tuning-panel > .lil-children {
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/*
+ * Em touch o painel de debug lil-gui não pode invadir o stack de controles.
+ * Com o stack à direita, encolhe para terminar antes da coluna ◀; com o stack
+ * à esquerda (canhoto), muda para o canto direito.
+ */
+html[data-touch='true'] #tuning-panel.lil-gui {
+  --width: min(320px, calc(100vw - 148px));
+  width: min(320px, calc(100vw - 148px));
+}
+
+html[data-touch='true'][data-controls-side='left'] #tuning-panel.lil-gui {
+  right: calc(var(--safe-right) + 8px);
+  left: auto;
+  --width: min(240px, calc(100vw - 156px));
+  width: min(240px, calc(100vw - 156px));
 }
 
 #tuning-panel .lil-title {
