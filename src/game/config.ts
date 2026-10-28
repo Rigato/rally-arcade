@@ -21,8 +21,9 @@ export const RENDER_SETTINGS = {
 
 /** Valores iniciais da seção 4 do plano. Nenhum é definitivo. */
 export const CAR_TUNING: CarTuning = {
-  engineAcceleration: 10,
-  maxSpeed: 34,
+  // v5: +15% no motor, na velocidade máxima e no freio (playtest).
+  engineAcceleration: 11.5,
+  maxSpeed: 39.1,
   dragCoefficient: 0.003,
   rollingResistance: 0.5,
   maxYawRate: 2.2,
@@ -30,7 +31,7 @@ export const CAR_TUNING: CarTuning = {
   steerResponseTau: 0.15,
   steerSpeedReference: 8,
   steerHighSpeedReduction: 0.38,
-  brakeMax: 12,
+  brakeMax: 13.8,
   brakeRampStart: 3.5,
   brakeRampDuration: 0.55,
   airGravity: 24,
@@ -54,6 +55,8 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     drag: 1.0,
     bump: 0.6,
     steerMultiplier: 1.0,
+    speedLimit: 1.0,
+    offRoadBrake: 0,
   },
   sand: {
     id: 'sand',
@@ -63,6 +66,8 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     drag: 1.25,
     bump: 0.9,
     steerMultiplier: 0.95,
+    speedLimit: 0.92,
+    offRoadBrake: 0,
   },
   'forest-offroad': {
     id: 'forest-offroad',
@@ -72,6 +77,8 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     drag: 1.7,
     bump: 1.4,
     steerMultiplier: 0.9,
+    speedLimit: 0.65,
+    offRoadBrake: 10.0,
   },
   'desert-offroad': {
     id: 'desert-offroad',
@@ -81,6 +88,8 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     drag: 2.0,
     bump: 1.8,
     steerMultiplier: 0.85,
+    speedLimit: 0.62,
+    offRoadBrake: 8.0,
   },
 };
 

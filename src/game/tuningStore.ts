@@ -19,7 +19,7 @@ import type {
 } from './types';
 
 /** Chave única no localStorage. O sufixo permite migrar o formato no futuro. */
-export const TUNING_STORAGE_KEY = 'rally.tuning.v3';
+export const TUNING_STORAGE_KEY = 'rally.tuning.v4';
 
 interface TuningSnapshot {
   car: CarTuning;
