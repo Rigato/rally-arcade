@@ -515,4 +515,60 @@ O teste seguinte foi no PC, com teclado. O controle ficou confortável, mas reve
 
 - Três worktrees em paralelo: controles/GO/botões, física de derrapagem, pista A→B.
 - O limite do modelo free continua estourado; fallback combinado para DeepSeek V4.1 Flash do Go, reasoning low.
-- Integração, testes e deploy ficam pendentes até o retorno dos três trabalhos.
+- Os três trabalhos voltaram e foram integrados na `main` (merges `81c9f85` e `a32d299`, pista em `bd06f45`). A validação e o deploy estão na seção 25.
+
+## 25. Integração v3 — concluída (Oct 28, 2026)
+
+### Controles e HUD
+
+- **READY:** carro parado, cronômetro zerado, overlay **GO!** com “TOQUE PARA LARGAR”. GO, toque no canvas ou W/↑/Enter iniciam; o timer só começa aí.
+- **RUNNING:** auto-throttle sempre ligado; o freio corta o motor no `Car`. RECOVERING/FINISHED desligam a auto-aceleração.
+- **Touch:** três botões DOM — ◀/▶ no canto inferior esquerdo e FREIO no canto inferior direito — com alvos ≥64 px, safe areas e `pointer capture`. Mapa `pointerId → controle` permite frear e esterçar com dois dedos. O toque nos botões não chega ao canvas.
+- **Teclado:** A/← = esquerda na tela (`steer +1`), D/→ = direita; S/↓ freia; Espaço = freio de mão; R reinicia. O sinal antigo estava invertido e foi corrigido.
+- **Pista:** `🎲 NOVA` sorteia seed 1–100 e recarrega com `?track=proc&seed=N`, preservando `debug=1`; `FIXA` remove `track/seed`. Ambos removem `s` para não teleportar para um `s` inválido da outra pista. Clique não inicia corrida.
+- **Carregamento procedural** funciona sem `?debug=1`; o painel de tuning continua opt-in.
+- `TouchGuide`, o drag steering e o botão antigo de freio de mão foram removidos. O CSS morto saiu junto.
+- Powerups foram para o topo esquerdo, abaixo da barra de progresso, para não colidir com os controles.
+
+### Derrapagem
+
+| Parâmetro | Valor final |
+| --- | ---: |
+| Grip cascalho / areia / fora-floresta / fora-deserto | 4,6 / 2,9 / 2,2 / 1,8 |
+| `slipGripFalloff` | 0,30 |
+| `steerGripReduction` | 0,18 |
+| `yawBoost` | 0,10 |
+| `maxYawRate` | 2,20 |
+| `steerResponseTau` | 0,15 |
+| `brakeGripReduction` | 0,15 |
+| `handbrakeGripMultiplier` | 0,23 |
+
+- Simulação direta do `Car` a 120 Hz: **33,8° de slip a 20 m/s** com esterço cheio por 1,5 s (35,6° a 10 m/s, 29,3° a 30 m/s). Recuperação para <8° em **0,29–0,40 s** com contra-esterço + freio/acelerador; freio de mão a 18 m/s gera 30,5° e recupera em 0,28 s. Nenhum NaN em 60 s alternando entradas.
+- O `yawBoost` só atua com pouco slip (fade até ~28,6°) e respeita o `surface.steerMultiplier`; ele inicia a rotação sem realimentar o pião.
+- Fora de pista o carro fica deliberadamente muito solto (areia ~54°, floresta ~62°, deserto ~67° em 1,5 s), exigindo contra-esterço mais cedo.
+- Tuning salvo em `localStorage['rally.tuning.v3']`; a chave v2 é ignorada para não mascarar os novos defaults.
+
+### Pista fixa A→B
+
+- Seed procedural **91** congelada em `src/track/track01.ts` como **`track01-v3`**.
+- **1096,8 m**, topologia aberta: serpentina de 4 pernas e 3 hairpins; largada e chegada a ~199 m em linha reta.
+- 4 setores: floresta 0–250, deserto 250–500, floresta 500–750, deserto 750–1096,8.
+- Raio mínimo **30,2 m**, largura 8,6–13,0 m, ombros de 12 m preservados.
+- 2 rampas baixas: 1,00 m × 6,76 m em `s=395,6` e 1,38 m × 6,72 m em `s=687,3`, ambas com 40 m+ de pouso reto.
+- 3 parciais em 250/500/750; 4 powerups (3 turbo + 1 grip), nenhum imediatamente antes das rampas; 50 obstáculos gerados (16 rochas, 16 árvores, 18 troncos).
+- Medalhas **59,3 / 67,6 / 77,1 s**; inclinação máxima 12,3% em 10 m e 12,7% local.
+- Congelamento com escala uniforme 1,1235 em x/z e elevação ×0,72, necessário para o raio ≥30 m e a inclinação ≤13% do `validate:track`.
+- `scripts/select-track.ts` avalia seeds 1–100 com as regras do B1; `scripts/freeze-track.ts` reproduz o freeze e gera o SVG top-down.
+
+### Testes
+
+- `npm run typecheck`, `npm run build` e `npm run validate:track` passam (só o aviso já existente de chunk >650 kB).
+- Headless 390×844: READY com GO e 0 km/h; GO → RUNNING com timer e aceleração automática; ◀/▶ movem o carro para a esquerda/direita **na tela**; FREIO reduz a velocidade; ◀+FREIO com dois pointers; R volta a READY; A/← e D/→ corretos no teclado; `🎲 NOVA` muda para `proc/seed` e `FIXA` volta; `?track=proc&seed=7` sem debug carrega; parcial e chegada disparam; console sem erros.
+- Screenshots de capa atualizados: `Docs/screenshots/start-go.png` e `running-controls.png`.
+
+### Pendências de playtest
+
+- Calibrar o feeling da derrapagem no celular e decidir se o carro fora de pista está solto demais.
+- Confirmar se os 3 botões são confortáveis em portrait e se frear+virar com dois dedos funciona na prática.
+- Recalibrar medalhas e parciais com tempos reais.
+- O freio de mão continua só no teclado; um 4º botão touch fica para outra rodada, se necessário.

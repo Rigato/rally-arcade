@@ -1,16 +1,18 @@
 # Rally Arcade
 
-Protótipo de corrida arcade de rally para celular em **portrait**, jogável com uma mão só. O carro derrapa, os pisos mudam o grip e cada corrida termina com tempo, três parciais e medalha.
+Protótipo de corrida arcade de rally para celular em **portrait**, com controles de toque simples. O carro derrapa, os pisos mudam o grip e cada corrida termina com tempo, três parciais e medalha.
 
 Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), UI em DOM/CSS sobre o canvas.
 
 **Jogue agora:** <https://rigato.github.io/rally-arcade/>
 
-> Status: **MVP completo — M5, com powerups (M5b), controles revisados e pista v2 multi-zona**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado, com cronômetro, barra de progresso, melhor tempo persistido, tela de resultado e pickups de turbo/grip. A pista v2 e o novo controle estão em playtest; falta calibrar tempos e feeling.
+> Status: **MVP completo — M5, com powerups (M5b), controles GO/botões e pista A→B**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. A pista fixa agora é uma seed procedural curada (1096,8 m), e o carro tem física de derrapagem mais solta; o conjunto está em playtest para calibrar tempos e feeling.
 
-## Screenshot
+## Screenshots
 
-![Largada na floresta](Docs/screenshots/forest-start.png)
+![Largada com GO](Docs/screenshots/start-go.png)
+
+![Controles em jogo](Docs/screenshots/running-controls.png)
 
 ## Documentação
 
@@ -19,41 +21,46 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 ## O loop
 
-1. O carro larga em `s = 22 m` com o cronômetro zerado. O **primeiro toque** (ou tecla de acelerar) inicia a corrida.
+1. O carro começa **parado** em `s = 22 m`; o botão **GO!** central (ou um toque na tela) inicia o cronômetro. Depois disso o carro **acelera sozinho**.
 2. Dirigir, derrapar, pular e escolher a linha. Sair da pista custa tempo; a recuperação automática mantém o relógio correndo.
-3. A pista tem **4 setores intercalados** (floresta → deserto → floresta → deserto). Em `s = 250`, `500` e `750 m` aparecem as **parciais 1, 2 e 3**, com tempo e diferença contra os alvos provisórios (13,5 s / 27 s / 40,5 s).
-4. Ao cruzar a faixa em `s ≈ 1031 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s. A pista v2 é um **circuito fechado** de teste (~1035 m); a chegada fica geometricamente perto da largada.
-5. A medalha vem do tempo final: **ouro ≤ 55 s**, **prata ≤ 62 s**, **bronze ≤ 72 s**. Sem medalha, o resultado mostra quantos segundos faltaram para o bronze.
+3. A pista é **A→B**, com 4 setores intercalados (floresta → deserto → floresta → deserto). Em `s = 250`, `500` e `750 m` aparecem as **parciais 1, 2 e 3**, com tempo e diferença contra os alvos provisórios (13,9 s / 27,8 s / 41,7 s).
+4. Ao cruzar a faixa em `s ≈ 1093 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s. A largada e a chegada ficam em pontos distintos.
+5. A medalha vem do tempo final: **ouro ≤ 59,3 s**, **prata ≤ 67,6 s**, **bronze ≤ 77,1 s**. Sem medalha, o resultado mostra quantos segundos faltaram para o bronze.
 6. **CORRER DE NOVO** (ou o botão ↺ / tecla **R**) recoloca o carro na largada em menos de 1 s. O melhor tempo continua no topo do HUD.
 
 ## Controles
 
-| Ação | Touch (uma mão) | PC |
+| Ação | Touch | PC |
 | --- | --- | --- |
-| Acelerar | Tocar e segurar na tela | Mouse pressionado / W / ↑ |
-| Esterçar / derrapar | Arrastar o dedo na horizontal (deadzone + curva exponencial) | Mover o mouse / A, D / ←, → |
-| Frear | Arrastar o dedo para baixo (novo padrão: freia sem soltar e continua esterçando) | Arrastar o mouse para baixo / S / ↓ |
-| Frear soltando | Soltar o dedo aplica a rampa de freio | Soltar o mouse |
-| Freio de mão | Arrastar além do limite de esterço (padrão) ou botão dedicado | Espaço |
+| Iniciar | GO! central ou toque na tela | W / ↑ / Enter |
+| Acelerar | Automático depois do GO | Automático depois do start |
+| Esterçar / derrapar | Segurar ◀ ou ▶ (canto inferior esquerdo) | A / ← (esquerda), D / → (direita) |
+| Frear | Segurar FREIO (canto inferior direito) | S / ↓ |
+| Frear e virar | Dois dedos: ◀/▶ + FREIO | A/D + S |
+| Freio de mão | Sem botão no touch por enquanto | Espaço |
 | Reiniciar | Botão no topo da tela | R |
+| Pista | 🎲 NOVA (seed 1–100) / FIXA | Mesmos botões na tela |
 | Telemetria (debug) | — | H |
 | Pausa | Auto-pause ao trocar de aba | — |
 
-O esquema padrão é o **drag2d**: o mesmo dedo acelera ao encostar, esterça no eixo X e freia no eixo Y para baixo. Assim dá para frear e virar ao mesmo tempo sem tirar o dedo. O esquema antigo **release** (soltar para frear) continua disponível no painel de debug, em **Input → Esquema de toque**. O guia visual (anel no ponto de encosto) pode ser desligado em **Input → Guia de toque**.
+O carro fica parado no READY. O GO libera a largada e liga a auto-aceleração; soltar o freio volta a acelerar. Segurar ◀/▶ vira na direção da tela; com dois dedos é possível frear e virar ao mesmo tempo. O freio de mão continua disponível no teclado (Espaço), mas não há um quarto botão no touch.
 
-O freio de mão pode alternar entre **deslocamento** e **botão** no painel de debug. No modo botão, o alvo aparece no canto inferior direito do HUD.
+Os botões **🎲 NOVA** e **FIXA** no topo trocam entre uma pista procedural aleatória (seed 1–100) e a pista fixa A→B.
 
 ## HUD e resultado
 
 - **Topo esquerdo:** melhor tempo da pista (`MELHOR --:--.---` até a primeira corrida).
 - **Topo central:** cronômetro `mm:ss.mmm`, parado em READY e FINISHED.
 - **Topo direito:** reinício imediato.
-- **Barra de progresso:** distância percorrida em metros, um marcador por parcial (250/500/750 m) e ponto do carro no fim do preenchimento.
+- **Botões de pista:** `🎲 NOVA` gera uma seed procedural 1–100; `FIXA` volta à pista A→B.
+- **Barra de progresso:** distância percorrida, um marcador por parcial (250/500/750 m) e ponto do carro no fim do preenchimento.
+- **GO!:** overlay central no READY; inicia a corrida e a auto-aceleração.
+- **Controles touch:** ◀/▶ no canto inferior esquerdo, FREIO no canto inferior direito; aparecem depois do GO.
 - **Banner de parcial:** nome, tempo e delta (`+0,42` em vermelho, `-0,31` em verde) por ~2,5 s.
 - **Resultado:** tempo total, medalha, tempos-alvo, as **3 parciais** (tempo e delta), melhor tempo, selo `NOVO RECORDE` quando aplicável e o botão grande **CORRER DE NOVO**. O overlay escuro só intercepta toque no painel/botão; escondido, não bloqueia o canvas.
-- **Powerups (canto inferior esquerdo):** chips com nome, tempo restante e barra de duração, atualizados a ~10 Hz. Ao coletar, o nome do powerup sobe e some em ~0,75 s, sem vinheta de impacto.
+- **Powerups (topo esquerdo):** chips com nome, tempo restante e barra de duração, atualizados a ~10 Hz. Ao coletar, o nome do powerup sobe e some em ~0,75 s.
 
-O melhor tempo fica em `localStorage['rally.best.track01-v2.v1']` (uma chave por `track.def.id`). Se o storage estiver bloqueado, o recorde vale só para a sessão e o jogo continua normalmente.
+O melhor tempo fica em `localStorage['rally.best.track01-v3.v1']` (uma chave por `track.def.id`). Se o storage estiver bloqueado, o recorde vale só para a sessão e o jogo continua normalmente.
 
 ## Powerups
 
@@ -64,7 +71,7 @@ Dois tipos no MVP, com ativação imediata:
 | **Turbo** | velocidade máxima e aceleração × 1,3 + boost de FOV | 2,0 s | anel laranja |
 | **Grip extra** | grip lateral × 1,8 | 10 s | anel azul |
 
-- **6 pickups autorados** em `src/track/track01.ts`, distribuídos pelos 4 setores: grip em `s = 60`, turbo em `s = 160` (depois do pouso da rampa 1), grip em `s = 420` (antes da curva SE), turbo em `s = 610` (depois do pouso da rampa 2), grip em `s = 690` (antes da curva SO) e turbo em `s = 850`.
+- **4 pickups** autorados em `src/track/track01.ts`, distribuídos pela pista: turbo em `s ≈ 426,7`, grip em `s ≈ 475,7`, turbo em `s ≈ 800,6` e turbo em `s ≈ 1048,5`; nenhum imediatamente antes das rampas.
 - Pegar o mesmo tipo de novo **renova o timer** (nunca acumula); **tipos diferentes coexistem**. Cada pickup some ao ser coletado e volta no reinício (R), no retry e no teleporte `?s=`.
 - A coleta só vale em **RUNNING**; READY, RECOVERING e FINISHED não coletam. Na recuperação os timers ficam congelados.
 - O turbo não altera saltos, colisão, freio ou rampa: só velocidade, aceleração e o FOV da câmera (`CAMERA_TUNING.turboFovBoost`). O grip extra age só no grip lateral.
@@ -80,11 +87,11 @@ https://rigato.github.io/rally-arcade/?debug=1&track=proc&seed=1
 ```
 
 - **`?s=<metros>`** teleporta o carro para o centro da pista e volta a corrida para READY, preservando o melhor tempo. É útil para revisar a pista e testar a chegada.
-- **`?track=proc&seed=N`** carrega uma pista procedural determinística (protótipo, somente em debug); sem o parâmetro, usa a pista fixa v2.
+- **`?track=proc&seed=N`** carrega uma pista procedural determinística, inclusive sem `?debug=1`; **FIXA** volta à pista A→B.
 - **H** alterna a telemetria no desktop; no painel, a pasta **Debug** também controla piso forçado, colisores, reposicionar e ir para um `s`.
-- O painel cobre **Carro**, **Carroceria**, **Câmera**, **Input**, **Pisos**, **Powerups / Corrida** e **Debug**. Os tempos-alvo de medalha, o alvo da parcial e os multiplicadores/durações dos powerups são editáveis ao vivo.
+- O painel cobre **Carro**, **Carroceria**, **Câmera**, **Input**, **Pisos**, **Powerups / Corrida** e **Debug**. O Input agora só tem as suavizações de esterço/freio; os parâmetros de derrapagem ficam em **Carro**.
 - Todo ajuste vale na hora porque física, câmera, input e corrida leem os mesmos objetos mutáveis de `src/game/config.ts`.
-- Alterações são salvas em `localStorage['rally.tuning.v2']` com debounce de ~200 ms. **Resetar tuning** volta aos defaults e apaga a chave.
+- Alterações são salvas em `localStorage['rally.tuning.v3']` com debounce de ~200 ms. **Resetar tuning** volta aos defaults e apaga a chave.
 - **Copiar JSON** exporta o tuning atual; se o clipboard for bloqueado, abre um textarea para copiar manualmente.
 
 ## Comandos
@@ -123,10 +130,9 @@ src/
 ├── camera/
 │   └── ChaseCamera.ts   # câmera de perseguição
 ├── input/
-│   ├── Input.ts         # touch drag2d, mouse e teclado
-│   └── TouchGuide.ts    # anel/ponto de feedback do toque
+│   └── Input.ts         # GO, auto-throttle, 3 botões, teclado e multi-touch
 ├── track/
-│   ├── track01.ts       # pista fixa v2 autorada (~1 km, 4 setores)
+│   ├── track01.ts       # pista fixa A→B (seed 91, ~1097 m, 4 setores)
 │   ├── Track.ts         # spline, sampler, altura e validação
 │   ├── TrackMesh.ts     # pista, ombros, placas e portais
 │   ├── Gates.ts         # portais em cada troca de setor + chegada
@@ -144,6 +150,8 @@ src/
     └── TuningPanel.ts   # lil-gui em ?debug=1
 ```
 
+Na raiz, `scripts/` reúne `validate-track.ts`, `select-track.ts`, `freeze-track.ts` e `proc-validate.ts`. A pista fixa foi congelada da seed procedural com `select-track.ts` e `freeze-track.ts`.
+
 ## Protótipo procedural
 
 A base do gerador de pistas por seed está em `src/track/procedural/`:
@@ -159,7 +167,7 @@ npx --yes tsx scripts/proc-validate.ts --count 100 --start 1
 npx --yes tsx scripts/proc-validate.ts --svg /tmp/opencode/pista.svg
 ```
 
-A integração de debug já existe: `?debug=1&track=proc&seed=1` carrega a pista gerada com os mesmos sistemas de cenário, splits, powerups e obstáculos. Ainda não há menu para escolher seed nem editor de pista; o objetivo é validar o gerador.
+A integração está pronta: `?track=proc&seed=1` (com ou sem `?debug=1`) carrega a pista gerada com os mesmos sistemas de cenário, splits, powerups e obstáculos. Na tela, **🎲 NOVA** sorteia uma seed 1–100 e **FIXA** volta à pista A→B. Ainda não há menu para escolher seed nem editor de pista; o objetivo é validar o gerador.
 
 ## Deploy
 
@@ -167,7 +175,7 @@ O workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) public
 
 URL publicada: <https://rigato.github.io/rally-arcade/>
 
-O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O deploy do commit `e7d041b` foi validado com HTTP 200 e smoke test live nas pistas fixa e procedural.
+O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O deploy é validado com HTTP 200 e smoke test live nas pistas fixa A→B e procedural.
 
 ## Roadmap
 
@@ -178,8 +186,9 @@ O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O dep
 - **M4 — Fora da pista** (concluído): terreno acidentado, obstáculos, colisão e recuperação com penalidade.
 - **M5 — Corrida completa** (concluído): cronômetro, distância, parcial, medalhas, resultado, melhor tempo persistido e reinício instantâneo.
 - **M5b — Powerups** (concluído): pickups 3D de turbo e grip extra, efeitos reais na física, chips com timers no HUD e restauração no reinício/teleporte.
-- **Pista v2** (concluído): ~1035 m, 4 setores intercalados, curvas de raio ≥ 36 m, ombros de 12 m, 2 rampas baixas e 3 parciais.
-- **Controles v2** (em playtest): drag2d com freio vertical, deadzone/expo, carro mais solto e roll maior.
-- **Protótipo procedural** (em validação): gerador determinístico por seed, 4 zonas, 3 parciais e preview SVG; carregável em debug por `?track=proc&seed=1`.
+- **Pista v2** (substituída): circuito fechado de ~1035 m, 4 setores, curvas de raio ≥ 36 m e 3 parciais; reprovado no playtest por ser fechado.
+- **Controles v3** (em playtest): GO, auto-aceleração, 3 botões touch, teclado invertido corretamente, carro mais solto e derrapagem visível.
+- **Pista A→B** (em playtest): seed 91 congelada, 1096,8 m, 4 setores, raio mínimo 30,2 m, 2 rampas baixas, 3 parciais e 50 obstáculos.
+- **Protótipo procedural** (em validação): gerador determinístico por seed, carregável por `?track=proc&seed=N` e botão 🎲 NOVA na tela.
 
 Fora do MVP: progressão, loja, menu/editor de pistas procedurais, áudio e cenários extras.
