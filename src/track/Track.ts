@@ -386,6 +386,13 @@ export class Track {
         continue;
       }
 
+      // Depois do fim do ramo, não dá para continuar "preso" nele por
+      // histerese: a projeção principal já passou do merge, então volta para
+      // a pista principal antes de o carro sair para o ombro.
+      if (main.s > branch.endS + 1 || main.s < branch.startS - 1) {
+        continue;
+      }
+
       const mappedHint = this.branchSForMainS(branch, hintMainS);
       const branchHint = preferred && hintBranchS !== undefined
         ? hintBranchS

@@ -3,6 +3,7 @@ import { clamp } from '../core/math';
 import { SCENARIOS, SCENARIO_IDS } from '../game/scenarios';
 import type { SceneryFamily } from '../game/scenarios';
 import type { Track, TrackZoneId } from '../track/Track';
+import type { TrackBranch } from '../track/TrackBranch';
 import type { TrackZone } from '../game/types';
 import { zoneBlendAt, type ZoneId } from '../track/zones';
 import { createBannerTexture } from './canvasText';
@@ -17,6 +18,11 @@ const PORTAL_CLEARANCE = 9;
 const KICKER_CLEARANCE = 12;
 const EDGE_POST_SPACING = 20;
 const EDGE_POST_CLEARANCE = 0.55;
+const BRANCH_SCATTER_STEP_MIN = 8;
+const BRANCH_SCATTER_STEP_MAX = 14;
+const BRANCH_SCATTER_MARGIN = 8;
+const BRANCH_POST_MARGIN = 6;
+const BRANCH_POST_CLEARANCE = 0.6;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const TERRAIN_COLORS: Record<ZoneId, THREE.Color> = Object.fromEntries(
@@ -120,6 +126,13 @@ export class Scenery {
       this.scatter(track, rng, from, to, zone.id, stepMin, stepMax);
     }
 
+    // Ramos de bifurcação: cenário próprio apenas no ombro externo. Cada ramo
+    // recebe um PRNG estável derivado do índice para não alterar as zonas.
+    track.branches.forEach((branch, index) => {
+      const rng = mulberry32(0x0b1a5c00 + (index + 1) * 0x9e3779b1);
+      this.scatterBranch(track, branch, rng);
+    });
+
     this.group.add(this.buildTerrainBackdrop(track));
     this.group.add(this.buildPines());
     this.group.add(this.buildRocks());
@@ -132,6 +145,7 @@ export class Scenery {
     this.group.add(this.buildPalms());
     this.group.add(this.buildUmbrellas());
     this.group.add(this.buildEdgePosts(track));
+    this.group.add(this.buildBranchEdgePosts(track));
     this.group.add(this.buildJumpMarkers(track));
   }
 
@@ -201,6 +215,50 @@ export class Scenery {
       }
 
       s += stepMin + rng() * (stepMax - stepMin);
+    }
+  }
+
+  /**
+   * Decora o ombro externo de um ramo de bifurcação.
+   *
+   * O lado interno encosta na pista principal, então nada é colocado ali. A
+   * entrada e a saída ficam livres para a transição não parecer bloqueada.
+   */
+  private scatterBranch(
+    track: Track,
+    branch: TrackBranch,
+    rng: () => number,
+  ): void {
+    const from = Math.min(BRANCH_SCATTER_MARGIN, branch.length * 0.25);
+    const to = branch.length - from;
+    if (to <= from) {
+      return;
+    }
+
+    const zone = track.zoneAt(branch.startS);
+    let s = from;
+
+    while (s < to) {
+      // Pequenas clareiras, como no scatter principal, mas mais raras: o ramo
+      // é estreito e precisa de leitura contínua do ombro.
+      if (rng() >= 0.14) {
+        const ss = clamp(s + (rng() - 0.5) * 2.4, from, to);
+        const sample = branch.sampleAt(ss);
+        const half = branch.widthAt(ss) * 0.5;
+        // 3–10 m além da borda, sempre do lado externo do ramo.
+        const lateral = half + 3 + rng() * 7;
+        const u = branch.side * lateral;
+        const x = sample.position.x + sample.right.x * u;
+        const z = sample.position.z + sample.right.z * u;
+        const y = branch.heightAt(ss, u) - 0.02;
+
+        this.items.push(
+          this.makeItem(zone, x, y, z, rng, Math.abs(u) - half),
+        );
+      }
+
+      s += BRANCH_SCATTER_STEP_MIN +
+        rng() * (BRANCH_SCATTER_STEP_MAX - BRANCH_SCATTER_STEP_MIN);
     }
   }
 
@@ -1182,6 +1240,91 @@ export class Scenery {
     );
     const tops = this.instanced(
       'scenery-edge-post-top',
+      topGeometry,
+      topMaterial,
+      placements.length,
+    );
+
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+
+    placements.forEach((placement, index) => {
+      position.set(placement.x, placement.y, placement.z);
+      quaternion.setFromAxisAngle(UP, placement.yaw);
+      matrix.compose(position, quaternion, scale);
+      posts.setMatrixAt(index, matrix);
+      tops.setMatrixAt(index, matrix);
+    });
+
+    for (const mesh of [posts, tops]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      group.add(mesh);
+    }
+
+    return group;
+  }
+
+  /**
+   * Postes de borda dos ramos, no ombro externo. Reaproveita o visual dos
+   * postes principais (cilindro claro + topo vermelho) em uma única
+   * `InstancedMesh` por parte, somando apenas 2 draw calls.
+   */
+  private buildBranchEdgePosts(track: Track): THREE.Group {
+    const group = new THREE.Group();
+    group.name = 'scenery-branch-edge-posts';
+
+    const placements: Array<{ x: number; y: number; z: number; yaw: number }> = [];
+
+    for (const branch of track.branches) {
+      const from = Math.min(BRANCH_POST_MARGIN, branch.length * 0.25);
+      const to = branch.length - from;
+      if (to <= from) {
+        continue;
+      }
+
+      for (let s = from; s <= to; s += EDGE_POST_SPACING) {
+        const sample = branch.sampleAt(s);
+        const half = branch.widthAt(s) * 0.5;
+        const u = branch.side * (half + BRANCH_POST_CLEARANCE);
+        placements.push({
+          x: sample.position.x + sample.right.x * u,
+          y: branch.heightAt(s, u),
+          z: sample.position.z + sample.right.z * u,
+          yaw: Math.atan2(sample.tangent.x, sample.tangent.z),
+        });
+      }
+    }
+
+    if (placements.length === 0) {
+      return group;
+    }
+
+    const postGeometry = new THREE.CylinderGeometry(0.065, 0.08, 1.15, 6);
+    postGeometry.translate(0, 0.575, 0);
+    const postMaterial = new THREE.MeshStandardMaterial({
+      color: 0xf2f1e4,
+      roughness: 0.8,
+      flatShading: true,
+    });
+    const topGeometry = new THREE.CylinderGeometry(0.085, 0.085, 0.2, 6);
+    topGeometry.translate(0, 1.24, 0);
+    const topMaterial = new THREE.MeshStandardMaterial({
+      color: 0xcf4630,
+      roughness: 0.75,
+      flatShading: true,
+    });
+
+    const posts = this.instanced(
+      'scenery-branch-edge-post-body',
+      postGeometry,
+      postMaterial,
+      placements.length,
+    );
+    const tops = this.instanced(
+      'scenery-branch-edge-post-top',
       topGeometry,
       topMaterial,
       placements.length,

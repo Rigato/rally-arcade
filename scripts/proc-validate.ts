@@ -5,6 +5,7 @@
  * Uso:
  *   npx --yes tsx scripts/proc-validate.ts
  *   npx --yes tsx scripts/proc-validate.ts --count 50 --start 100
+ *   npx --yes tsx scripts/proc-validate.ts --gen v2
  *   npx --yes tsx scripts/proc-validate.ts --svg /tmp/opencode/minha-pista.svg
  *
  * Não integra no jogo e não altera nenhum arquivo de `src/` compartilhado.
@@ -20,6 +21,7 @@ import {
   validateProceduralTrack,
   type ProceduralValidation,
 } from '../src/track/procedural/ProceduralTrack';
+import { generateProceduralTrackV2 } from '../src/track/procedural/ProceduralTrackV2';
 
 const args = process.argv.slice(2);
 
@@ -30,8 +32,12 @@ function readArg(name: string): string | undefined {
 
 const count = Math.max(1, Number.parseInt(readArg('--count') ?? '20', 10) || 20);
 const startSeed = Number.parseInt(readArg('--start') ?? '1', 10) || 1;
+const generatorVersion = readArg('--gen') === 'v2' ? 'v2' : 'v1';
+const generate = generatorVersion === 'v2'
+  ? generateProceduralTrackV2
+  : generateProceduralTrack;
 const svgPath = resolve(
-  readArg('--svg') ?? `/tmp/opencode/rally-proc-seed-${startSeed}.svg`,
+  readArg('--svg') ?? `/tmp/opencode/rally-proc-${generatorVersion}-seed-${startSeed}.svg`,
 );
 
 interface Row {
@@ -50,7 +56,7 @@ for (let i = 0; i < count; i += 1) {
   const start = performance.now();
 
   try {
-    const def = generateProceduralTrack(seed);
+    const def = generate(seed);
     const elapsedMs = performance.now() - start;
     const validation = validateProceduralTrack(def, {
       quiet: true,
@@ -105,7 +111,7 @@ printTable(rows);
 printSummary(rows, failures);
 
 const previewSeed = rows[0]?.seed ?? startSeed;
-const previewDef = generateProceduralTrack(previewSeed);
+const previewDef = generate(previewSeed);
 writePreview(previewDef, svgPath);
 console.log(`\nPreview SVG (seed ${previewSeed}): ${svgPath}`);
 
@@ -208,6 +214,7 @@ function printSummary(items: readonly Row[], errors: readonly string[]): void {
   const grades = valid.map((row) => row.validation.stats.maxGrade);
   const times = items.map((row) => row.elapsedMs);
 
+  console.log(`\nGerador: ${generatorVersion}`);
   console.log(`\nResultado: ${valid.length}/${items.length} seeds válidas.`);
 
   if (valid.length > 0) {
@@ -296,8 +303,8 @@ function printSummary(items: readonly Row[], errors: readonly string[]): void {
   // ser idênticas campo a campo.
   if (items.length > 0) {
     const seed = items[0].seed;
-    const a = generateProceduralTrack(seed);
-    const b = generateProceduralTrack(seed);
+    const a = generate(seed);
+    const b = generate(seed);
     const same = JSON.stringify(a) === JSON.stringify(b);
     console.log(`Determinismo (seed ${seed} duas vezes): ${same ? 'OK' : 'FALHOU'}`);
     if (!same) {
@@ -377,6 +384,18 @@ function writePreview(def: TrackDef, path: string): void {
   parts.push(
     `<polyline points="${samples.map((sample) => `${sample.x.toFixed(1)},${sample.z.toFixed(1)}`).join(' ')}" fill="none" stroke="#101413" stroke-width="1.2" stroke-dasharray="2 3"/>`,
   );
+
+  // Ramos de bifurcação.
+  for (const fork of def.forks ?? []) {
+    for (const branch of fork.branches) {
+      const points = branch.points
+        .map((point) => `${point.x.toFixed(1)},${point.z.toFixed(1)}`)
+        .join(' ');
+      parts.push(
+        `<polyline points="${points}" fill="none" stroke="#e8dcc4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>`,
+      );
+    }
+  }
 
   // Splits.
   for (const split of def.splits) {

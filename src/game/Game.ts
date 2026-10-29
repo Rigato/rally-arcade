@@ -15,6 +15,7 @@ import { Track } from '../track/Track';
 import { TrackMesh } from '../track/TrackMesh';
 import { TRACK_01 } from '../track/track01';
 import { generateProceduralTrack } from '../track/procedural/ProceduralTrack';
+import { generateProceduralTrackV2 } from '../track/procedural/ProceduralTrackV2';
 import { Hud, type HudDebugInfo } from '../ui/Hud';
 import { Results } from '../ui/Results';
 import { TrackMenu } from '../ui/TrackMenu';
@@ -1329,9 +1330,28 @@ function resolveTrackDef(): typeof TRACK_01 {
 
   if (track === 'proc' || track === null) {
     const seed = parseTrackSeed(params.get('seed')) ?? randomTrackSeed();
+    const version = params.get('gen') === 'v1' ? 1 : 2;
+
+    if (version === 2) {
+      try {
+        const generated = generateProceduralTrackV2(seed);
+        console.info(
+          `[Game] pista procedural v2 seed=${seed} (${generated.id}).`,
+        );
+        return generated;
+      } catch (error) {
+        console.warn(
+          '[Game] falha no gerador procedural v2; tentando a v1.',
+          error,
+        );
+      }
+    }
+
     try {
       const generated = generateProceduralTrack(seed);
-      console.info(`[Game] pista procedural seed=${seed} (${generated.id}).`);
+      console.info(
+        `[Game] pista procedural v1 seed=${seed} (${generated.id}).`,
+      );
       return generated;
     } catch (error) {
       console.warn('[Game] falha no gerador procedural; usando a pista fixa.', error);

@@ -9,6 +9,7 @@
  * Uso:
  *   npx --yes tsx scripts/proc-diversity.ts
  *   npx --yes tsx scripts/proc-diversity.ts --count 16 --start 1
+ *   npx --yes tsx scripts/proc-diversity.ts --gen v2
  *   npx --yes tsx scripts/proc-diversity.ts --svg /tmp/opencode/meu-sheet.svg
  *
  * PNG (opcional, se houver ImageMagick/Chromium):
@@ -27,6 +28,7 @@ import {
   type CurveCategory,
   type ProceduralLayout,
 } from '../src/track/procedural/ProceduralTrack';
+import { generateProceduralTrackV2 } from '../src/track/procedural/ProceduralTrackV2';
 
 const args = process.argv.slice(2);
 
@@ -37,7 +39,13 @@ function readArg(name: string): string | undefined {
 
 const count = Math.max(1, Number.parseInt(readArg('--count') ?? '12', 10) || 12);
 const startSeed = Number.parseInt(readArg('--start') ?? '1', 10) || 1;
-const svgPath = resolve(readArg('--svg') ?? '/tmp/opencode/proc-sheet-v5.svg');
+const generatorVersion = readArg('--gen') === 'v2' ? 'v2' : 'v1';
+const generate = generatorVersion === 'v2'
+  ? generateProceduralTrackV2
+  : generateProceduralTrack;
+const svgPath = resolve(
+  readArg('--svg') ?? `/tmp/opencode/proc-sheet-${generatorVersion}.svg`,
+);
 
 const CATEGORIES: readonly CurveCategory[] = [
   'long',
@@ -79,7 +87,7 @@ for (let index = 0; index < count; index += 1) {
   const start = performance.now();
 
   try {
-    const def = generateProceduralTrack(seed);
+    const def = generate(seed);
     const validation = validateProceduralTrack(def, {
       quiet: true,
       profile: 'v5',
@@ -211,7 +219,7 @@ function printSummary(items: readonly Row[], errors: readonly string[]): void {
   const valid = items.filter((row) => row.ok);
   const totalMs = performance.now() - startedAt;
 
-  console.log(`\nResultado: ${valid.length}/${items.length} seeds válidas em ${totalMs.toFixed(0)} ms.`);
+  console.log(`\nResultado: ${valid.length}/${items.length} seeds válidas em ${totalMs.toFixed(0)} ms (${generatorVersion}).`);
   if (valid.length === 0) {
     return;
   }
@@ -312,7 +320,7 @@ function writeContactSheet(items: readonly Row[], path: string): void {  const s
   );
   parts.push(`<rect width="${width}" height="${height}" fill="#141816"/>`);
   parts.push(
-    `<text x="16" y="24" fill="#f0ece0" font-family="monospace" font-size="16">Rally Arcade — diversidade procedural (${shown.length} seeds, ${columns}×${rows})</text>`,
+    `<text x="16" y="24" fill="#f0ece0" font-family="monospace" font-size="16">Rally Arcade — diversidade procedural ${generatorVersion} (${shown.length} seeds, ${columns}×${rows})</text>`,
   );
   parts.push(
     `<text x="16" y="42" fill="#9aa89c" font-family="monospace" font-size="10">verde = largada · branco = chegada · cores = cenários · tracejado = pista principal</text>`,

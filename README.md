@@ -6,7 +6,7 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 **Jogue agora:** <https://rigato.github.io/rally-arcade/>
 
-> Status: **MVP completo — M5, com powerups (M5b), controles touch de uma mão, pista A→B, cenários de floresta, deserto, neve, vilarejo, estrada de terra e praia, bifurcações procedurais, obstáculos móveis, menu de pistas e velocímetro**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. **Ao abrir, o jogo sorteia uma pista procedural**; o menu **PISTAS** permite escolher uma seed ou a pista fixa. As pistas aleatórias têm sete tipos de curva, setores longos, platôs, chokes, 1–2 bifurcações e 1–3 obstáculos móveis.
+> Status: **MVP completo — M5, com powerups (M5b), controles touch de uma mão, pista A→B, cenários de floresta, deserto, neve, vilarejo, estrada de terra e praia, bifurcações procedurais v2, obstáculos móveis, menu de pistas e velocímetro**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. **Ao abrir, o jogo sorteia uma pista procedural**; o menu **PISTAS** permite escolher uma seed ou a pista fixa. As pistas aleatórias têm sete tipos de curva, setores longos, platôs, chokes, 1–2 bifurcações e 1–3 obstáculos móveis. O gerador anterior continua disponível em `?gen=v1`.
 
 ## Screenshots
 
@@ -14,7 +14,7 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 ![Controles touch em jogo](Docs/screenshots/running-controls.png)
 
-![Bifurcação procedural](Docs/screenshots/fork.png)
+![Bifurcação procedural v2](Docs/screenshots/fork-v2.png)
 
 ![Menu de mão](Docs/screenshots/touch-hand-menu.png)
 
@@ -30,7 +30,7 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 ## Documentação
 
-- [`Docs/Mini GDD - Rally Arcade v2.md`](Docs/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — GDD oficial v2.2
+- [`Docs/Mini GDD - Rally Arcade v2.md`](Docs/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — GDD oficial v2.3
 - [`Docs/Implementation Plan - Rally Arcade MVP.md`](Docs/Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md)
 - [`Docs/Handoff - Rally Arcade.md`](Docs/Handoff%20-%20Rally%20Arcade.md)
 - [`Docs/bak_old/Mini GDD - Rally Arcade v2.md`](Docs/bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2
@@ -131,6 +131,7 @@ https://rigato.github.io/rally-arcade/?track=proc&seed=1&debug=1&branch=0&bt=0.9
 - **`?track=fixed`** carrega a pista fixa; **`?track=proc&seed=N`** carrega uma procedural determinística (1–100). O menu **PISTAS** navega para essas URLs.
 - **`?s=<metros>`** teleporta o carro para o centro da pista e volta a corrida para READY, preservando o melhor tempo. Use junto de `track=fixed` ou `track=proc&seed=N` para uma pista estável; sozinho ele teleporta em uma procedural aleatória.
 - **`?hazards=0`** desliga os obstáculos móveis; sem o parâmetro eles ficam ligados. O painel Debug também tem o checkbox e um atalho para o próximo hazard.
+- **`?gen=v1`** força o gerador antigo (rollback); sem o parâmetro o jogo usa o **v2**.
 - **`?branch=0&bt=0.9`** (com `?debug=1`) teleporta para 90% do primeiro ramo de bifurcação; `bt` vai de 0 (entrada) a 1 (saída).
 - **H** alterna a telemetria no desktop; no painel, a pasta **Debug** também controla piso forçado, colisores, hazards, reposicionar e ir para um `s`.
 - O painel cobre **Carro**, **Carroceria**, **Câmera**, **Input**, **Pisos**, **Poeira**, **Powerups / Corrida** e **Debug**. O Input agora só tem as suavizações de esterço/freio; os parâmetros de derrapagem ficam em **Carro**.
@@ -205,13 +206,16 @@ Na raiz, `scripts/` reúne `validate-track.ts`, `select-track.ts`, `freeze-track
 
 O gerador de pistas por seed fica em `src/track/procedural/`:
 
-- `generateProceduralTrack(seed)` usa uma **gramática de segmentos**: retas de ~20–90 m e curvas sorteadas entre **sete categorias** — longa (R≈70–110 m), média (45–65 m), curta (28–38 m), cotovelo (26–31 m), **hairpin normal (20–23 m)**, **hairpin extremo (13–14 m)** e **mudança de rota / kink (R≈140–220 m, sweep 6–15°)**. Cada seed usa **exatamente 1 hairpin extremo**, 0–1 normal, 1–3 kinks e pelo menos quatro categorias, com curvas nos dois sentidos.
+O gerador padrão é o **v2** (`ProceduralTrackV2.ts`). Ele usa a pista principal do v1 e replaneja as bifurcações como mini traçados de verdade — waypoints em mundo, curvas próprias, relevo e validação. A rotina v1 (`ProceduralTrack.ts`) continua intacta e pode ser usada para rollback com **`?gen=v1`**.
+
+- `generateProceduralTrackV2(seed)` gera a espinha principal com a v1 e substitui `def.forks` por 1–2 ramos v2. Cada ramo tem janela de 170–340 m, 2–3 apexes, deslocamento longitudinal/lateral próprio, comprimento 3D de ~190–345 m e largura 5,5–8 m. O ramo começa/termina na borda, com lead-in/lead-out alinhados à tangente. A v1 é devolvida intacta se a validação falhar.
+- `generateProceduralTrack(seed)` (v1) usa uma **gramática de segmentos**: retas de ~20–90 m e curvas sorteadas entre **sete categorias** — longa (R≈70–110 m), média (45–65 m), curta (28–38 m), cotovelo (26–31 m), **hairpin normal (20–23 m)**, **hairpin extremo (13–14 m)** e **mudança de rota / kink (R≈140–220 m, sweep 6–15°)**. Cada seed usa **exatamente 1 hairpin extremo**, 0–1 normal, 1–3 kinks e pelo menos quatro categorias, com curvas nos dois sentidos.
 - O **hairpin extremo** tem sweep 170–185°, largura local **5,2–6,2 m**, aproximação reta de 45–60 m e saída de 35–60 m; fica a ≥80 m da largada/chegada. É o ponto que exige frear de verdade.
 - Candidatos são rejeitados se trechos não vizinhos ficarem a menos de **40 m** entre centros (as duas pernas do próprio hairpin extremo são a exceção), se o layout passar de ~650×650 m ou se a chegada ficar a menos de **100 m** da largada. O resultado é sempre uma pista **A→B**.
 - **Setores:** 4 setores de **340–470 m** sorteados do pool de seis cenários, sem repetir o mesmo em sequência; pista total **1518–1625 m**. São 6–8 powerups, 50–75 obstáculos, 1–2 rampas e **1–2 bifurcações**.
 - **Relevo:** amplitudes ~20% maiores, com 2–3 **platôs planos** de 70–150 m cobrindo 20–25% da pista.
 - **Largura agressiva:** base 10,5–12 m, trechos largos 13–15 m, longos estreitos 5,5–7 m e **chokes de 4,6–5,4 m**. O sampler (`Track.ts`) aceita **4,4–15,2 m**.
-- **Bifurcações:** em trechos longos de 150–260 m, um ramo nasce na borda da pista, corre paralelo, abre 28–48 m e volta a encostar. O ramo tem spline, altura, largura, ombro externo e piso próprios; a pista principal continua como a outra opção. As duas pontas ficam no mesmo setor para não misturar pisos.
+- **Bifurcações v2:** 1–2 por pista; o gerador escolhe uma janela de 170–340 m na pista principal e constrói o ramo com 2–3 apexes em coordenadas de mundo, lead-in/lead-out e relevo próprios. O ramo começa/termina na borda, tem 190–345 m de comprimento 3D e 5,5–8 m de largura; a pista principal continua como a outra opção. As duas pontas ficam no mesmo setor.
 - **Hazards:** 1–3 por seed, com chance por setor; o tipo vem do cenário (camelo, cervo, rena, carro, caminhão, trator, vaca ou buggy). O gerador preserva os primeiros 130 m, rampas, hairpin extremo e bifurcações.
 - **Medalhas procedurais:** ouro **39 s em 1.300 m → 49 s em 1.650 m** (linear, clampado); nas pistas atuais de 1.518–1.624 m fica **45,2–48,3 s**. Prata = ouro + 6 s; bronze = ouro + 12 s. As parciais usam o ritmo do ouro.
 - `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, separação, rampas, splits, powerups, obstáculos, bifurcações e hazards.
@@ -232,11 +236,13 @@ Teste as seeds e gere um preview top-down ou um contact sheet:
 ```bash
 npx --yes tsx scripts/proc-validate.ts
 npx --yes tsx scripts/proc-validate.ts --count 100 --start 1
+npx --yes tsx scripts/proc-validate.ts --gen v2 --count 100 --start 1
 npx --yes tsx scripts/proc-validate.ts --svg /tmp/opencode/pista.svg
 npx --yes tsx scripts/proc-diversity.ts --count 12 --svg /tmp/opencode/proc-sheet.svg
+npx --yes tsx scripts/proc-diversity.ts --gen v2 --count 12 --svg /tmp/opencode/proc-sheet-v2.svg
 ```
 
-A integração está pronta: `?track=proc&seed=1` (com ou sem `?debug=1`) carrega a pista gerada com os mesmos sistemas de cenário, splits, powerups, obstáculos, bifurcações e hazards. Na tela, **☰ PISTAS** abre o menu de seeds 1–100, **🎲 NOVA** sorteia uma seed e **PISTA FIXA** (dentro do menu) volta à pista A→B. O editor de pista continua fora do escopo.
+A integração está pronta: `?track=proc&seed=1` (com ou sem `?debug=1`) usa o **gerador v2**; `?gen=v1` volta ao gerador antigo. Na tela, **☰ PISTAS** abre o menu de seeds 1–100, **🎲 NOVA** sorteia uma seed e **PISTA FIXA** (dentro do menu) volta à pista A→B. O editor de pista continua fora do escopo.
 
 ## Deploy
 
@@ -270,5 +276,6 @@ O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O dep
 - **Medalhas v7** (em playtest): fixa 39/45/51 s; procedurais 45,2–48,3 s de ouro, com parciais no ritmo do ouro.
 - **Default procedural** (em playtest): abrir `/` sorteia uma seed 1–100; `?track=fixed` / menu PISTAS carrega a pista fixa.
 - **Protótipo procedural v8** (em playtest): sete tipos de curva (incluindo hairpin extremo 13–14 m e kink), setores de 340–470 m, platôs, chokes, seis cenários, bifurcações e hazards; 100/100 seeds.
+- **Gerador v2 de bifurcações** (em playtest): ramos com waypoints/curvas/relevo próprios, 190–345 m; `?gen=v1` mantém o gerador anterior para rollback.
 
 Fora do MVP: progressão, loja, editor de pistas, áudio e multiplayer.

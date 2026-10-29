@@ -834,10 +834,23 @@ Esta rodada implementa o pacote de conteúdo/UX pedido no playtest: novos cenár
 - **Malha do fork:** `ForkMesh` desenha asfalto + ombro só no lado externo, borda externa e material `DoubleSide`; a borda interna encosta na pista principal.
 - **Debug de fork:** `?debug=1&branch=0&bt=0.9` teleporta para 90% do ramo, útil para QA do merge.
 
+### Gerador v2 de bifurcações (Oct 29, 2026)
+
+- Novo módulo `src/track/procedural/ProceduralTrackV2.ts`; a v1 (`ProceduralTrack.ts`) fica intacta como rollback via `?gen=v1`.
+- A v1 gera a espinha principal; a v2 substitui `def.forks` com 1–2 ramos planejados em coordenadas de mundo.
+- Janela de 170–340 m; 2–3 apexes com deslocamento longitudinal (`-12..18 m`) e lateral (`35–70 / 30–60 / 20–40 m`); lead-in/lead-out de 18–30 m; elevação própria de 0,4–4 m.
+- O ramo começa/termina na borda e tem lead-in/lead-out alinhados à tangente; comprimento 3D ~190–345 m; largura 5,5–8 m.
+- Validação: mesmo setor, sem encostar na pista principal fora da janela, sem autointerseção grosseira, raio mínimo ≥8 m e inclinação ≤0,40. Se falhar, a v1 é restaurada.
+- `Track.projectNearest` ganhou guarda para não continuar no ramo depois de `endS` (a histerese mantinha o carro no ramo e o jogava para o ombro no merge).
+- `TrackBranch` mantém o lado interno plano e o ombro só no lado externo; `ForkMesh` foi ajustado para o mesmo desenho.
+- `Scenery` agora espalha props e postes de borda ao longo do ramo (lado externo), para o mini traçado não parecer uma faixa vazia.
+- Testes: 100/100 seeds válidas; 99 seeds com forks v2 (67 com 1, 32 com 2) e 1 fallback v1 (seed 48); ramos 189,8–344,6 m; `typecheck` e 100 seeds OK. Entrada/saída com `maxAir=0` após a guarda de `projectNearest`.
+- Debug: `?gen=v1` (rollback), `?branch=0&bt=0.9` (teleporte para o ramo), scripts `proc-validate --gen v2` e `proc-diversity --gen v2`.
+
 ### Pendências
 
 - Playtest no celular real: sentir grip de neve/asfalto/terra/praia e calibrar valores.
-- Avaliar legibilidade da escolha de bifurcação; se o ramo for óbvio demais, aumentar variação de curvatura/comprimento ou colocar obstáculos/hazards diferentes.
+- Avaliar a v2 das bifurcações no playtest: legibilidade, comprimento, entrada/saída e se a escolha parece um mini traçado. Comparar com `?gen=v1`.
 - Calibrar frequência/timing dos hazards e a justiça da colisão.
 - Validar poeira em neve/praia em movimento e performance de cenários no celular.
 - Recalibrar medalhas/parciais com os novos pisos, se o playtest pedir.

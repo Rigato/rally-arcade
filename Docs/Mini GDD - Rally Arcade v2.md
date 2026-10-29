@@ -1,8 +1,8 @@
-# Mini GDD - Rally Arcade v2.2
+# Mini GDD - Rally Arcade v2.3
 
-Oct 28, 2026 · @George
+Oct 29, 2026 · @George
 
-> **Revisão 2.2 (Oct 28, 2026).** Este documento foi atualizado para refletir o protótipo v8: seis cenários (floresta, deserto, neve, vilarejo, estrada de terra e praia), poeira por piso, bifurcações procedurais, obstáculos móveis por cenário, menu de pistas/seeds e velocímetro. O GDD v2.1 está preservado no histórico do documento; o v2 original continua em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
+> **Revisão 2.3 (Oct 29, 2026).** O gerador procedural ganhou uma **v2 de bifurcações**: os ramos são mini traçados com waypoints/curvas/relevo próprios, em vez de deslocamentos laterais. A v1 continua intacta e acessível por `?gen=v1`. O restante do documento reflete o protótipo v8: seis cenários, poeira por piso, obstáculos móveis, menu de pistas/seeds e velocímetro. O GDD v2.2 está no histórico; o v2 original continua em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
 
 ## Ficha e High Concept
 
@@ -96,7 +96,7 @@ Terceira pessoa, por trás do carro, em ângulo alto, quase top-down, para mostr
 - **Pistas procedurais:** A→B, **1518–1625 m**, 4 setores de ~354–438 m sorteados do pool de seis cenários, 7 tipos de curva (incluindo **hairpin extremo 13–14 m** e **kink**), largura 4,6–15,0 m, chokes de 4,6–5,4 m, 6–8 powerups, 50–75 obstáculos, 1–2 bifurcações, 1–3 obstáculos móveis e 2–3 platôs planos. Seed 1–100.
 - **Default:** abrir `/` sorteia uma procedural; **NOVA** gera outra; o menu **PISTAS** escolhe seed ou pista fixa.
 - A pista tem subidas e descidas; pontos íngremes criam saltos.
-- **Bifurcações:** em trechos longos de 150–260 m, um ramo com spline/altura/largura próprios nasce na borda da pista, corre paralelo por alguns metros, abre 28–48 m e volta a encostar. O jogador escolhe o lado; não há recompensa exclusiva nesta versão. A pista fixa continua sem bifurcação.
+- **Bifurcações (v2):** 1–2 por pista. O gerador escolhe uma janela de 170–340 m e constrói o ramo como um mini traçado com 2–3 apexes em coordenadas de mundo, lead-in/lead-out, curvas e relevo próprios. O ramo começa/termina na borda, tem ~190–345 m de comprimento 3D e 5,5–8 m de largura. O jogador escolhe o lado; não há recompensa exclusiva nesta versão. A pista fixa continua sem bifurcação. O gerador anterior fica em `?gen=v1`.
 - **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor. Cada evento é um animal/veículo do cenário que atravessa a pista quando o carro se aproxima e colide. A travessia é rápida (4,8–10,5 m/s) para exigir uma reação curta. O começo da run fica preservado.
 - **Fora da pista dá para se recuperar.** O piso acidentado desacelera, trepida e pode tirar o carro do chão; obstáculos sólidos dão ricochete. Se não bater, o jogador pode voltar à pista.
 - **Limite do mundo:** além de ~12 m da borda, o carro é recuperado automaticamente perdendo tempo.
@@ -155,7 +155,7 @@ O MVP existe para testar se dirigir é gostoso, antes de investir em arte e fase
 - [x] Dois powerups: turbo temporário e grip extra.
 - [x] Dois cenários com pisos diferentes: floresta com cascalho e deserto com areia.
 - [x] **Além do MVP:** mais quatro cenários (neve, vilarejo, estrada de terra e praia) com pisos, paletas, poeira e obstáculos próprios.
-- [x] **Além do MVP:** 1–2 bifurcações procedurais por pista, com ramo de spline/altura/largura próprios.
+- [x] **Além do MVP:** 1–2 bifurcações procedurais v2 por pista, com ramos de waypoints/curvas/relevo próprios.
 - [x] **Além do MVP:** 1–3 obstáculos móveis por pista, com tipo por cenário e toggle de debug.
 - [x] **Além do MVP:** menu de pistas/seeds e velocímetro.
 - [x] Uma pista fixa de 30–60 s com subidas, descidas, largura variável e ao menos um salto.
@@ -194,7 +194,7 @@ Depois de validar o feeling, a ideia é crescer em progressão, variedade e prof
 - **Medalhas:** o +3 s melhorou; continuar testando ouro/prata/bronze e as parciais, agora com pisos variados.
 - **Poeira:** perfis por piso implementados; validar contraste em neve/praia em movimento.
 - **Hairpin extremo:** 13–14 m foi aprovado; se ainda estiver fácil, testar 12–13 m com ombro local menor.
-- **Bifurcações:** a v1 é um ramo que sai e volta; testar se a escolha é legível e divertida. Caminhos com comprimentos/riscos diferentes ficam para depois.
+- **Bifurcações:** a v2 usa mini traçados com waypoints; testar se a escolha é legível e divertida. O gerador v1 continua em `?gen=v1` para comparação/rollback. Caminhos com recompensas assimétricas ficam para depois.
 - **Obstáculos móveis:** testar frequência (1–3), timing de travessia e se a colisão é justa; ajustar por cenário.
 - **Cenários:** calibrar grip/aceleração de neve, asfalto, terra e praia no celular.
 - **Default procedural:** o menu PISTAS mostra a seed e permite repetir a pista.
