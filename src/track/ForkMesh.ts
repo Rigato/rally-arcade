@@ -1,8 +1,10 @@
 import * as THREE from 'three';
-import { clamp } from '../core/math';
+import { clamp, lerp } from '../core/math';
 import { SCENARIOS } from '../game/scenarios';
 import type { Track } from './Track';
 import type { TrackBranch } from './TrackBranch';
+import { zoneBlendAt } from './zones';
+import { createRoadGrainTexture } from './roadTexture';
 
 const SHOULDER_OFFSETS = [8, 4.5, 1.8];
 const INNER_SHOULDER_OFFSETS = [1.4];
@@ -14,7 +16,19 @@ const EDGE_WIDTH = 0.42;
 const ROW_STEP = 1.5;
 
 const tempColor = new THREE.Color();
-const tempTerrain = new THREE.Color();
+const tempBlend = new THREE.Color();
+const tempRoad = new THREE.Color();
+
+function setBlendedColor(
+  target: THREE.Color,
+  from: number,
+  to: number,
+  t: number,
+): void {
+  target.setHex(from);
+  tempBlend.setHex(to);
+  target.lerp(tempBlend, t);
+}
 
 /**
  * Malha visual dos ramos de bifurcação.
@@ -33,9 +47,11 @@ export class ForkMesh {
 
   private readonly geometries: THREE.BufferGeometry[] = [];
   private readonly materials: THREE.Material[] = [];
+  private readonly grainTexture: THREE.CanvasTexture;
 
   constructor(track: Track) {
     this.group.name = 'fork-branches';
+    this.grainTexture = createRoadGrainTexture();
 
     for (const branch of track.branches) {
       this.group.add(this.buildBranch(track, branch));
@@ -49,6 +65,7 @@ export class ForkMesh {
     for (const material of this.materials) {
       material.dispose();
     }
+    this.grainTexture.dispose();
     this.geometries.length = 0;
     this.materials.length = 0;
   }
@@ -64,8 +81,12 @@ export class ForkMesh {
     const rows = Math.max(2, Math.ceil(branch.length / ROW_STEP) + 1);
     const positions = new Float32Array(rows * columns * 3);
     const colors = new Float32Array(rows * columns * 3);
+    const uvs = new Float32Array(rows * columns * 2);
     const indices: number[] = [];
     const lateral = new Array<number>(columns);
+    const roadColor = new THREE.Color();
+    const shoulderColor = new THREE.Color();
+    const terrainColor = new THREE.Color();
 
     for (let i = 0; i < rows; i += 1) {
       const t = rows > 1 ? i / (rows - 1) : 0;
@@ -76,6 +97,34 @@ export class ForkMesh {
       const shoulderScale =
         smoothstep(clamp(t / 0.12, 0, 1)) *
         smoothstep(clamp((1 - t) / 0.12, 0, 1));
+
+      if (fullRoute) {
+        const mainS = lerp(branch.startS, branch.endS, t);
+        const blend = zoneBlendAt(track.def.zones, mainS);
+        const from = SCENARIOS[
+          track.def.zones[blend.from]?.id ?? 'forest'
+        ];
+        const to = SCENARIOS[
+          track.def.zones[blend.to]?.id ?? 'forest'
+        ];
+        setBlendedColor(roadColor, from.colors.road, to.colors.road, blend.t);
+        setBlendedColor(
+          shoulderColor,
+          from.colors.shoulder,
+          to.colors.shoulder,
+          blend.t,
+        );
+        setBlendedColor(
+          terrainColor,
+          from.colors.terrain,
+          to.colors.terrain,
+          blend.t,
+        );
+      } else {
+        roadColor.setHex(legacyScenario.colors.road);
+        shoulderColor.setHex(legacyScenario.colors.shoulder);
+        terrainColor.setHex(legacyScenario.colors.terrain);
+      }
 
       if (fullRoute) {
         // Rota completa: ombro interno mais curto (4 m) para o miolo do Y não
@@ -106,8 +155,6 @@ export class ForkMesh {
         }
       }
 
-      const scenario = fullRoute ? SCENARIOS[branch.zoneAt(s)] : legacyScenario;
-
       for (let k = 0; k < columns; k += 1) {
         const u = lateral[k];
         const vertex = i * columns + k;
@@ -119,27 +166,23 @@ export class ForkMesh {
         positions[vertex * 3] = x;
         positions[vertex * 3 + 1] = y;
         positions[vertex * 3 + 2] = z;
+        uvs[vertex * 2] = u / 8 + 0.5;
+        uvs[vertex * 2 + 1] = s / 8;
 
         const outerStart = INNER_SHOULDER_OFFSETS.length + 3;
         const outerBlend = fullRoute && k >= outerStart
           ? (k - outerStart) /
             Math.max(1, ROUTE_SHOULDER_OFFSETS.length - 1)
           : 0;
-        tempColor.setHex(
-          isRoad
-            ? scenario.colors.road
-            : fullRoute && k < INNER_SHOULDER_OFFSETS.length
-              ? scenario.colors.terrain
-              : scenario.colors.shoulder,
-        );
-        if (fullRoute && isRoad) {
-          // A TrackMesh principal usa uma textura de grão que escurece o
-          // asfalto/terra; a rota usa só cor por vértice. Aproxima o brilho.
-          tempColor.multiplyScalar(0.74);
+        if (isRoad) {
+          tempColor.copy(roadColor);
+        } else if (fullRoute && k < INNER_SHOULDER_OFFSETS.length) {
+          tempColor.copy(terrainColor);
+        } else {
+          tempColor.copy(shoulderColor);
         }
         if (!isRoad && outerBlend > 0) {
-          tempTerrain.setHex(scenario.colors.terrain);
-          tempColor.lerp(tempTerrain, outerBlend * 0.85);
+          tempColor.lerp(terrainColor, outerBlend * 0.85);
         }
         const grain = 0.94 + hash2(i, k) * 0.12;
         colors[vertex * 3] = tempColor.r * grain;
@@ -161,17 +204,26 @@ export class ForkMesh {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
 
-    const material = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.96,
-      metalness: 0,
-      flatShading: true,
-      side: THREE.DoubleSide,
-    });
+    const material = fullRoute
+      ? new THREE.MeshStandardMaterial({
+          vertexColors: true,
+          map: this.grainTexture,
+          roughness: 0.97,
+          metalness: 0,
+          side: THREE.DoubleSide,
+        })
+      : new THREE.MeshStandardMaterial({
+          vertexColors: true,
+          roughness: 0.96,
+          metalness: 0,
+          flatShading: true,
+          side: THREE.DoubleSide,
+        });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = `fork-branch-surface-${branch.id}`;
     this.geometries.push(geometry);
@@ -180,9 +232,10 @@ export class ForkMesh {
 
     group.add(
       this.buildEdgeRibbon(
+        track,
         branch,
-        branch.length * (fullRoute ? 0.01 : 0.06),
-        branch.length * (fullRoute ? 0.99 : 0.94),
+        branch.length * (fullRoute ? 0.005 : 0.06),
+        branch.length * (fullRoute ? 0.995 : 0.94),
         branch.side,
         legacyScenario.colors.edge,
         fullRoute,
@@ -193,9 +246,10 @@ export class ForkMesh {
     if (fullRoute) {
       group.add(
         this.buildEdgeRibbon(
+          track,
           branch,
-          branch.length * 0.02,
-          branch.length * 0.98,
+          branch.length * 0.06,
+          branch.length * 0.94,
           -branch.side,
           legacyScenario.colors.edge,
           true,
@@ -208,6 +262,7 @@ export class ForkMesh {
   }
 
   private buildEdgeRibbon(
+    track: Track,
     branch: TrackBranch,
     from: number,
     to: number,
@@ -227,9 +282,40 @@ export class ForkMesh {
       const s = Math.min(from + (i / (rows - 1)) * span, to);
       const sample = branch.sampleAt(s);
       const half = sample.width * 0.5;
-      tempColor.setHex(
-        perZoneColor ? SCENARIOS[branch.zoneAt(s)].colors.edge : edgeColor,
-      );
+      if (perZoneColor) {
+        const mainS = lerp(branch.startS, branch.endS, s / branch.length);
+        const blend = zoneBlendAt(track.def.zones, mainS);
+        const fromScenario = SCENARIOS[
+          track.def.zones[blend.from]?.id ?? 'forest'
+        ];
+        const toScenario = SCENARIOS[
+          track.def.zones[blend.to]?.id ?? 'forest'
+        ];
+        setBlendedColor(
+          tempColor,
+          fromScenario.colors.edge,
+          toScenario.colors.edge,
+          blend.t,
+        );
+        if (edge === 'inner') {
+          // A borda interna é uma divisória de pista no miolo do Y, não uma
+          // borda no split/merge. Ela surge/some gradualmente para não deixar
+          // uma linha solta no gore.
+          const progress = (s - from) / Math.max(1, to - from);
+          const fade =
+            smoothstep(clamp(progress / 0.16, 0, 1)) *
+            smoothstep(clamp((1 - progress) / 0.16, 0, 1));
+          setBlendedColor(
+            tempRoad,
+            fromScenario.colors.road,
+            toScenario.colors.road,
+            blend.t,
+          );
+          tempColor.lerp(tempRoad, 1 - fade);
+        }
+      } else {
+        tempColor.setHex(edgeColor);
+      }
 
       for (let innerIndex = 0; innerIndex < 2; innerIndex += 1) {
         const inset = innerIndex === 0 ? 0 : EDGE_WIDTH;

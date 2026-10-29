@@ -77,7 +77,7 @@ O loop principal e **quase todo** o checklist do **MVP do GDD (seção 7)** est�
 - Rumble de câmera 0,15 m escalado por piso.
 - Poeira v8: pool 112, perfis por piso com duas cores, taxa/tamanho/alpha/vida/subida/gravidade próprios; deserto com contraste corrigido e neve com spray branco-azulado.
 - **Hairpin extremo:** 13–14 m, 1 por pista procedural, sweep 170–185°, largura 5,2–6,2 m, aproximação 45–60 m.
-- **Bifurcações:** 1–2 por pista; gerador **v3** (`ProceduralTrackV3.ts`) por blocos de cenário, com duas rotas completas de ~600–790 m, cenário/conteúdo próprios e miolo de paisagem. `?gen=v2`/`?gen=v1` mantêm as versões anteriores; a pista fixa continua sem fork.
+- **Bifurcações:** 1–2 por pista; gerador **v3** (`ProceduralTrackV3.ts`) por blocos de cenário, com duas rotas completas de ~584–781 m, cenário/conteúdo próprios e miolo de paisagem. `?gen=v2`/`?gen=v1` mantêm as versões anteriores; a pista fixa continua sem fork.
 - **Hazards:** 1–3 por pista, tipo por cenário, travessia e colisão.
 
 ### Procedural v8
@@ -265,5 +265,5 @@ npx --yes tsx scripts/proc-diversity.ts --gen v2 --count 12 --svg /tmp/opencode/
 - **Pendências:** playtest de grip dos novos pisos, legibilidade da escolha de fork, frequência/timing dos hazards, poeira em neve/praia e performance em celular real.
 - **Correções v8b (Oct 29):** hazards mais rápidos; fork virou mini traçado de 150–260 m com entrada/saída em platô na borda; entrada/saída sem salto (`maxAir=0` nos testes); debug `?debug=1&branch=0&bt=0.9`.
 - **Gerador v2 (Oct 29):** `ProceduralTrackV2.ts` replaneja 1–2 forks com waypoints em mundo, 2–3 apexes, relevo e lead-in/out; v1 preservada em `?gen=v1`. 100/100 seeds; 99 com forks v2, seed 48 em fallback v1; `Track.projectNearest` corrigido para sair do ramo no `endS`; cenário/postes de borda nos ramos.
-- **Gerador v3 por blocos (Oct 29):** `ProceduralTrackV3.ts` gera 5–6 blocos de cenário, 1–2 com split; cada split tem duas rotas completas de ~600–790 m, com cenário, largura, elevação, postes, hazards, obstáculos e powerups próprios. 100/100 seeds (84 com 1 split, 16 com 2), 2.538–3.761 m, rotas 598–790 m. `TrackMesh` encolhe ombros no split, `ForkMesh` desenha a rota completa, `Scenery` preenche o miolo com terreno/props, e o conteúdo virou path-aware (`pathId`). Bandeiras de parcial agora mostram **SPLIT**. Rollback em `?gen=v2`/`?gen=v1`.
+- **Gerador v3 por blocos (Oct 29):** `ProceduralTrackV3.ts` gera 5–6 blocos de cenário, 1–2 com split; cada split tem duas rotas completas de ~584–781 m, com cenário, largura, elevação, postes, hazards, obstáculos, powerups e kickers próprios. 100/100 seeds (74 com 1 split, 26 com 2), 2.642–3.783 m, rotas 584–781 m, 1 hairpin de switchback em 100/100, chokes/largos, platôs e 1–4 rampas. `TrackMesh` encolhe ombros no split, `ForkMesh` desenha a rota completa com material/textura iguais à pista principal, `Scenery` preenche o miolo com terreno/props, e o conteúdo virou path-aware (`pathId`). Bandeiras de parcial agora mostram **SPLIT**. Rollback em `?gen=v2`/`?gen=v1`.
 - **Não fazer ainda:** progressão, áudio, editor, caminhos com recompensa assimétrica, controle no ar e handbrake touch.

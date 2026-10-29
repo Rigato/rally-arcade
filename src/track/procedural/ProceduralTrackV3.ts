@@ -48,7 +48,6 @@ const MAX_TRACK_LENGTH = 3800;
 const MIN_ROUTE_LENGTH = 430;
 const MAX_ROUTE_LENGTH = 980;
 const MIN_ROUTE_WIDTH = 5.5;
-const MAX_ROUTE_WIDTH = 10;
 const ROUTE_HALF_GAP = 1.1;
 const LANE_TRANSITION = 18;
 const ROUTE_CONTROL_SPACING = 4.5;
@@ -115,6 +114,8 @@ interface BlockPlan {
   readonly targetLength: number;
   readonly splitStyle: SplitStyle;
   readonly splitSide: 1 | -1;
+  /** Bloco linear com um hairpin extremo (switchback) e heading final oposto. */
+  readonly hairpin: boolean;
 }
 
 interface LocalPoint {
@@ -123,10 +124,12 @@ interface LocalPoint {
   readonly s: number;
 }
 
-interface WidthPulse {
-  readonly center: number;
-  readonly sigma: number;
-  readonly amount: number;
+interface WidthEvent {
+  readonly start: number;
+  readonly end: number;
+  readonly width: number;
+  readonly transition: number;
+  readonly kind: 'choke' | 'narrow' | 'wide' | 'hairpin';
 }
 
 interface WidthProfile {
@@ -155,7 +158,7 @@ interface GeneratedBlock {
  * falharem, devolve a v2 intacta (rollback seguro).
  */
 export function generateProceduralTrackV3(seed: number): TrackDef {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
     try {
       const built = tryBuild(seed, attempt);
       if (built) {
@@ -175,10 +178,13 @@ export function generateProceduralTrackV3(seed: number): TrackDef {
 /* Programa de blocos                                                        */
 /* ------------------------------------------------------------------------- */
 
-function buildBlockPlans(rng: Rng): readonly BlockPlan[] | null {
+function buildBlockPlans(
+  rng: Rng,
+  allowHairpin = true,
+): readonly BlockPlan[] | null {
   const blockCount = rng.int(5, 6);
-  const maxSplits = blockCount >= 6 ? 2 : 1;
-  const splitCount = rng.chance(0.58) ? maxSplits : 1;
+  const maxSplits = 2;
+  const splitCount = rng.chance(0.68) ? maxSplits : 1;
 
   const candidates: number[] = [];
   for (let index = 1; index < blockCount - 1; index += 1) {
@@ -214,7 +220,26 @@ function buildBlockPlans(rng: Rng): readonly BlockPlan[] | null {
       targetLength: split ? splitTarget : linearTarget,
       splitStyle: rng.chance(0.5) ? 'symmetric' : 'asymmetric',
       splitSide: rng.sign() as 1 | -1,
+      hairpin: false,
     });
+  }
+
+  // Um bloco linear do meio recebe um hairpin extremo. O bloco termina com o
+  // heading invertido; os blocos seguintes continuam na direção de retorno,
+  // como um switchback de rally.
+  const hairpinCandidates = plans
+    .map((plan, index) => ({ plan, index }))
+    .filter(
+      ({ plan, index }) =>
+        plan.kind === 'linear' && index > 0 && index < plans.length - 1,
+    );
+  if (hairpinCandidates.length > 0 && allowHairpin) {
+    const chosen = rng.pick(hairpinCandidates);
+    plans[chosen.index] = {
+      ...chosen.plan,
+      hairpin: true,
+      targetLength: Math.max(chosen.plan.targetLength, rng.range(500, 620)),
+    };
   }
 
   return plans;
@@ -226,7 +251,7 @@ function buildBlockPlans(rng: Rng): readonly BlockPlan[] | null {
 
 function tryBuild(seed: number, attempt: number): TrackDef | null {
   const rng = createRng((seed ^ (0x51ed270b + attempt * 0x85ebca6b)) >>> 0);
-  const plans = buildBlockPlans(rng);
+  const plans = buildBlockPlans(rng, attempt < 12);
   if (!plans) {
     return null;
   }
@@ -358,6 +383,7 @@ function tryBuild(seed: number, attempt: number): TrackDef | null {
       startS: bounds.startS,
       endS: bounds.endS,
       routeId: block.fork ? `route-${index + 1}` : undefined,
+      hairpin: block.plan.hairpin,
     });
   }
   zones[zones.length - 1] = {
@@ -496,43 +522,49 @@ function buildLinearBlock(
   isFirst: boolean,
   isLast: boolean,
 ): { points: TrackPoint[]; pose: Pose } {
-  const startStraight = isFirst ? rng.range(90, 120) : rng.range(20, 40);
-  const endStraight = isLast ? rng.range(120, 150) : rng.range(30, 55);
+  const startStraight = isFirst
+    ? rng.range(90, 120)
+    : plan.hairpin
+      ? rng.range(55, 78)
+      : rng.range(20, 40);
+  const endStraight = isLast
+    ? rng.range(120, 150)
+    : plan.hairpin
+      ? rng.range(38, 58)
+      : rng.range(30, 55);
   const target = isFirst || isLast
     ? Math.max(plan.targetLength, startStraight + endStraight + 220)
     : plan.targetLength;
-  const local = generateOpenRoute(rng, target, startStraight, endStraight);
+  const hairpin = plan.hairpin
+    ? generateHairpinRoute(rng, target, startStraight, endStraight)
+    : null;
+  const local = hairpin?.points ?? generateOpenRoute(rng, target, startStraight, endStraight);
   const baseWidth = rng.range(9.5, 11.2);
-  const width = makeWidthProfile(rng, target, baseWidth, 0.7);
-  const slope = rng.range(-0.035, 0.035);
-  const hump = rng.range(0, 2.8);
+  const width = makeWidthProfile(
+    rng,
+    target,
+    baseWidth,
+    0.7,
+    hairpin?.tightRange,
+    hairpin?.tightWidth,
+  );
+  const elevation = makeBlockElevation(rng, target);
 
   const points = localToWorld(
     local,
     pose,
-    (x) => slope * x + hump * Math.sin(Math.PI * clamp(x / target, 0, 1)) *
-      Math.sin(Math.PI * clamp(x / target, 0, 1)),
+    (x) => elevation(x, target),
     (x) => width.at(x, target),
     LINEAR_CONTROL_SPACING,
     pose.y,
   );
 
-  const end = local[local.length - 1];
   const endPose: Pose = {
-    x: worldX(pose, end.x, end.y),
-    z: worldZ(pose, end.x, end.y),
-    y: pose.y + slope * end.x +
-      hump * Math.sin(Math.PI * clamp(end.x / target, 0, 1)) ** 2,
-    heading: pose.heading,
+    x: points[points.length - 1].x,
+    z: points[points.length - 1].z,
+    y: points[points.length - 1].y,
+    heading: endHeading(pose, local),
   };
-  // O gerador local termina com heading 0 no referencial do bloco; convertemos
-  // a direção final para o mundo.
-  endPose.heading = pose.heading;
-  // A posição final real é o último ponto, não o eixo local (curvas desviam).
-  endPose.x = points[points.length - 1].x;
-  endPose.z = points[points.length - 1].z;
-  endPose.y = points[points.length - 1].y;
-  endPose.heading = endHeading(pose, local);
 
   return { points, pose: endPose };
 }
@@ -612,10 +644,110 @@ function generateOpenRoute(
   return points;
 }
 
+/**
+ * Bloco de switchback: reta de aproximação, hairpin extremo de 13–14 m,
+ * reta de saída e curvas de preenchimento. O bloco termina com o heading
+ * invertido (π), então os próximos blocos seguem na direção de retorno.
+ */
+function generateHairpinRoute(
+  rng: Rng,
+  targetLength: number,
+  startStraight: number,
+  endStraight: number,
+): {
+  points: readonly LocalPoint[];
+  tightRange: { start: number; end: number };
+  tightWidth: number;
+} {
+  const points: LocalPoint[] = [];
+  const state = { x: 0, y: 0, heading: 0, s: 0 };
+  points.push({ x: 0, y: 0, s: 0 });
+  appendLocalStraight(points, state, startStraight);
+
+  const tightStart = state.s;
+  const turn = rng.sign() as 1 | -1;
+  const extreme = rng.chance(0.65);
+  const radius = extreme
+    ? rng.range(13.2, 14.2)
+    : rng.range(20, 23);
+  const sweep = extreme
+    ? rng.range(170 * DEG, 183 * DEG)
+    : rng.range(160 * DEG, 180 * DEG);
+  appendLocalArc(points, state, radius, sweep, turn);
+  const tightEnd = state.s;
+  appendLocalStraight(points, state, rng.range(45, 65));
+
+  let lastTurn: 1 | -1 = turn;
+  let runLength = 0;
+  let turnBalance = 0;
+  let segments = 0;
+
+  while (state.s < targetLength - 90 && segments < 20) {
+    segments += 1;
+    if (rng.chance(0.3)) {
+      appendLocalStraight(points, state, rng.range(22, 55));
+      continue;
+    }
+
+    let category = pickCurveCategory(rng, 'mixed', segments);
+    if (category === 'hairpin' || category === 'hairpin-extreme') {
+      category = 'elbow';
+    }
+    const deviation = shortestAngle(state.heading, Math.PI);
+    let nextTurn: 1 | -1;
+    if (Math.abs(deviation) > 0.4) {
+      nextTurn = (deviation > 0 ? -1 : 1) as 1 | -1;
+    } else if (runLength >= 2) {
+      nextTurn = (lastTurn === 1 ? -1 : 1) as 1 | -1;
+    } else {
+      const expected = turnBalance / Math.max(40, state.s);
+      nextTurn = rng.chance(clamp(0.5 - expected * 0.5, 0.25, 0.75))
+        ? 1
+        : -1;
+    }
+
+    const range = CURVE_RANGES[category];
+    const sweep = rng.range(range.sweep[0], range.sweep[1]);
+    appendLocalArc(
+      points,
+      state,
+      rng.range(range.radius[0], range.radius[1]),
+      sweep,
+      nextTurn,
+    );
+    turnBalance += nextTurn * sweep;
+    if (nextTurn === lastTurn) {
+      runLength += 1;
+    } else {
+      runLength = 1;
+      lastTurn = nextTurn;
+    }
+  }
+
+  const finalDeviation = shortestAngle(state.heading, Math.PI);
+  if (Math.abs(finalDeviation) > 0.1) {
+    appendLocalArc(
+      points,
+      state,
+      rng.range(48, 70),
+      Math.min(Math.abs(finalDeviation), 65 * DEG),
+      (finalDeviation > 0 ? -1 : 1) as 1 | -1,
+    );
+  }
+
+  const remaining = Math.max(30, targetLength - state.s);
+  appendLocalStraight(points, state, Math.min(remaining, endStraight + 40));
+
+  return {
+    points,
+    tightRange: { start: tightStart, end: tightEnd },
+    tightWidth: extreme ? rng.range(5.2, 6.2) : rng.range(6, 7.5),
+  };
+}
+
 /* ------------------------------------------------------------------------- */
 /* Blocos com split                                                          */
 /* ------------------------------------------------------------------------- */
-
 function buildSplitBlock(
   rng: Rng,
   pose: Pose,
@@ -708,11 +840,16 @@ function buildSplitBlock(
     });
   }
 
+  const widthA = makeRouteWidthProfile(rng, axisLength, routeWidth);
+  const widthB = makeRouteWidthProfile(rng, axisLength, routeWidth);
+  const elevationA = makeRouteElevation(rng, axisLength, 0.55);
+  const elevationB = makeRouteElevation(rng, axisLength, 0.9);
+
   const routeAPoints = localToWorld(
     routeA,
     p0,
-    (x) => elevationProfile(x, axisLength, routeA, 0.55),
-    (x) => routeWidthAt(x, axisLength, routeWidth, routeA.length, 0.55),
+    (x) => elevationA(x),
+    (x) => widthA.at(x, axisLength),
     ROUTE_CONTROL_SPACING,
     entryY,
   );
@@ -760,8 +897,9 @@ function buildSplitBlock(
     routeB,
     axisLength,
     side * laneY,
-    routeWidth,
     entryY,
+    widthB,
+    elevationB,
   );
 
   const fork: GeneratedFork = {
@@ -805,8 +943,9 @@ function buildBranchPoints(
   route: readonly LocalPoint[],
   axisLength: number,
   laneY: number,
-  routeWidth: number,
   baseY: number,
+  widthProfile: WidthProfile,
+  elevation: (x: number) => number,
 ): readonly TrackPoint[] {
   // A rota B tem uma reta curta na faixa direita antes/depois do trecho
   // curvo, para começar/terminar alinhada ao eixo.
@@ -836,8 +975,8 @@ function buildBranchPoints(
   return localToWorld(
     dense,
     p0,
-    (x) => elevationProfile(x, axisLength, route, 0.9),
-    (x) => routeWidthAt(x, axisLength, routeWidth, route.length, 0.9),
+    (x) => elevation(x),
+    (x) => widthProfile.at(x, axisLength),
     ROUTE_CONTROL_SPACING,
     baseY,
   );
@@ -1071,65 +1210,328 @@ function localToWorld(
   return resampleTrackPoints(dense, spacing);
 }
 
-function routeWidthAt(
-  x: number,
-  axisLength: number,
-  base: number,
-  _routeLength: number,
-  phaseSeed: number,
-): number {
-  const startX = LANE_TRANSITION;
-  const endX = axisLength - LANE_TRANSITION;
-  const u = clamp((x - startX) / Math.max(1, endX - startX), 0, 1);
-  const fade = smoothstep(clamp(u / 0.08, 0, 1)) *
-    smoothstep(clamp((1 - u) / 0.08, 0, 1));
-  const wave = Math.sin(u * Math.PI * 3.2 + phaseSeed * TAU) * 0.7 +
-    Math.sin(u * Math.PI * 7.1 + phaseSeed * 11) * 0.35;
-  return clamp(base + wave * fade, MIN_ROUTE_WIDTH, MAX_ROUTE_WIDTH);
+function makeBlockElevation(
+  rng: Rng,
+  span: number,
+): (x: number, target: number) => number {
+  const longAmplitude = rng.range(4.2, 6.5);
+  const longWavelength = rng.range(320, 460);
+  const longPhase = rng.range(0, TAU);
+  const mediumAmplitude = rng.range(1.4, 2.5);
+  const mediumWavelength = rng.range(170, 240);
+  const mediumPhase = rng.range(0, TAU);
+
+  const crests: Array<{ center: number; half: number; height: number }> = [];
+  const crestCount = rng.int(2, 4);
+  for (let index = 0; index < crestCount; index += 1) {
+    crests.push({
+      center: rng.range(60, Math.max(70, span - 60)),
+      half: rng.range(15, 22),
+      height: rng.range(0.5, 0.9) * rng.sign(),
+    });
+  }
+
+  const raw = (x: number): number => {
+    let y =
+      longAmplitude * Math.sin((TAU * x) / longWavelength + longPhase) +
+      mediumAmplitude * Math.sin((TAU * x) / mediumWavelength + mediumPhase);
+    for (const crest of crests) {
+      const u = (x - (crest.center - crest.half)) / (crest.half * 2);
+      if (u <= 0 || u >= 1) {
+        continue;
+      }
+      const wave = Math.sin(Math.PI * u);
+      y += crest.height * wave * wave;
+    }
+    return y;
+  };
+
+  const offset = raw(0);
+  let plateau: {
+    start: number;
+    end: number;
+    level: number;
+    transition: number;
+  } | null = null;
+
+  if (rng.chance(0.55) && span > 260) {
+    const length = rng.range(70, Math.min(150, span * 0.38));
+    const start = rng.range(60, Math.max(70, span - 60 - length));
+    const end = start + length;
+    plateau = {
+      start,
+      end,
+      level: raw((start + end) * 0.5) - offset,
+      transition: rng.range(25, 30),
+    };
+  }
+
+  return (x: number, _target: number): number => {
+    const base = raw(x) - offset;
+    if (!plateau) {
+      return base;
+    }
+    if (x >= plateau.start && x <= plateau.end) {
+      return plateau.level;
+    }
+    if (x >= plateau.start - plateau.transition && x < plateau.start) {
+      const weight = smoothstep(
+        clamp(
+          (x - (plateau.start - plateau.transition)) / plateau.transition,
+          0,
+          1,
+        ),
+      );
+      return lerp(base, plateau.level, weight);
+    }
+    if (x > plateau.end && x <= plateau.end + plateau.transition) {
+      const weight = smoothstep(
+        clamp(
+          (plateau.end + plateau.transition - x) / plateau.transition,
+          0,
+          1,
+        ),
+      );
+      return lerp(base, plateau.level, weight);
+    }
+    return base;
+  };
 }
 
-function elevationProfile(
-  x: number,
-  axisLength: number,
-  route: readonly LocalPoint[],
-  phase: number,
-): number {
-  const routeLength = route[route.length - 1]?.s ?? axisLength;
-  const u = clamp(x / Math.max(1, axisLength), 0, 1);
-  const fade = Math.sin(Math.PI * u);
-  const amplitude = 3.5 + phase * 4.5;
-  return fade * fade * (
-    amplitude * Math.sin(Math.PI * u) +
-    amplitude * 0.35 * Math.sin(Math.PI * 3 * u + phase * 4)
-  ) * (0.7 + 0.3 * Math.sin(routeLength * 0.013));
+function makeRouteElevation(
+  rng: Rng,
+  span: number,
+  phaseSeed: number,
+): (x: number) => number {
+  const longAmplitude = rng.range(3.2, 5.6);
+  const longWavelength = rng.range(230, 360);
+  const longPhase = rng.range(0, TAU);
+  const mediumAmplitude = rng.range(1, 2.1);
+  const mediumWavelength = rng.range(130, 190);
+  const mediumPhase = rng.range(0, TAU);
+
+  const crests: Array<{ center: number; half: number; height: number }> = [];
+  const crestCount = rng.int(1, 2);
+  for (let index = 0; index < crestCount; index += 1) {
+    crests.push({
+      center: span * rng.range(0.2, 0.8),
+      half: rng.range(12, 20),
+      height: rng.range(0.4, 0.85) * rng.sign(),
+    });
+  }
+
+  const plateau = rng.chance(0.45)
+    ? {
+        start: span * rng.range(0.2, 0.34),
+        length: span * rng.range(0.25, 0.4),
+        level: rng.range(2.2, 5.2) * rng.sign(),
+        transition: rng.range(25, 35),
+      }
+    : null;
+
+  return (x: number): number => {
+    const u = clamp(x / Math.max(1, span), 0, 1);
+    const fade = Math.sin(Math.PI * u);
+    const fade2 = fade * fade;
+    let y = fade2 * (
+      longAmplitude * Math.sin((TAU * x) / longWavelength + longPhase) +
+      mediumAmplitude * Math.sin((TAU * x) / mediumWavelength + mediumPhase)
+    );
+    for (const crest of crests) {
+      const crestU = (x - (crest.center - crest.half)) / (crest.half * 2);
+      if (crestU > 0 && crestU < 1) {
+        const wave = Math.sin(Math.PI * crestU);
+        y += crest.height * wave * wave * fade2;
+      }
+    }
+    if (!plateau) {
+      return y * (0.85 + 0.15 * Math.sin(phaseSeed * TAU));
+    }
+    if (x >= plateau.start && x <= plateau.start + plateau.length) {
+      return plateau.level * fade;
+    }
+    if (x >= plateau.start - plateau.transition && x < plateau.start) {
+      const weight = smoothstep(
+        clamp(
+          (x - (plateau.start - plateau.transition)) / plateau.transition,
+          0,
+          1,
+        ),
+      );
+      return lerp(y, plateau.level * fade, weight);
+    }
+    if (
+      x > plateau.start + plateau.length &&
+      x <= plateau.start + plateau.length + plateau.transition
+    ) {
+      const weight = smoothstep(
+        clamp(
+          (plateau.start + plateau.length + plateau.transition - x) /
+            plateau.transition,
+          0,
+          1,
+        ),
+      );
+      return lerp(y, plateau.level * fade, weight);
+    }
+    return y;
+  };
 }
 
 function makeWidthProfile(
   rng: Rng,
   span: number,
   base: number,
-  strength: number,
+  _strength: number,
+  tightRange?: { readonly start: number; readonly end: number },
+  tightWidth = 5.8,
 ): WidthProfile {
-  const pulses: WidthPulse[] = [];
-  const count = rng.int(1, 3);
-  for (let index = 0; index < count; index += 1) {
-    pulses.push({
-      center: rng.range(0.2, 0.8) * span,
-      sigma: rng.range(28, 65),
-      amount: rng.range(-2.4, 1.8) * strength,
+  const events: WidthEvent[] = [];
+  const margin = 42;
+  const phase = rng.range(0, TAU);
+
+  const overlaps = (start: number, end: number, gap = 12): boolean =>
+    events.some((event) => start < event.end + gap && end > event.start - gap);
+
+  if (tightRange) {
+    events.push({
+      start: tightRange.start,
+      end: tightRange.end,
+      width: tightWidth,
+      transition: 18,
+      kind: 'hairpin',
     });
   }
 
-  return {
-    at: (x: number, target: number): number => {
-      const fade = smoothstep(clamp(x / 45, 0, 1)) *
-        smoothstep(clamp((target - x) / 45, 0, 1));
-      let width = base;
-      for (const pulse of pulses) {
-        const d = (x - pulse.center) / pulse.sigma;
-        width += pulse.amount * Math.exp(-d * d) * fade;
+  const count = span > 500 ? 3 : 2;
+  for (let index = 0; index < count; index += 1) {
+    const roll = rng.next();
+    const kind: WidthEvent['kind'] = roll < 0.4
+      ? 'choke'
+      : roll < 0.68
+        ? 'narrow'
+        : 'wide';
+    const length = kind === 'choke'
+      ? rng.range(50, 90)
+      : kind === 'narrow'
+        ? rng.range(80, 150)
+        : rng.range(60, 120);
+    const width = kind === 'choke'
+      ? rng.range(4.6, 5.4)
+      : kind === 'narrow'
+        ? rng.range(5.5, 7)
+        : rng.range(12, 15);
+    const transition = rng.range(22, 32);
+    const half = length * 0.5;
+
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const center = rng.range(
+        margin + half + transition,
+        span - margin - half - transition,
+      );
+      const start = center - half;
+      const end = center + half;
+      if (overlaps(start, end)) {
+        continue;
       }
-      return clamp(width, 5.5, 14.5);
+      events.push({ start, end, width, transition, kind });
+      break;
+    }
+  }
+
+  events.sort((a, b) => a.start - b.start);
+
+  return {
+    at: (x: number): number => {
+      let width = base + 0.35 * Math.sin(x * 0.007 + phase);
+      for (const event of events) {
+        let weight = 0;
+        if (x >= event.start && x <= event.end) {
+          weight = 1;
+        } else if (x < event.start) {
+          weight = smoothstep(
+            clamp((x - (event.start - event.transition)) / event.transition, 0, 1),
+          );
+        } else {
+          weight = smoothstep(
+            clamp(
+              (event.end + event.transition - x) / event.transition,
+              0,
+              1,
+            ),
+          );
+        }
+        if (weight > 0) {
+          width = lerp(width, event.width, weight);
+        }
+      }
+      return clamp(width, 4.6, 15);
+    },
+  };
+}
+
+/** Largura de uma rota de split: 1–2 features longe das pontas. */
+function makeRouteWidthProfile(
+  rng: Rng,
+  span: number,
+  base: number,
+): WidthProfile {
+  const events: WidthEvent[] = [];
+  const margin = 70;
+  const phase = rng.range(0, TAU);
+  const count = rng.int(1, 2);
+
+  for (let index = 0; index < count; index += 1) {
+    const kind: WidthEvent['kind'] = rng.chance(0.55) ? 'wide' : 'choke';
+    const length = kind === 'wide' ? rng.range(70, 130) : rng.range(50, 90);
+    const width = kind === 'wide' ? rng.range(8.2, 9.5) : rng.range(5.5, 6);
+    const transition = rng.range(20, 30);
+    const half = length * 0.5;
+
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const center = rng.range(
+        margin + half + transition,
+        span - margin - half - transition,
+      );
+      const start = center - half;
+      const end = center + half;
+      if (
+        events.some(
+          (event) => start < event.end + 20 && end > event.start - 20,
+        )
+      ) {
+        continue;
+      }
+      events.push({ start, end, width, transition, kind });
+      break;
+    }
+  }
+
+  return {
+    at: (x: number): number => {
+      let width = base + 0.2 * Math.sin(x * 0.009 + phase);
+      for (const event of events) {
+        let weight = 0;
+        if (x >= event.start && x <= event.end) {
+          weight = 1;
+        } else if (x < event.start) {
+          weight = smoothstep(
+            clamp((x - (event.start - event.transition)) / event.transition, 0, 1),
+          );
+        } else {
+          weight = smoothstep(
+            clamp(
+              (event.end + event.transition - x) / event.transition,
+              0,
+              1,
+            ),
+          );
+        }
+        if (weight > 0) {
+          width = lerp(width, event.width, weight);
+        }
+      }
+      return clamp(width, 5.5, 10);
     },
   };
 }
@@ -1214,7 +1616,11 @@ function buildContent(
         block.fork ? bounds.endS - 90 : aEnd,
       );
       placePowerups(rng, track, 0, aStart, aEnd, 1, powerups);
-      if (rng.chance(block.fork ? 0.85 : 0.55)) {
+      if (
+        !block.plan.hairpin &&
+        hazards.length < 4 &&
+        rng.chance(block.fork ? 0.85 : 0.55)
+      ) {
         placeHazard(rng, track, 0, scenario, index, aStart, aEnd, hazards);
       }
     }
@@ -1244,12 +1650,13 @@ function buildContent(
       localKickers,
       bStart + 30,
       bEnd - 30,
+      true,
     );
     if (localKickers.length > 0) {
       branchKickers.set(pathId, localKickers);
     }
     placePowerups(rng, track, pathId, bStart, bEnd, 1, powerups);
-    if (rng.chance(0.9)) {
+    if (hazards.length < 4 && rng.chance(0.9)) {
       placeHazard(rng, track, pathId, scenario, index, bStart, bEnd, hazards);
     }
   }
@@ -1268,6 +1675,27 @@ function buildContent(
         bounds.startS + 60,
         bounds.endS - 60,
         hazards,
+      );
+    }
+  }
+
+  if (kickers.length === 0) {
+    for (let index = 0; index < blocks.length && kickers.length === 0; index += 1) {
+      const block = blocks[index];
+      const bounds = def.blocks?.[index];
+      if (!bounds) {
+        continue;
+      }
+      maybeAddKicker(
+        rng,
+        track,
+        0,
+        bounds.startS + 45,
+        bounds.endS - 45,
+        kickers,
+        block.fork ? bounds.startS + 90 : bounds.startS + 45,
+        block.fork ? bounds.endS - 90 : bounds.endS - 45,
+        true,
       );
     }
   }
@@ -1298,8 +1726,9 @@ function maybeAddKicker(
   out: TrackKicker[],
   safeFrom: number,
   safeTo: number,
+  force = false,
 ): void {
-  if (!rng.chance(0.55)) {
+  if (!force && !rng.chance(0.55)) {
     return;
   }
   const min = Math.max(from, safeFrom);
@@ -1308,7 +1737,7 @@ function maybeAddKicker(
     return;
   }
 
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     const s = rng.range(min, max);
     if (!isStraightAt(track, pathId, s, 28)) {
       continue;
@@ -1316,8 +1745,8 @@ function maybeAddKicker(
     if (!isStraightAt(track, pathId, s + 8, 28)) {
       continue;
     }
-    const length = rng.range(6, 10);
-    if (s + length + 40 > track.pathLength(pathId)) {
+    const length = rng.range(6, 7.5);
+    if (s + length + 48 > track.pathLength(pathId)) {
       continue;
     }
     if (!isStraightAt(track, pathId, s + length + 26, 30)) {
@@ -1326,7 +1755,7 @@ function maybeAddKicker(
     out.push({
       s,
       length,
-      height: rng.range(1.1, 2.2),
+      height: rng.range(1, 1.5),
       pathId,
     });
     return;
@@ -1501,6 +1930,17 @@ function validateGenerated(def: TrackDef): boolean {
     return false;
   }
 
+  const startSample = track.sampleAt(track.startS);
+  const startX = startSample.position.x;
+  const startZ = startSample.position.z;
+  const endSample = track.sampleAt(track.length);
+  const endX = endSample.position.x;
+  const endZ = endSample.position.z;
+  if (Math.hypot(endX - startX, endZ - startZ) < 80) {
+    debug('validate A→B curto');
+    return false;
+  }
+
   for (const fork of def.forks ?? []) {
     for (const branch of fork.branches) {
       const route = track.branches.find((entry) => entry.id === branch.id);
@@ -1660,7 +2100,7 @@ function hasGrossTrackSelfIntersection(route: {
  */
 function hasTrunkSelfIntersection(track: Track): boolean {
   const samples: Array<{ x: number; z: number; s: number }> = [];
-  for (let s = 0; s <= track.length; s += 3) {
+  for (let s = 0; s <= track.length; s += 2) {
     const sample = track.sampleAt(s);
     samples.push({ x: sample.position.x, z: sample.position.z, s });
   }
@@ -1669,12 +2109,15 @@ function hasTrunkSelfIntersection(track: Track): boolean {
     const a = samples[i];
     const b = samples[i + 1];
     for (let j = i + 2; j < samples.length - 1; j += 1) {
-      if (samples[j].s - a.s < 55) {
+      if (samples[j].s - a.s < 40) {
         continue;
       }
       const c = samples[j];
       const d = samples[j + 1];
       if (segmentsIntersect(a.x, a.z, b.x, b.z, c.x, c.z, d.x, d.z)) {
+        return true;
+      }
+      if (Math.hypot(a.x - c.x, a.z - c.z) < 5) {
         return true;
       }
     }
@@ -1699,7 +2142,7 @@ function segmentsIntersect(
   }
   const t = ((cx - ax) * (dz - cz) - (cz - az) * (dx - cx)) / denominator;
   const u = ((cx - ax) * (bz - az) - (cz - az) * (bx - ax)) / denominator;
-  return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99;
+  return t > 0.001 && t < 0.999 && u > 0.001 && u < 0.999;
 }
 
 /* ------------------------------------------------------------------------- */

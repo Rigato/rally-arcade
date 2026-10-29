@@ -3,6 +3,7 @@ import { clamp } from '../core/math';
 import { SCENARIOS, SCENARIO_IDS } from '../game/scenarios';
 import type { Track } from './Track';
 import { zoneBlendAt, type ZoneId } from './zones';
+import { createRoadGrainTexture } from './roadTexture';
 
 /**
  * Offsets laterais do ombro (além da borda), do mais externo ao mais interno.
@@ -55,7 +56,7 @@ export class TrackMesh {
 
   constructor(track: Track) {
     this.group.name = 'track';
-    this.grainTexture = createGrainTexture();
+    this.grainTexture = createRoadGrainTexture();
     this.goreWindows = (track.def.forks ?? []).flatMap((fork) =>
       fork.branches
         .filter((branch) => branch.kind === 'route')
@@ -387,45 +388,4 @@ function hash2(a: number, b: number): number {
 function smoothstep(t: number): number {
   const clamped = clamp(t, 0, 1);
   return clamped * clamped * (3 - 2 * clamped);
-}
-
-/** Textura procedural de grão, repetida via UV. */
-function createGrainTexture(): THREE.CanvasTexture {
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext('2d');
-
-  if (!context) {
-    const fallback = new THREE.CanvasTexture(canvas);
-    fallback.colorSpace = THREE.SRGBColorSpace;
-    return fallback;
-  }
-
-  context.fillStyle = '#d9d9d9';
-  context.fillRect(0, 0, size, size);
-
-  let seed = 0x2f6e2b1;
-  const random = (): number => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 0x100000000;
-  };
-
-  for (let i = 0; i < 2600; i += 1) {
-    const value = 170 + Math.floor(random() * 85);
-    context.fillStyle = `rgb(${value}, ${value}, ${value})`;
-    const x = Math.floor(random() * size);
-    const y = Math.floor(random() * size);
-    const w = 1 + Math.floor(random() * 2);
-    const h = 1 + Math.floor(random() * 2);
-    context.fillRect(x, y, w, h);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
 }

@@ -279,6 +279,27 @@ if (allRoutes.length > 0) {
   );
 }
 
+const hairpinSeeds = rows.filter((row) =>
+  (row.def.blocks ?? []).some((block) => block.hairpin),
+).length;
+const kickerCounts = rows
+  .filter((row) => row.def.blocks?.length)
+  .map((row) => row.def.kickers?.length ?? 0);
+const hazardCounts = rows
+  .filter((row) => row.def.blocks?.length)
+  .map((row) => row.def.hazards?.length ?? 0);
+const powerupCounts = rows
+  .filter((row) => row.def.blocks?.length)
+  .map((row) => row.def.powerups?.length ?? 0);
+if (kickerCounts.length > 0) {
+  console.log(
+    `Hairpin: ${hairpinSeeds}/${kickerCounts.length} seeds | ` +
+      `kickers: ${Math.min(...kickerCounts)}..${Math.max(...kickerCounts)} | ` +
+      `hazards: ${Math.min(...hazardCounts)}..${Math.max(...hazardCounts)} | ` +
+      `powerups: ${Math.min(...powerupCounts)}..${Math.max(...powerupCounts)}`,
+  );
+}
+
 // SVG top-down da primeira seed com split.
 const preview = rows.find((row) => row.def.forks?.length) ?? rows[0];
 if (preview && preview.track) {

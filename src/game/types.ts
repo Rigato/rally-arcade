@@ -389,6 +389,8 @@ export interface TrackBlock {
   readonly routeId?: string;
   /** Comprimento 3D da rota alternativa (m). */
   readonly routeLength?: number;
+  /** Bloco linear com hairpin de switchback (v3). */
+  readonly hairpin?: boolean;
 }
 
 export interface TrackDef {
