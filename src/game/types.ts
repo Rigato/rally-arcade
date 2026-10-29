@@ -391,6 +391,8 @@ export interface TrackBlock {
   readonly routeLength?: number;
   /** Bloco linear com hairpin de switchback (v3). */
   readonly hairpin?: boolean;
+  /** Tipo do hairpin do bloco, quando houver. */
+  readonly hairpinKind?: 'extreme' | 'normal';
 }
 
 export interface TrackDef {

@@ -70,7 +70,6 @@ const LANDING_CLEARANCE = 40;
 const GENERATION_START_OFFSET = 15;
 const GENERATION_END_OFFSET = 15;
 const TARGET_MIN = 44;
-const TARGET_MAX = 50;
 const S_STEP_MIN = 9.5;
 const S_STEP_MAX = 13.0;
 const MAX_PLACEMENT_ATTEMPTS = 320;
@@ -432,7 +431,16 @@ export class Obstacles {
 
   private generate(): void {
     const mainRng = mulberry32(0x5eed0b57);
-    this.generatePath(0, mainRng, TARGET_MIN, TARGET_MAX);
+    const mainLength = this.track.pathLength(0);
+    const mainTarget = Math.round(
+      clamp((mainLength / 1000) * 32, TARGET_MIN, 110),
+    );
+    this.generatePath(
+      0,
+      mainRng,
+      Math.max(TARGET_MIN, Math.round(mainTarget * 0.86)),
+      mainTarget,
+    );
 
     for (let index = 0; index < this.track.branches.length; index += 1) {
       const branch = this.track.branches[index];

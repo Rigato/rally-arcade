@@ -11,7 +11,7 @@ Documento para abrir uma nova sessão de **plan** sem reler todo o histórico. B
 
 ## Documentos de referência
 
-- [`Docs/Mini GDD - Rally Arcade v2.md`](Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — **GDD oficial v2.4**, atualizado para o protótipo v8.
+- [`Docs/Mini GDD - Rally Arcade v2.md`](Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — **GDD oficial v2.5**, atualizado para o protótipo v8.
 - [`Docs/bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2 antes da revisão v2.1.
 - [`Docs/old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md) — GDD v1 original.
 - [`Docs/Implementation Plan - Rally Arcade MVP.md`](Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md) — decisões, marcos e histórico v1–v8.
@@ -42,7 +42,7 @@ O loop principal e **quase todo** o checklist do **MVP do GDD (seção 7)** est�
 | **Obstáculos móveis por cenário** | ✅ Implementado no v8 | 1–3 por pista, camelo/cervo/rena/carro/caminhão/trator/vaca/buggy, com toggle `?hazards=0`. |
 | **Velocímetro** | ✅ Implementado no v8 | km/h e barra no canto inferior, espelhado com o lado dos controles. |
 
-**Observação importante:** a seção de **controles touch do GDD (drag + soltar para frear)** foi **substituída** pelo esquema atual de GO + auto-aceleração + 5 botões. Isso não é uma pendência; é uma decisão de playtest. O **GDD oficial já foi atualizado na v2.4**; o v2 antigo está preservado em `Docs/bak_old/`.
+**Observação importante:** a seção de **controles touch do GDD (drag + soltar para frear)** foi **substituída** pelo esquema atual de GO + auto-aceleração + 5 botões. Isso não é uma pendência; é uma decisão de playtest. O **GDD oficial já foi atualizado na v2.5**; o v2 antigo está preservado em `Docs/bak_old/`.
 
 **Já além do GDD:** o gerador procedural saiu de “fora do MVP” e virou o modo padrão; o touch de 5 botões com combos e menu MÃO também não estava previsto no GDD. A pista fixa continua como test track.
 
@@ -77,7 +77,7 @@ O loop principal e **quase todo** o checklist do **MVP do GDD (seção 7)** est�
 - Rumble de câmera 0,15 m escalado por piso.
 - Poeira v8: pool 112, perfis por piso com duas cores, taxa/tamanho/alpha/vida/subida/gravidade próprios; deserto com contraste corrigido e neve com spray branco-azulado.
 - **Hairpin extremo:** 13–14 m, 1 por pista procedural, sweep 170–185°, largura 5,2–6,2 m, aproximação 45–60 m.
-- **Bifurcações:** 1–2 por pista; gerador **v3** (`ProceduralTrackV3.ts`) por blocos de cenário, com duas rotas completas de ~584–781 m, cenário/conteúdo próprios e miolo de paisagem. `?gen=v2`/`?gen=v1` mantêm as versões anteriores; a pista fixa continua sem fork.
+- **Bifurcações:** 1–2 por pista; gerador **v3** (`ProceduralTrackV3.ts`) por blocos de cenário, com duas rotas completas de ~612–820 m, cenário/conteúdo próprios e miolo de paisagem. `?gen=v2`/`?gen=v1` mantêm as versões anteriores; a pista fixa continua sem fork.
 - **Hazards:** 1–3 por pista, tipo por cenário, travessia e colisão.
 
 ### Procedural v8
@@ -174,7 +174,7 @@ Escolher **um** vetor principal para o próximo ciclo, porque o protótipo já c
 - Corrigir contraste da poeira no deserto e adicionar multiplicador de volume por bioma.
 - Adicionar seed visível/share no HUD ou no resultado.
 - Testar handbrake touch em um 6º botão temporário.
-- Manter o GDD v2.4 atualizado a cada rodada; o v2 antigo está em `Docs/bak_old/`.
+- Manter o GDD v2.5 atualizado a cada rodada; o v2 antigo está em `Docs/bak_old/`.
 
 ---
 
@@ -265,5 +265,5 @@ npx --yes tsx scripts/proc-diversity.ts --gen v2 --count 12 --svg /tmp/opencode/
 - **Pendências:** playtest de grip dos novos pisos, legibilidade da escolha de fork, frequência/timing dos hazards, poeira em neve/praia e performance em celular real.
 - **Correções v8b (Oct 29):** hazards mais rápidos; fork virou mini traçado de 150–260 m com entrada/saída em platô na borda; entrada/saída sem salto (`maxAir=0` nos testes); debug `?debug=1&branch=0&bt=0.9`.
 - **Gerador v2 (Oct 29):** `ProceduralTrackV2.ts` replaneja 1–2 forks com waypoints em mundo, 2–3 apexes, relevo e lead-in/out; v1 preservada em `?gen=v1`. 100/100 seeds; 99 com forks v2, seed 48 em fallback v1; `Track.projectNearest` corrigido para sair do ramo no `endS`; cenário/postes de borda nos ramos.
-- **Gerador v3 por blocos (Oct 29):** `ProceduralTrackV3.ts` gera 5–6 blocos de cenário, 1–2 com split; cada split tem duas rotas completas de ~584–781 m, com cenário, largura, elevação, postes, hazards, obstáculos, powerups e kickers próprios. 100/100 seeds (74 com 1 split, 26 com 2), 2.642–3.783 m, rotas 584–781 m, 1 hairpin de switchback em 100/100, chokes/largos, platôs e 1–4 rampas. `TrackMesh` encolhe ombros no split, `ForkMesh` desenha a rota completa com material/textura iguais à pista principal, `Scenery` preenche o miolo com terreno/props, e o conteúdo virou path-aware (`pathId`). Bandeiras de parcial agora mostram **SPLIT**. Rollback em `?gen=v2`/`?gen=v1`.
+- **Gerador v3 por blocos (Oct 29):** `ProceduralTrackV3.ts` gera 5–6 blocos de cenário, 1–2 com split; cada split tem duas rotas completas de ~612–820 m, com cenário, largura, elevação, postes, hazards, obstáculos, powerups e kickers próprios. 100/100 seeds (50 com 1 split, 50 com 2), 2.692–3.798 m, rotas 612–820 m, 1–2 hairpins de switchback em 99/100 seeds (41 com 2), chokes/largos, platôs, 1–5 rampas, 2–4 hazards e 12–16 powerups. `TrackMesh` encolhe ombros no split, `ForkMesh` desenha a rota completa com material/textura iguais à pista principal, `Scenery` preenche o miolo com terreno/props e aumenta a densidade nas rotas, e o conteúdo virou path-aware (`pathId`). Bandeiras de parcial agora mostram **SPLIT**. Rollback em `?gen=v2`/`?gen=v1`.
 - **Não fazer ainda:** progressão, áudio, editor, caminhos com recompensa assimétrica, controle no ar e handbrake touch.

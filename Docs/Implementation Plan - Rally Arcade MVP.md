@@ -851,12 +851,12 @@ Esta rodada implementa o pacote de conteúdo/UX pedido no playtest: novos cenár
 
 - Novo módulo `src/track/procedural/ProceduralTrackV3.ts`; v1 e v2 ficam intactas para rollback (`?gen=v2`, `?gen=v1`).
 - A pista v3 é uma sequência de 5–6 blocos de cenário. Blocos lineares têm uma rota completa; blocos com split têm entrada/saída comuns e duas rotas completas (A e B).
-- 1–2 splits por pista; cada rota tem ~584–781 m, curvas, largura/elevação próprias, ombros e bordas dos dois lados, cenário dos dois lados, postes, hazards, obstáculos, powerups e kickers locais.
-- Cada pista tem **1 hairpin de switchback** (extremo 13–14 m ou normal 20–23 m), chokes de 4,6–5,4 m, trechos largos de 12–15 m, platôs de elevação e 1–4 rampas; as rotas também recebem alargamentos/estreitamentos e relevo próprio.
+- 1–2 splits por pista; cada rota tem ~612–820 m, curvas, largura/elevação próprias, ombros e bordas dos dois lados, cenário dos dois lados, postes, hazards, obstáculos, powerups e kickers locais.
+- Cada pista tem **1–2 hairpins de switchback** (extremo 13–14 m ou normal 20–23 m), chokes de 4,6–5,4 m, trechos largos de 12–15 m, platôs de elevação e **1–5 rampas**; as rotas também recebem alargamentos/estreitamentos e relevo próprio.
 - O miolo do Y é paisagem (terreno com relevo + props), não um canteiro plano. `Scenery` passou a considerar todos os caminhos no backdrop e a preencher o miolo; `TrackMesh` encolhe os ombros no split e `ForkMesh` desenha a rota completa com ombros dos dois lados.
 - Conteúdo path-aware: `TrackHazard`, `TrackObstacle` e `TrackPowerup` têm `pathId`; hazards só ativam no caminho atual. `TrackBranch` aceita zonas/kickers locais. `Track.sampleAtPath/heightAtPath/...` usam `0 = principal, 1..N = rota`.
 - Parciais: 3, somente em fronteiras comuns de blocos. As bandeiras físicas mostram apenas **SPLIT** (sem nome de bioma).
-- Validação: 100/100 seeds v3; 74 seeds com 1 split e 26 com 2; comprimento 2.642–3.783 m; rotas 584–781 m; largura 4,6–15,0 m; raio mínimo 11,4 m; 1 hairpin em 100/100; 1–4 kickers; 1–4 hazards; 6–8 powerups; sem autointerseção no eixo; `typecheck`, build e pista fixa OK. Entrada/saída de rota com `maxAir=0` no teste headless.
+- Validação: 100/100 seeds v3; 50 seeds com 1 split e 50 com 2; comprimento 2.692–3.798 m; rotas 612–820 m; largura 4,6–15,0 m; raio mínimo 9,9 m; 1–2 hairpins em 99/100; 1–5 kickers; 2–4 hazards; 12–16 powerups; sem autointerseção no eixo; `typecheck`, build e pista fixa OK. Entrada/saída de rota com `maxAir=0` no teste headless.
 - Debug: `?gen=v3` (padrão), `?gen=v2`, `?gen=v1`, `?branch=0&bt=0.9`; `scripts/proc-validate-v3.ts` gera relatório e SVG top-down.
 
 ### Pendências

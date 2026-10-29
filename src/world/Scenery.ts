@@ -303,8 +303,10 @@ export class Scenery {
         }
       }
 
-      s += BRANCH_SCATTER_STEP_MIN +
-        rng() * (BRANCH_SCATTER_STEP_MAX - BRANCH_SCATTER_STEP_MIN);
+      s += (fullRoute ? 6 : BRANCH_SCATTER_STEP_MIN) +
+        rng() *
+          ((fullRoute ? 10 : BRANCH_SCATTER_STEP_MAX) -
+            (fullRoute ? 6 : BRANCH_SCATTER_STEP_MIN));
     }
   }
 
@@ -1596,7 +1598,8 @@ export class Scenery {
       const sides = branch.kind === 'route'
         ? [-1, 1]
         : [branch.side];
-      for (let s = from; s <= to; s += EDGE_POST_SPACING) {
+      const spacing = branch.kind === 'route' ? 14 : EDGE_POST_SPACING;
+      for (let s = from; s <= to; s += spacing) {
         const sample = branch.sampleAt(s);
         const half = branch.widthAt(s) * 0.5;
         for (const side of sides) {

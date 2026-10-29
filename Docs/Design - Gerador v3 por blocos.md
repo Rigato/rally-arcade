@@ -41,11 +41,11 @@ O miolo entre as rotas é uma paisagem (morro, mata, vale), não um canteiro pla
 
 O gerador v3 usa a mesma riqueza de pista do v1:
 
-- **Sete categorias de curva:** longa, média, curta, cotovelo, hairpin normal, hairpin extremo e kink. Cada pista tem **1 hairpin de switchback** (extremo 13–14 m ou normal 20–23 m), com aproximação/saída e largura reduzida.
+- **Sete categorias de curva:** longa, média, curta, cotovelo, hairpin normal, hairpin extremo e kink. Cada pista tem **1–2 hairpins de switchback** (extremo 13–14 m ou normal 20–23 m), com aproximação/saída e largura reduzida.
 - **Largura:** base 9,5–11,2 m, **chokes de 4,6–5,4 m**, trechos estreitos de 5,5–7 m, largos de 12–15 m e transições suaves. As rotas de split têm a mesma lógica em escala 5,5–10 m.
 - **Elevação:** ondas longa e média, cristas curtas e **platôs de 70–150 m** com transição; as rotas têm relevo e platôs próprios.
 - **Rampas:** 1–4 por pista, só em retas com área de pouso reta; a rota do split também pode ter a sua.
-- **Conteúdo:** 6–8 powerups, 1–4 hazards e obstáculos por caminho.
+- **Conteúdo:** 12–16 powerups, 2–4 hazards, 1–5 kickers e obstáculos por caminho.
 - **Layout:** autointerseção do eixo, separação de trechos, A→B mínimo e validação de raio/inclinação.
 
 ## Split simétrico ou assimétrico
@@ -82,8 +82,8 @@ A escolha é por bloco, então uma pista pode misturar os dois estilos.
 ## Validação
 
 - 100/100 seeds; 5–6 blocos, 1–2 splits (74 com 1, 26 com 2).
-- Rotas de 584–781 m, largura 4,6–15,0 m, raio mínimo 11,4 m, inclinação máxima 0,78 com kickers.
-- **1 hairpin de switchback em 100/100 seeds**; 1–4 kickers; 1–4 hazards; 6–8 powerups.
+- Rotas de 612–820 m, largura 4,6–15,0 m, raio mínimo 9,9 m, inclinação máxima 0,79 com kickers.
+- **1–2 hairpins em 99/100 seeds**; 1–5 kickers; 2–4 hazards; 12–16 powerups.
 - Sem autointerseção; A→B mínimo validado.
 - Entrada/saída alinhadas à tangente; sem salto (`maxAir = 0`).
 - Parciais apenas em fronteiras comuns.

@@ -1,8 +1,8 @@
-# Mini GDD - Rally Arcade v2.4
+# Mini GDD - Rally Arcade v2.5
 
 Oct 29, 2026 · @George
 
-> **Revisão 2.4 (Oct 29, 2026).** O gerador procedural ganhou uma **v3 por blocos de cenário**: a pista é uma sequência de 5–6 blocos, e 1–2 deles já nascem com um split entre duas rotas completas (~584–781 m cada), com cenário, largura, elevação, postes, hazards, obstáculos e powerups próprios. A v2 e a v1 continuam intactas em `?gen=v2` e `?gen=v1`. O restante do documento reflete o protótipo v8: seis cenários, poeira por piso, obstáculos móveis, menu de pistas/seeds e velocímetro. O GDD v2.3 está no histórico; o v2 original continua em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
+> **Revisão 2.5 (Oct 29, 2026).** O gerador procedural ganhou uma **v3 por blocos de cenário**: a pista é uma sequência de 5–6 blocos, e 1–2 deles já nascem com um split entre duas rotas completas (~612–820 m cada), com cenário, largura, elevação, postes, hazards, obstáculos e powerups próprios. A v2 e a v1 continuam intactas em `?gen=v2` e `?gen=v1`. O restante do documento reflete o protótipo v8: seis cenários, poeira por piso, obstáculos móveis, menu de pistas/seeds e velocímetro. O GDD v2.4 está no histórico; o v2 original continua em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
 
 ## Ficha e High Concept
 
@@ -93,15 +93,15 @@ Terceira pessoa, por trás do carro, em ângulo alto, quase top-down, para mostr
 ### Pista e fora da pista
 
 - **Pista fixa:** `track01-v3`, A→B, **1096,8 m**, 4 setores, raio mínimo 30,2 m, 2 rampas, 4 powerups, 50 obstáculos. Acessível por **FIXA** / `?track=fixed`.
-- **Pistas procedurais:** A→B, **1518–1625 m**, 4 setores de ~354–438 m sorteados do pool de seis cenários, 7 tipos de curva (incluindo **hairpin extremo 13–14 m** e **kink**), largura 4,6–15,0 m, chokes de 4,6–5,4 m, 6–8 powerups, 50–75 obstáculos, 1–2 bifurcações, 1–3 obstáculos móveis e 2–3 platôs planos. Seed 1–100.
+- **Pistas procedurais:** A→B, **2.692–3.798 m**, 5–6 blocos de cenário sorteados do pool de seis cenários, 7 tipos de curva (incluindo **hairpin extremo 13–14 m** e **kink**), largura 4,6–15,0 m, chokes de 4,6–5,4 m, platôs, **12–16 powerups**, obstáculos por caminho, 1–2 splits, 1–2 hairpins, 2–4 obstáculos móveis e 1–5 rampas. Seed 1–100.
 - **Default:** abrir `/` sorteia uma procedural; **NOVA** gera outra; o menu **PISTAS** escolhe seed ou pista fixa.
 - A pista tem subidas e descidas; pontos íngremes criam saltos.
-- **Bifurcações (v3):** 1–2 por pista. Cada split é um bloco de cenário mais longo com entrada/saída comuns e **duas rotas completas** de ~584–781 m. Cada rota tem spline, largura, elevação, ombros/bordas dos dois lados, cenário dos dois lados, postes, hazards, obstáculos, powerups e kickers próprios. O miolo é paisagem (morro, mata ou vale); a escolha pode ser simétrica (linha) ou assimétrica (distância/velocidade/dificuldade). As parciais ficam só nas fronteiras comuns dos blocos. A pista fixa continua sem bifurcação. Rollback em `?gen=v2`/`?gen=v1`.
-- **Elementos de pista (v3):** cada pista tem 1 hairpin de switchback (extremo 13–14 m ou normal 20–23 m), chokes de 4,6–5,4 m, estreitos, largos de 12–15 m, platôs de elevação, curvas longa/média/curta/cotovelo/kink e 1–4 rampas. As rotas dos splits também recebem alargamentos/estreitamentos e relevo próprio.
-- **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor. Cada evento é um animal/veículo do cenário que atravessa a pista quando o carro se aproxima e colide. A travessia é rápida (4,8–10,5 m/s) para exigir uma reação curta. O começo da run fica preservado.
+- **Bifurcações (v3):** 1–2 por pista. Cada split é um bloco de cenário mais longo com entrada/saída comuns e **duas rotas completas** de ~612–820 m. Cada rota tem spline, largura, elevação, ombros/bordas dos dois lados, cenário dos dois lados, postes, hazards, obstáculos, powerups e kickers próprios. O miolo é paisagem (morro, mata ou vale); a escolha pode ser simétrica (linha) ou assimétrica (distância/velocidade/dificuldade). As parciais ficam só nas fronteiras comuns dos blocos. A pista fixa continua sem bifurcação. Rollback em `?gen=v2`/`?gen=v1`.
+- **Elementos de pista (v3):** cada pista tem **1–2 hairpins** de switchback (extremo 13–14 m ou normal 20–23 m; 41% das seeds com 2), chokes de 4,6–5,4 m, estreitos, largos de 12–15 m, platôs de elevação, curvas longa/média/curta/cotovelo/kink e **1–5 rampas**. A densidade média ficou em **~13 rad/km de curvatura**, **~2 chokes/km** e **~4,3 powerups/km**; as rotas longas têm ~14,9 rad/km e 5,7–8,4 m de largura.
+- **Obstáculos móveis:** 2–4 por pista procedural, com chance por setor. Cada evento é um animal/veículo do cenário que atravessa a pista quando o carro se aproxima e colide. A travessia é rápida (4,8–10,5 m/s) para exigir uma reação curta. O começo da run fica preservado.
 - **Fora da pista dá para se recuperar.** O piso acidentado desacelera, trepida e pode tirar o carro do chão; obstáculos sólidos dão ricochete. Se não bater, o jogador pode voltar à pista.
 - **Limite do mundo:** além de ~12 m da borda, o carro é recuperado automaticamente perdendo tempo.
-- **Caminhos alternativos/linhas de risco-recompensa:** a bifurcação v1 implementa a escolha de caminho sem recompensa assimétrica; linhas de risco/recompensa continuam em aberto.
+- **Caminhos alternativos/linhas de risco-recompensa:** a bifurcação v3 implementa a escolha de caminho com rotas completas e conteúdo próprio; linhas de risco/recompensa assimétricas continuam em aberto.
 
 ### Saltos
 
