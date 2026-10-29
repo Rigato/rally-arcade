@@ -1,6 +1,6 @@
 # Handoff — Rally Arcade (Oct 28, 2026)
 
-Documento para abrir uma nova sessão de **plan** sem reler todo o histórico. Base do código: **`e4dbdbb`** (`feat: v8 scenarios, forks, hazards, track menu and speedometer`).
+Documento para abrir uma nova sessão de **plan** sem reler todo o histórico. Base do código: **`3d0e90a`** (`fix: faster hazards and true mini-route forks`).
 
 > **Atualização v8 (Oct 28, 2026):** o protótipo agora tem seis cenários (floresta, deserto, neve, vilarejo, estrada de terra e praia), poeira por piso, 1–2 bifurcações procedurais, 1–3 obstáculos móveis por pista, menu de pistas/seeds e velocímetro. A pista fixa `track01-v3` continua congelada. Ver a seção 8 no fim deste documento e a seção 30 do Implementation Plan.
 
