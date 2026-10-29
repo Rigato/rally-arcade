@@ -14,6 +14,8 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 ![Controles touch em jogo](Docs/screenshots/running-controls.png)
 
+![Bifurcação procedural](Docs/screenshots/fork.png)
+
 ![Menu de mão](Docs/screenshots/touch-hand-menu.png)
 
 ![Menu de pistas](Docs/screenshots/track-menu.png)
@@ -101,8 +103,8 @@ Dois tipos no MVP, com ativação imediata:
 - **Seis cenários:** floresta/cascalho, deserto/areia, neve, vilarejo/asfalto, estrada de terra e praia/areia de praia. As pistas procedurais sorteiam **4 setores sem repetir o mesmo cenário em sequência**.
 - **Pisos com comportamento próprio:** cada cenário tem grip, aceleração, arrasto, bump, limite de velocidade e off-road no painel **Pisos**. A neve solta mais a traseira, o asfalto do vilarejo agarra mais, a terra fica entre cascalho e areia e a praia puxa para fora.
 - **Poeira por piso:** cor primária/secundária, taxa, tamanho, alpha, vida, subida e gravidade mudam por cenário. O deserto usa um tom mais escuro para contrastar com a areia; a neve usa spray branco-azulado.
-- **Bifurcações:** 1–2 por pista procedural. Em uma reta longa, um ramo sai da pista principal, abre 14–26 m, ganha relevo próprio e volta a se juntar. O jogador escolhe o lado sem saber qual é melhor; não há recompensa exclusiva. A pista fixa continua sem bifurcação.
-- **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor e pelo menos um garantido. Cada evento tem um tipo do cenário (camelo, cervo, rena, carro, caminhão, trator, vaca ou buggy), começa a atravessar quando o carro se aproxima e colide como os obstáculos sólidos. O começo da run fica preservado.
+- **Bifurcações:** 1–2 por pista procedural. Em um trecho longo, um ramo nasce na **borda** da pista principal, corre paralelo por alguns metros, abre 28–48 m e volta a se juntar. O ramo tem spline, altura, largura, ombro externo e piso próprios; a pista principal continua como a outra opção. O jogador escolhe sem saber qual é melhor; não há recompensa exclusiva. A pista fixa continua sem bifurcação.
+- **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor e pelo menos um garantido. Cada evento tem um tipo do cenário (camelo, cervo, rena, carro, caminhão, trator, vaca ou buggy), começa a atravessar quando o carro se aproxima e colide como os obstáculos sólidos. A travessia é rápida (4,8–10,5 m/s) para o desvio ser uma reação curta. O começo da run fica preservado.
 - **Toggle de debug:** `?hazards=0` desliga os obstáculos móveis; o painel de debug tem **Hazards ativos** e **→ Próximo hazard**.
 
 ## Carro, escape e poeira
@@ -122,12 +124,14 @@ https://rigato.github.io/rally-arcade/?debug=1
 https://rigato.github.io/rally-arcade/?track=fixed&debug=1
 https://rigato.github.io/rally-arcade/?track=fixed&debug=1&s=780
 https://rigato.github.io/rally-arcade/?track=proc&seed=1&debug=1
+https://rigato.github.io/rally-arcade/?track=proc&seed=1&debug=1&branch=0&bt=0.9
 ```
 
 - **Sem `track`** (raiz ou `?debug=1`) o jogo sorteia uma **procedural** com seed 1–100 a cada abertura/reload.
 - **`?track=fixed`** carrega a pista fixa; **`?track=proc&seed=N`** carrega uma procedural determinística (1–100). O menu **PISTAS** navega para essas URLs.
 - **`?s=<metros>`** teleporta o carro para o centro da pista e volta a corrida para READY, preservando o melhor tempo. Use junto de `track=fixed` ou `track=proc&seed=N` para uma pista estável; sozinho ele teleporta em uma procedural aleatória.
 - **`?hazards=0`** desliga os obstáculos móveis; sem o parâmetro eles ficam ligados. O painel Debug também tem o checkbox e um atalho para o próximo hazard.
+- **`?branch=0&bt=0.9`** (com `?debug=1`) teleporta para 90% do primeiro ramo de bifurcação; `bt` vai de 0 (entrada) a 1 (saída).
 - **H** alterna a telemetria no desktop; no painel, a pasta **Debug** também controla piso forçado, colisores, hazards, reposicionar e ir para um `s`.
 - O painel cobre **Carro**, **Carroceria**, **Câmera**, **Input**, **Pisos**, **Poeira**, **Powerups / Corrida** e **Debug**. O Input agora só tem as suavizações de esterço/freio; os parâmetros de derrapagem ficam em **Carro**.
 - Todo ajuste vale na hora porque física, câmera, input e corrida leem os mesmos objetos mutáveis de `src/game/config.ts`.
@@ -207,7 +211,7 @@ O gerador de pistas por seed fica em `src/track/procedural/`:
 - **Setores:** 4 setores de **340–470 m** sorteados do pool de seis cenários, sem repetir o mesmo em sequência; pista total **1518–1625 m**. São 6–8 powerups, 50–75 obstáculos, 1–2 rampas e **1–2 bifurcações**.
 - **Relevo:** amplitudes ~20% maiores, com 2–3 **platôs planos** de 70–150 m cobrindo 20–25% da pista.
 - **Largura agressiva:** base 10,5–12 m, trechos largos 13–15 m, longos estreitos 5,5–7 m e **chokes de 4,6–5,4 m**. O sampler (`Track.ts`) aceita **4,4–15,2 m**.
-- **Bifurcações:** em retas longas, um ramo de 14–26 m de deslocamento lateral sai e volta à pista principal. O ramo tem spline, altura, largura, ombros e piso próprios; a pista principal continua como a outra opção. As duas pontas ficam no mesmo setor para não misturar pisos.
+- **Bifurcações:** em trechos longos de 150–260 m, um ramo nasce na borda da pista, corre paralelo, abre 28–48 m e volta a encostar. O ramo tem spline, altura, largura, ombro externo e piso próprios; a pista principal continua como a outra opção. As duas pontas ficam no mesmo setor para não misturar pisos.
 - **Hazards:** 1–3 por seed, com chance por setor; o tipo vem do cenário (camelo, cervo, rena, carro, caminhão, trator, vaca ou buggy). O gerador preserva os primeiros 130 m, rampas, hairpin extremo e bifurcações.
 - **Medalhas procedurais:** ouro **39 s em 1.300 m → 49 s em 1.650 m** (linear, clampado); nas pistas atuais de 1.518–1.624 m fica **45,2–48,3 s**. Prata = ouro + 6 s; bronze = ouro + 12 s. As parciais usam o ritmo do ouro.
 - `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, separação, rampas, splits, powerups, obstáculos, bifurcações e hazards.

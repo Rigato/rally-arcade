@@ -1312,11 +1312,42 @@ function buildWidthProfileV5(
   };
 }
 
+/** Janela (m de pista principal) em que a bifurcação pode começar/terminar. */
+const FORK_MIN_SPAN = 150;
+const FORK_MAX_SPAN = 260;
+const FORK_MIN_START = 130;
+const FORK_END_MARGIN = 110;
+/** Amplitude lateral (m) do afastamento do ramo em relação à borda. */
+const FORK_MIN_AMPLITUDE = 28;
+const FORK_MAX_AMPLITUDE = 48;
+/** Amplitude vertical (m) do sobe-e-desce do ramo. */
+const FORK_MIN_HEIGHT = 1;
+const FORK_MAX_HEIGHT = 3;
+/** Largura nominal (m) do ramo. */
+const FORK_MIN_WIDTH = 6;
+const FORK_MAX_WIDTH = 8;
+/** Sobreposição (m) entre a borda do ramo e a borda da pista principal. */
+const FORK_EDGE_OVERLAP = 0.35;
+/** Fator de largura do ramo: 0,97 ± 0,05 (mínimo 5,52 m em 6,0 m). */
+const FORK_WIDTH_BASE = 0.97;
+const FORK_WIDTH_SWING = 0.05;
+
+interface ForkCandidate {
+  startIndex: number;
+  endIndex: number;
+  startS: number;
+  endS: number;
+  score: number;
+}
+
 /**
- * Cria 1–2 bifurcações em trechos longos e pouco curvados. O ramo é gerado
- * deslocando lateralmente os pontos de controle da pista principal com uma
- * curva de sino: ele sai do centro, abre 14–26 m e volta ao mesmo ponto. A
- * pista principal continua existindo como a outra opção.
+ * Cria 1–2 bifurcações em trechos longos e pouco curvados.
+ *
+ * O ramo é um mini traçado independente: começa e termina na borda da pista
+ * principal (centro deslocado por `mainHalf + branchHalf - 0,35`) e se afasta
+ * com um perfil de sino `0,5 - 0,5·cos(2πt)`, cuja derivada é zero nas pontas.
+ * Assim ele não sobrepõe a pista no início/fim nem cria rampa de entrada/saída.
+ * A pista principal continua existindo como a outra opção.
  */
 function buildForks(
   rng: Rng,
@@ -1334,20 +1365,12 @@ function buildForks(
     .filter((curve) => curve.category === 'hairpin-extreme')
     .map((curve) => ({ startS: curve.startS, endS: curve.endS }));
 
-  interface Candidate {
-    startIndex: number;
-    endIndex: number;
-    startS: number;
-    endS: number;
-    score: number;
-  }
-
-  const collect = (minRatio: number, maxTurn: number): Candidate[] => {
-    const candidates: Candidate[] = [];
+  const collect = (minRatio: number, maxTurn: number): ForkCandidate[] => {
+    const candidates: ForkCandidate[] = [];
 
     for (let startIndex = 2; startIndex < points.length - 8; startIndex += 1) {
       const startS = sValues[startIndex];
-      if (startS < 130) {
+      if (startS < FORK_MIN_START) {
         continue;
       }
 
@@ -1358,13 +1381,13 @@ function buildForks(
       ) {
         const endS = sValues[endIndex];
         const span = endS - startS;
-        if (span < 100) {
+        if (span < FORK_MIN_SPAN) {
           continue;
         }
-        if (span > 200) {
+        if (span > FORK_MAX_SPAN) {
           break;
         }
-        if (endS > length - 110) {
+        if (endS > length - FORK_END_MARGIN) {
           break;
         }
 
@@ -1377,6 +1400,7 @@ function buildForks(
           continue;
         }
 
+        // A bifurcação inteira precisa ficar no mesmo setor.
         if (zoneIndexAtS(zones, startS) !== zoneIndexAtS(zones, endS)) {
           continue;
         }
@@ -1423,108 +1447,97 @@ function buildForks(
     candidates = collect(0.68, (90 * Math.PI) / 180);
   }
   if (candidates.length === 0) {
+    candidates = collect(0.52, (125 * Math.PI) / 180);
+  }
+  if (candidates.length === 0) {
     return [];
   }
 
-  const wanted = rng.chance(0.45) ? 2 : 1;
-  const selected: Candidate[] = [];
+  const wanted = Math.min(
+    rng.chance(0.45) ? 2 : 1,
+    FORK_TUNING.maxForks,
+  );
   const shuffled = shuffle(candidates, rng).sort((a, b) => a.score - b.score);
+  const forks: TrackFork[] = [];
 
+  // Tenta candidatos até conseguir o número desejado; se um lado encostar em
+  // outro trecho da pista, tenta o lado oposto antes de descartar o candidato.
   for (const candidate of shuffled) {
-    if (selected.length >= Math.min(wanted, FORK_TUNING.maxForks)) {
+    if (forks.length >= wanted) {
       break;
     }
     if (
-      selected.some(
+      forks.some(
         (other) =>
-          candidate.startS < other.endS + 50 &&
-          candidate.endS > other.startS - 50,
+          candidate.startS < other.endS + 60 &&
+          candidate.endS > other.startS - 60,
       )
     ) {
       continue;
     }
-    selected.push(candidate);
-  }
 
-  selected.sort((a, b) => a.startS - b.startS);
+    const preferredSide = rng.sign() as 1 | -1;
+    const amplitude = rng.range(FORK_MIN_AMPLITUDE, FORK_MAX_AMPLITUDE);
+    const heightAmplitude = rng.range(FORK_MIN_HEIGHT, FORK_MAX_HEIGHT);
+    const nominalWidth = rng.range(FORK_MIN_WIDTH, FORK_MAX_WIDTH);
+    const phase = rng.range(0, TAU);
+    const phase2 = rng.range(0, TAU);
+    const mainHalf =
+      Math.max(
+        points[candidate.startIndex].width,
+        points[candidate.endIndex].width,
+      ) * 0.5;
+    const edgeOffset = mainHalf + nominalWidth * 0.5 - FORK_EDGE_OVERLAP;
 
-  const forks: TrackFork[] = [];
+    let branch: TrackForkBranch | null = null;
+    const otherSide: 1 | -1 = preferredSide === 1 ? -1 : 1;
 
-  for (let index = 0; index < selected.length; index += 1) {
-    const candidate = selected[index];
-    const side = rng.sign();
-    const amplitude = rng.range(14, 26);
-    const heightAmplitude = rng.range(0, 1.8);
-    const nominalWidth = rng.range(
-      FORK_TUNING.branchWidth - 0.6,
-      FORK_TUNING.branchWidth + 0.8,
-    );
-    const branchPoints: TrackPoint[] = [];
-
-    for (let i = candidate.startIndex; i <= candidate.endIndex; i += 1) {
-      const t =
-        (i - candidate.startIndex) /
-        Math.max(1, candidate.endIndex - candidate.startIndex);
-      const point = points[i];
-      const previous = points[Math.max(0, i - 1)];
-      const next = points[Math.min(points.length - 1, i + 1)];
-      const dx = next.x - previous.x;
-      const dz = next.z - previous.z;
-      const horizontal = Math.hypot(dx, dz) || 1;
-      const rightX = dz / horizontal;
-      const rightZ = -dx / horizontal;
-      const bulge = Math.sin(Math.PI * t);
-      const offset =
-        side * amplitude * bulge +
-        side * amplitude * 0.18 * Math.sin(Math.PI * 2 * t);
-      const y = point.y + heightAmplitude * bulge;
-      const width = 4.6 + (nominalWidth - 4.6) * bulge;
-
-      branchPoints.push({
-        x: point.x + rightX * offset,
-        z: point.z + rightZ * offset,
-        y,
-        width,
-      });
-    }
-
-    if (branchPoints.length < 6) {
-      continue;
-    }
-
-    let branchLength = 0;
-    for (let i = 1; i < branchPoints.length; i += 1) {
-      const a = branchPoints[i - 1];
-      const b = branchPoints[i];
-      branchLength += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
-    }
-
-    if (branchLength < 70) {
-      continue;
-    }
-
-    if (
-      branchNearMain(
-        branchPoints,
+    for (const side of [preferredSide, otherSide]) {
+      const branchPoints = buildForkBranchPoints(
         points,
-        candidate.startIndex,
-        candidate.endIndex,
-      )
-    ) {
-      continue;
+        candidate,
+        side,
+        edgeOffset,
+        amplitude,
+        heightAmplitude,
+        nominalWidth,
+        phase,
+        phase2,
+      );
+
+      const branchLength = measurePoints3d(branchPoints);
+      if (branchPoints.length < 6 || branchLength < 70) {
+        continue;
+      }
+      if (
+        branchNearMain(
+          branchPoints,
+          points,
+          candidate.startIndex,
+          candidate.endIndex,
+        )
+      ) {
+        continue;
+      }
+
+      branch = {
+        id: `fork-${forks.length + 1}-a`,
+        points: branchPoints,
+        startS: candidate.startS,
+        endS: candidate.endS,
+        length: branchLength,
+        width: nominalWidth,
+        side,
+      };
+      break;
     }
 
-    const branch: TrackForkBranch = {
-      id: `fork-${index + 1}-a`,
-      points: branchPoints,
-      startS: candidate.startS,
-      endS: candidate.endS,
-      length: branchLength,
-      width: nominalWidth,
-    };
+    if (!branch) {
+      continue;
+    }
 
     forks.push({
-      id: `fork-${index + 1}`,
+      id: `fork-${forks.length + 1}`,
       startS: candidate.startS,
       endS: candidate.endS,
       branches: [branch],
@@ -1534,12 +1547,74 @@ function buildForks(
   return forks;
 }
 
+/** Constrói o traçado do ramo: borda → sino lateral → borda. */
+function buildForkBranchPoints(
+  points: readonly TrackPoint[],
+  candidate: ForkCandidate,
+  side: 1 | -1,
+  edgeOffset: number,
+  amplitude: number,
+  heightAmplitude: number,
+  nominalWidth: number,
+  phase: number,
+  phase2: number,
+): TrackPoint[] {
+  const branchPoints: TrackPoint[] = [];
+  const span = Math.max(1, candidate.endIndex - candidate.startIndex);
+
+  for (let i = candidate.startIndex; i <= candidate.endIndex; i += 1) {
+    const t = (i - candidate.startIndex) / span;
+    const point = points[i];
+    const previous = points[Math.max(0, i - 1)];
+    const next = points[Math.min(points.length - 1, i + 1)];
+    const dx = next.x - previous.x;
+    const dz = next.z - previous.z;
+    const horizontal = Math.hypot(dx, dz) || 1;
+    const rightX = dz / horizontal;
+    const rightZ = -dx / horizontal;
+
+    // Platô: o ramo corre paralelo/encostado à pista por ~12% do trecho,
+    // abre depois e volta a encostar antes do merge. Isso dá tempo para o
+    // jogador escolher o lado sem cair no vão interno.
+    const ramp = smoothstep(clamp((t - 0.12) / 0.18, 0, 1));
+    const fall = smoothstep(clamp((0.88 - t) / 0.18, 0, 1));
+    const bell = ramp * fall;
+    const wave = 1 + 0.18 * Math.sin(2 * TAU * t + phase);
+    const offset = side * (edgeOffset + amplitude * bell * wave);
+    const y = point.y + heightAmplitude * bell;
+    const width =
+      nominalWidth * (FORK_WIDTH_BASE + FORK_WIDTH_SWING * Math.sin(TAU * t + phase2));
+
+    branchPoints.push({
+      x: point.x + rightX * offset,
+      z: point.z + rightZ * offset,
+      y,
+      width,
+    });
+  }
+
+  return branchPoints;
+}
+
+function measurePoints3d(points: readonly TrackPoint[]): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    total += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+  }
+  return total;
+}
+
 function branchNearMain(
   branchPoints: readonly TrackPoint[],
   mainPoints: readonly TrackPoint[],
   startIndex: number,
   endIndex: number,
 ): boolean {
+  // Os extremos do ramo ficam deliberadamente na borda da própria
+  // bifurcação; a região do fork é ignorada para não rejeitar o próprio
+  // começo/fim.
   for (let i = 2; i < branchPoints.length - 2; i += 2) {
     const branchPoint = branchPoints[i];
 
@@ -1584,14 +1659,14 @@ function zoneIndexAtS(zones: readonly TrackZone[], s: number): number {
 }
 
 const HAZARD_SPEEDS: Record<TrackHazard['kind'], number> = {
-  camel: 3.2,
-  deer: 4.2,
-  reindeer: 4.0,
-  car: 7.0,
-  truck: 6.0,
-  tractor: 3.5,
-  cow: 2.8,
-  buggy: 6.0,
+  camel: 5.2,
+  deer: 7.0,
+  reindeer: 6.5,
+  car: 10.5,
+  truck: 9.5,
+  tractor: 6.2,
+  cow: 4.8,
+  buggy: 9.5,
 };
 
 const HAZARD_RADII: Record<TrackHazard['kind'], { radius: number; height: number }> = {
@@ -3563,7 +3638,11 @@ function validateForks(
 
   for (let i = 0; i < forks.length; i += 1) {
     const fork = forks[i];
-    if (fork.startS < 100 || fork.endS > length - 80 || fork.endS - fork.startS < 70) {
+    if (
+      fork.startS < FORK_MIN_START ||
+      fork.endS > length - FORK_END_MARGIN ||
+      fork.endS - fork.startS < FORK_MIN_SPAN - 5
+    ) {
       fail(
         `bifurcação ${i + 1} em s=${fork.startS.toFixed(0)}..${fork.endS.toFixed(0)} ` +
           `fora da faixa segura`,
@@ -3581,8 +3660,11 @@ function validateForks(
       ) {
         fail(`ramo ${branchInfo.id} não casa com o início/fim da bifurcação`);
       }
-      if (branchInfo.points.length < 6) {
+      if (branchInfo.points.length < 8) {
         fail(`ramo ${branchInfo.id} tem poucos pontos de controle`);
+      }
+      if (branchInfo.side !== 1 && branchInfo.side !== -1) {
+        fail(`ramo ${branchInfo.id} sem lado definido (side=${branchInfo.side})`);
       }
 
       const branch = track.branches.find((entry) => entry.id === branchInfo.id);
@@ -3604,10 +3686,39 @@ function validateForks(
         endMain.position.z - endBranch.position.z,
       );
 
-      if (startDistance > 2 || endDistance > 2) {
+      // O ramo começa/termina na BORDA da pista principal: o centro fica a
+      // `mainHalf + branchHalf` do centro dela (menos a pequena sobreposição).
+      const mainHalf =
+        Math.max(track.widthAt(branch.startS), track.widthAt(branch.endS)) * 0.5;
+      const branchHalf = branchInfo.width * 0.5;
+      const expectedOffset = mainHalf + branchHalf;
+
+      if (
+        startDistance < expectedOffset - 2.0 ||
+        startDistance > expectedOffset + 2.5 ||
+        endDistance < expectedOffset - 2.0 ||
+        endDistance > expectedOffset + 2.5
+      ) {
         fail(
-          `ramo ${branchInfo.id} não começa/termina na pista ` +
-            `(${startDistance.toFixed(1)} m / ${endDistance.toFixed(1)} m)`,
+          `ramo ${branchInfo.id} não começa/termina na borda da pista ` +
+            `(${startDistance.toFixed(1)} m / ${endDistance.toFixed(1)} m, ` +
+            `esperado ~${expectedOffset.toFixed(1)} m)`,
+        );
+      }
+
+      const startU =
+        (startBranch.position.x - startMain.position.x) * startMain.right.x +
+        (startBranch.position.z - startMain.position.z) * startMain.right.z;
+      const endU =
+        (endBranch.position.x - endMain.position.x) * endMain.right.x +
+        (endBranch.position.z - endMain.position.z) * endMain.right.z;
+      if (
+        Math.sign(startU) !== branchInfo.side ||
+        Math.sign(endU) !== branchInfo.side
+      ) {
+        fail(
+          `ramo ${branchInfo.id} abre do lado errado ` +
+            `(side=${branchInfo.side}, u=${startU.toFixed(1)}/${endU.toFixed(1)})`,
         );
       }
 
@@ -3615,8 +3726,11 @@ function validateForks(
       for (let s = 0; s <= branch.length; s += 2) {
         minBranchWidth = Math.min(minBranchWidth, branch.widthAt(s));
       }
-      if (minBranchWidth < 4.4) {
-        fail(`ramo ${branchInfo.id} estreita demais (${minBranchWidth.toFixed(2)} m)`);
+      if (minBranchWidth < FORK_TUNING.minLaneWidth - 0.01) {
+        fail(
+          `ramo ${branchInfo.id} estreita demais ` +
+            `(${minBranchWidth.toFixed(2)} m < ${FORK_TUNING.minLaneWidth} m)`,
+        );
       }
 
       // O ramo pode se afastar, mas não deve encostar em outro trecho da pista

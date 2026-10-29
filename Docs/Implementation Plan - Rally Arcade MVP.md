@@ -797,7 +797,7 @@ Esta rodada implementa o pacote de conteúdo/UX pedido no playtest: novos cenár
 ### Bifurcações
 
 - `TrackFork`/`TrackForkBranch` no `TrackDef`; 1–2 por pista procedural, em retas longas e dentro do mesmo setor.
-- O ramo é uma spline própria que sai da pista principal, abre 14–26 m e retorna; tem `TrackBranch` com sample/project/height/surface, `ForkMesh` com asfalto/ombros/bordas e ombros que somem nas pontas para não pintar sobre a pista principal.
+- O ramo é um mini traçado com spline própria: nasce na **borda** da pista principal, corre paralelo por ~12–30 m, abre **28–48 m** e volta a encostar. Tem `TrackBranch` com sample/project/height/surface, `ForkMesh` com asfalto, ombro só no lado externo e borda externa; a borda interna encosta na pista principal.
 - `Track.projectNearest` escolhe principal ou ramo com histerese; o Game mantém `activePathId`, `activePathS` e `activeBranchS`, usa a altura/piso/largura do caminho ativo e mapeia o progresso do ramo para o `s` principal.
 - `Scenery` e `Obstacles` evitam o corredor dos ramos. Rampas, hazards e powerups também respeitam a bifurcação.
 - A pista fixa não tem forks.
@@ -806,7 +806,7 @@ Esta rodada implementa o pacote de conteúdo/UX pedido no playtest: novos cenár
 
 - `TrackHazard` no `TrackDef`; 1–3 por pista procedural, com chance de 28% por setor, mínimo garantido de 1 e máximo de 3.
 - Tipos por cenário: camelo (deserto), cervo (floresta), rena (neve), carro/caminhão (vilarejo), trator/vaca (terra), buggy (praia).
-- `Hazards` cria modelos low poly, espera o carro chegar a ~72 m, faz a travessia e resolve colisão com push-out/ricochete. O começo da run (130 m), rampas, hairpin extremo e bifurcações ficam preservados.
+- `Hazards` cria modelos low poly, espera o carro chegar a ~72 m, faz a travessia em velocidade rápida (4,8–10,5 m/s) e resolve colisão com push-out/ricochete. O começo da run (130 m), rampas, hairpin extremo e bifurcações ficam preservados.
 - `?hazards=0` desliga; o painel Debug tem **Hazards ativos** e **→ Próximo hazard**; a telemetria mostra total/ativos/ON-OFF e o caminho ativo.
 - A pista fixa não tem hazards.
 
@@ -825,6 +825,14 @@ Esta rodada implementa o pacote de conteúdo/UX pedido no playtest: novos cenár
 - Headless mobile 390×844: GO/auto-throttle, 5 botões, velocímetro, menu abre/fecha, pausa congela o timer e retoma, seed navega, pista fixa navega, resultado abre menu.
 - Bifurcação: `__rallyPath.pathId=0` confirmou o carro no ramo; hazard: colisão de 13,1 m/s confirmada com queda de velocidade; `?hazards=0` confirmou `enabled=false`.
 - Console limpo nos testes.
+
+### Correções v8b (Oct 29, 2026)
+
+- **Hazards mais rápidos:** camel 5,2 / deer 7,0 / reindeer 6,5 / car 10,5 / truck 9,5 / tractor 6,2 / cow 4,8 / buggy 9,5 m/s. O gatilho continua em 72 m; a travessia ficou 1,5–1,8× mais rápida.
+- **Fork como mini traçado:** janela de 150–260 m; o ramo nasce na borda da pista, corre paralelo por ~12–30 m (platô), abre 28–48 m e volta a encostar. O objetivo é o jogador entrar/sair sem cair no vão interno.
+- **Sem salto na entrada/saída:** o ramo começava no centro e a física trocava de altura no meio da pista. Agora ele começa/termina na borda, o lado interno é plano (sem ruído de off-road) e o lado externo recebe o ombro; `TrackBranch` também interpola a largura. Testes headless de entrada e saída (`?debug=1&branch=0&bt=0.9`) ficaram com `maxAir=0`.
+- **Malha do fork:** `ForkMesh` desenha asfalto + ombro só no lado externo, borda externa e material `DoubleSide`; a borda interna encosta na pista principal.
+- **Debug de fork:** `?debug=1&branch=0&bt=0.9` teleporta para 90% do ramo, útil para QA do merge.
 
 ### Pendências
 

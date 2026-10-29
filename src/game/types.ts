@@ -293,7 +293,10 @@ export interface TrackForkBranch {
   readonly endS: number;
   /** Comprimento 3D do ramo (m). */
   readonly length: number;
+  /** Largura nominal do ramo (m); o perfil varia ao longo do traçado. */
   readonly width: number;
+  /** Lado da pista principal em que o ramo se abre (+1 = direita). */
+  readonly side: 1 | -1;
 }
 
 /**

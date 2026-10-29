@@ -10,7 +10,6 @@ import { offRoadHeightAt } from './terrainNoise';
 const SAMPLE_STEP = 1;
 const MIN_WIDTH = 4.2;
 const MAX_WIDTH = 10;
-const TRACK_MARGIN = 0.35;
 
 export interface BranchSample {
   s: number;
@@ -42,6 +41,7 @@ export class TrackBranch {
   readonly step: number;
   readonly sampleCount: number;
   readonly width: number;
+  readonly side: 1 | -1;
   readonly surface: SurfaceId;
   readonly offroad: SurfaceId;
 
@@ -74,6 +74,7 @@ export class TrackBranch {
     this.surface = surface;
     this.offroad = offroad;
     this.width = branch.width;
+    this.side = branch.side ?? 1;
 
     const points = branch.points.length >= 2
       ? branch.points
@@ -158,7 +159,9 @@ export class TrackBranch {
     const clamped = clamp(s, 0, this.length);
     const f = clamped / this.step;
     const i = clamp(Math.floor(f), 0, this.sampleCount);
-    return this.widths[i];
+    const j = Math.min(i + 1, this.sampleCount);
+    const t = clamp(f - i, 0, 1);
+    return lerp(this.widths[i], this.widths[j], t);
   }
 
   heightAt(s: number, u: number): number {
@@ -169,8 +172,16 @@ export class TrackBranch {
     const t = clamp(f - i, 0, 1);
 
     const baseY = lerp(this.py[i], this.py[j], t);
+
     const distance = Math.abs(u) - this.widthAt(clamped) * 0.5;
     if (distance <= 0) {
+      return baseY;
+    }
+
+    // O lado interno do ramo encosta na pista principal: continua plano para
+    // não criar um degrau/bump quando a física troca de caminho. Só o lado
+    // externo recebe o relevo de ombro.
+    if (u * this.side < 0) {
       return baseY;
     }
 
@@ -184,7 +195,11 @@ export class TrackBranch {
 
   surfaceAt(s: number, u: number): SurfaceId {
     const half = this.widthAt(s) * 0.5;
-    return Math.abs(u) <= half + TRACK_MARGIN ? this.surface : this.offroad;
+    // Lado interno = pista principal; nunca reportar off-road ali.
+    if (u * this.side <= half) {
+      return this.surface;
+    }
+    return this.offroad;
   }
 
   project(x: number, z: number, hintS?: number): BranchProjection {

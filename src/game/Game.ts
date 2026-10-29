@@ -295,6 +295,7 @@ export class Game {
     this.resizeObserver?.observe(container);
 
     this.applyDebugStartS();
+    this.applyDebugStartBranch();
 
     // Hook só de QA: `?debug=1` expõe a contagem da poeira para os testes
     // headless sem alterar a API pública do jogo.
@@ -569,6 +570,63 @@ export class Game {
     this.hud.setProgress(target);
     this.hud.setState(this.state);
     this.hud.setTelemetry(this.car.telemetry, this.car.state.position, this.debugInfo);
+  }
+
+  /**
+   * Teleporte de debug para um ramo de bifurcação. `ratio` 0 = entrada,
+   * 1 = saída. Útil para validar a transição de física sem dirigir o fork
+   * inteiro.
+   */
+  teleportToBranch(pathId: number, ratio = 0.5): boolean {
+    const branch = this.track.branches[pathId];
+    if (!branch) {
+      return false;
+    }
+
+    const clampedRatio = clamp(ratio, 0, 1);
+    const pathS = branch.length * clampedRatio;
+    const sample = branch.sampleAt(pathS);
+    const mainS =
+      branch.startS + (branch.endS - branch.startS) * clampedRatio;
+    const heading = Math.atan2(sample.tangent.x, sample.tangent.z);
+
+    this.teleportPosition.set(
+      sample.position.x,
+      branch.heightAt(pathS, 0),
+      sample.position.z,
+    );
+
+    this.cancelRecovery();
+    this.input.reset();
+    this.input.setRaceActive(false);
+    this.car.reset(this.teleportPosition, heading);
+    this.car.state.trackS = mainS;
+    this.car.state.trackU = 0;
+    this.activePathId = pathId;
+    this.activePathS = pathS;
+    this.activeBranchS = pathS;
+    this.currentSurfaceId = branch.surfaceAt(pathS, 0);
+    this.carView.reset();
+    this.carView.setPose(this.car.state.position, this.car.state.heading);
+    this.driftDust.reset();
+    this.hazards.reset();
+    this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
+    this.environment.update(mainS);
+    this.powerups.reset();
+    this.chaseCamera.setFovBoost(0);
+    this.hud.clearPowerups();
+    this.powerupHudElapsed = 0;
+
+    this.race.reset(mainS);
+    this.hideResult();
+    this.state = 'READY';
+    this.hud.hideSplit();
+    this.hud.setTime(0);
+    this.hud.setBest(this.race.bestTime);
+    this.hud.setProgress(mainS);
+    this.hud.setState(this.state);
+    this.hud.setTelemetry(this.car.telemetry, this.car.state.position, this.debugInfo);
+    return true;
   }
 
   dispose(): void {
@@ -963,7 +1021,10 @@ export class Game {
   private updateRumble(): void {
     const state = this.car.state;
     const half = this.track.widthAtPath(this.activePathId, this.activePathS) * 0.5;
-    const offRoad = Math.max(0, Math.abs(state.trackU) - half);
+    const distanceBeyond = Math.max(0, Math.abs(state.trackU) - half);
+    const offRoad = this.currentSurfaceId.endsWith('-offroad')
+      ? distanceBeyond
+      : 0;
     const surfaceBump = SURFACES[this.currentSurfaceId].bump;
     const bumpFactor = clamp(0.7 + 0.25 * surfaceBump, 0.7, 1.2);
     const intensity =
@@ -987,7 +1048,9 @@ export class Game {
 
     const state = this.car.state;
     const half = this.track.widthAtPath(this.activePathId, this.activePathS) * 0.5;
-    const beyondEdge = Math.abs(state.trackU) - half;
+    const beyondEdge = this.currentSurfaceId.endsWith('-offroad')
+      ? Math.abs(state.trackU) - half
+      : 0;
 
     if (beyondEdge > RACE_TUNING.offTrackLimit || state.trackS < BEHIND_START_S) {
       this.startRecovery();
@@ -1155,6 +1218,29 @@ export class Game {
     const value = Number(raw);
     if (Number.isFinite(value)) {
       this.teleportToS(value);
+    }
+  }
+
+  /**
+   * `?debug=1&branch=0&bt=0.9` teleporta para um ramo de bifurcação
+   * (0 = entrada, 1 = saída). QA da transição de física no merge.
+   */
+  private applyDebugStartBranch(): void {
+    if (!isDebugMode()) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const rawBranch = params.get('branch');
+    if (rawBranch === null) {
+      return;
+    }
+
+    const branchId = Number(rawBranch);
+    const rawRatio = params.get('bt');
+    const ratio = rawRatio === null ? 0.5 : Number(rawRatio);
+    if (Number.isFinite(branchId) && Number.isFinite(ratio)) {
+      this.teleportToBranch(Math.floor(branchId), ratio);
     }
   }
 

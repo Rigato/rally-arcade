@@ -77,7 +77,7 @@ O loop principal e **quase todo** o checklist do **MVP do GDD (seção 7)** est�
 - Rumble de câmera 0,15 m escalado por piso.
 - Poeira v8: pool 112, perfis por piso com duas cores, taxa/tamanho/alpha/vida/subida/gravidade próprios; deserto com contraste corrigido e neve com spray branco-azulado.
 - **Hairpin extremo:** 13–14 m, 1 por pista procedural, sweep 170–185°, largura 5,2–6,2 m, aproximação 45–60 m.
-- **Bifurcações:** 1–2 por pista, ramo com spline/altura/largura próprios, 14–26 m de deslocamento lateral.
+- **Bifurcações:** 1–2 por pista, ramo com spline/altura/largura próprios, 28–48 m de deslocamento lateral em janela de 150–260 m.
 - **Hazards:** 1–3 por pista, tipo por cenário, travessia e colisão.
 
 ### Procedural v8
@@ -101,6 +101,7 @@ O loop principal e **quase todo** o checklist do **MVP do GDD (seção 7)** est�
 - `?s=<m>` → teleporta e volta a READY; usar com `track=fixed` ou `proc&seed` se quiser pista estável.
 - `?touch=1` / `?touch=0` → força mostrar/ocultar controles touch (QA).
 - `?hazards=0` → desliga os obstáculos móveis; sem o parâmetro eles ficam ligados.
+- `?branch=0&bt=0.9` → debug do ramo de bifurcação (0 = entrada, 1 = saída); usar com `debug=1`.
 
 ### Persistência
 
@@ -249,11 +250,13 @@ npx --yes tsx scripts/proc-diversity.ts --count 12 --svg /tmp/opencode/proc-shee
 ## 8. Estado v8 — cenários, bifurcações, menu, velocímetro e hazards
 
 - **Cenários:** seis (floresta, deserto, neve, vilarejo, estrada de terra, praia); 4 setores distintos por pista; pisos e poeira próprios. A pista fixa continua floresta/deserto.
-- **Bifurcações:** 1–2 por pista; ramo com `TrackBranch`/`ForkMesh`, 14–26 m de deslocamento; física escolhe principal/ramo com histerese; pista fixa sem fork.
+- **Bifurcações:** 1–2 por pista; ramo com `TrackBranch`/`ForkMesh`, 28–48 m de deslocamento em janela de 150–260 m; começa/termina na borda e tem platô paralelo para entrada/saída sem salto; física escolhe principal/ramo com histerese; pista fixa sem fork.
+- **Hazards:** velocidades 4,8–10,5 m/s (1,5–1,8× mais rápidos) para reação curta.
 - **Hazards:** 1–3 por pista; tipos por cenário; travessia/collision; `?hazards=0` e checkbox no Debug; pista fixa sem hazards.
 - **Menu:** grade 1–100, melhor tempo por seed, campo de seed, SORTEAR, PISTA FIXA; pausa a corrida; `ESCOLHER PISTA` no resultado.
 - **Velocímetro:** km/h + barra, canto inferior, espelhado com o lado do stack.
 - **Validação:** 100/100 seeds; 1–2 forks; 1–3 hazards (78/15/7 em 100 seeds); `typecheck`, `build` e `validate:track` OK; console limpo em mobile 390×844.
 - **Arquivos novos:** `src/game/scenarios.ts`, `src/track/TrackBranch.ts`, `src/track/ForkMesh.ts`, `src/track/Hazards.ts`, `src/ui/TrackMenu.ts`.
 - **Pendências:** playtest de grip dos novos pisos, legibilidade da escolha de fork, frequência/timing dos hazards, poeira em neve/praia e performance em celular real.
+- **Correções v8b (Oct 29):** hazards mais rápidos; fork virou mini traçado de 150–260 m com entrada/saída em platô na borda; entrada/saída sem salto (`maxAir=0` nos testes); debug `?debug=1&branch=0&bt=0.9`.
 - **Não fazer ainda:** progressão, áudio, editor, caminhos com recompensa assimétrica, controle no ar e handbrake touch.

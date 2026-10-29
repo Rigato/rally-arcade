@@ -48,7 +48,7 @@ export class ForkMesh {
     const group = new THREE.Group();
     group.name = `fork-branch-${branch.id}`;
     const scenario = SCENARIOS[track.zoneAt(branch.startS)];
-    const columns = SHOULDER_OFFSETS.length * 2 + 3;
+    const columns = SHOULDER_OFFSETS.length + 3;
     const rows = Math.max(2, Math.ceil(branch.length / ROW_STEP) + 1);
     const positions = new Float32Array(rows * columns * 3);
     const colors = new Float32Array(rows * columns * 3);
@@ -60,19 +60,19 @@ export class ForkMesh {
       const s = Math.min(t * branch.length, branch.length);
       const sample = branch.sampleAt(s);
       const half = sample.width * 0.5;
-      // Nas pontas o ramo encosta na pista principal: os ombros somem para
-      // não pintar por cima do asfalto/terra da pista.
+      const side = branch.side;
       const shoulderScale =
         smoothstep(clamp(t / 0.12, 0, 1)) *
         smoothstep(clamp((1 - t) / 0.12, 0, 1));
 
+      // A borda interna do ramo encosta na pista principal; só o lado de fora
+      // recebe ombro. Assim o ramo não pinta por cima da pista no merge.
+      lateral[0] = -side * half;
+      lateral[1] = 0;
+      lateral[2] = side * half;
       for (let k = 0; k < SHOULDER_OFFSETS.length; k += 1) {
-        lateral[k] = -half - SHOULDER_OFFSETS[k] * shoulderScale;
-        lateral[columns - 1 - k] = half + SHOULDER_OFFSETS[k] * shoulderScale;
+        lateral[3 + k] = side * (half + SHOULDER_OFFSETS[k] * shoulderScale);
       }
-      lateral[SHOULDER_OFFSETS.length] = -half;
-      lateral[SHOULDER_OFFSETS.length + 1] = 0;
-      lateral[SHOULDER_OFFSETS.length + 2] = half;
 
       for (let k = 0; k < columns; k += 1) {
         const u = lateral[k];
@@ -116,6 +116,7 @@ export class ForkMesh {
       roughness: 0.96,
       metalness: 0,
       flatShading: true,
+      side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = `fork-branch-surface-${branch.id}`;
@@ -123,11 +124,11 @@ export class ForkMesh {
     this.materials.push(material);
     group.add(mesh);
 
-    group.add(this.buildEdgeRibbons(branch, scenario.colors.edge));
+    group.add(this.buildOuterEdgeRibbon(branch, scenario.colors.edge));
     return group;
   }
 
-  private buildEdgeRibbons(
+  private buildOuterEdgeRibbon(
     branch: TrackBranch,
     edgeColor: number,
   ): THREE.Mesh {
@@ -135,8 +136,7 @@ export class ForkMesh {
     const to = branch.length * 0.94;
     const span = Math.max(1, to - from);
     const rows = Math.max(2, Math.ceil(span / ROW_STEP) + 1);
-    const sides = 2;
-    const verticesPerRow = sides * 2;
+    const verticesPerRow = 2;
     const positions = new Float32Array(rows * verticesPerRow * 3);
     const colors = new Float32Array(rows * verticesPerRow * 3);
     const indices: number[] = [];
@@ -147,41 +147,27 @@ export class ForkMesh {
       const sample = branch.sampleAt(s);
       const half = sample.width * 0.5;
 
-      for (let sideIndex = 0; sideIndex < sides; sideIndex += 1) {
-        const side = sideIndex === 0 ? -1 : 1;
-        for (let innerIndex = 0; innerIndex < 2; innerIndex += 1) {
-          const inset = innerIndex === 0 ? 0 : EDGE_WIDTH;
-          const u = side * (half - inset);
-          const vertex = i * verticesPerRow + sideIndex * 2 + innerIndex;
+      for (let innerIndex = 0; innerIndex < 2; innerIndex += 1) {
+        const inset = innerIndex === 0 ? 0 : EDGE_WIDTH;
+        const u = branch.side * (half - inset);
+        const vertex = i * verticesPerRow + innerIndex;
 
-          positions[vertex * 3] = sample.position.x + sample.right.x * u;
-          positions[vertex * 3 + 1] = clamp(
-            branch.heightAt(s, u) + EDGE_LIFT,
-            -1000,
-            1000,
-          );
-          positions[vertex * 3 + 2] = sample.position.z + sample.right.z * u;
+        positions[vertex * 3] = sample.position.x + sample.right.x * u;
+        positions[vertex * 3 + 1] = branch.heightAt(s, u) + EDGE_LIFT;
+        positions[vertex * 3 + 2] = sample.position.z + sample.right.z * u;
 
-          colors[vertex * 3] = tempColor.r;
-          colors[vertex * 3 + 1] = tempColor.g;
-          colors[vertex * 3 + 2] = tempColor.b;
-        }
+        colors[vertex * 3] = tempColor.r;
+        colors[vertex * 3 + 1] = tempColor.g;
+        colors[vertex * 3 + 2] = tempColor.b;
       }
     }
 
     for (let i = 0; i < rows - 1; i += 1) {
-      for (let sideIndex = 0; sideIndex < sides; sideIndex += 1) {
-        const a = i * verticesPerRow + sideIndex * 2;
-        const b = a + 1;
-        const c = a + verticesPerRow + 1;
-        const d = a + verticesPerRow;
-
-        if (sideIndex === 0) {
-          indices.push(a, b, c, a, c, d);
-        } else {
-          indices.push(b, a, d, b, d, c);
-        }
-      }
+      const a = i * verticesPerRow;
+      const b = a + 1;
+      const c = a + verticesPerRow + 1;
+      const d = a + verticesPerRow;
+      indices.push(a, b, c, a, c, d);
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -198,7 +184,7 @@ export class ForkMesh {
       side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = `fork-branch-edges-${branch.id}`;
+    mesh.name = `fork-branch-outer-edge-${branch.id}`;
     this.geometries.push(geometry);
     this.materials.push(material);
     return mesh;

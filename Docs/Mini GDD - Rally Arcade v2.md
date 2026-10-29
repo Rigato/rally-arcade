@@ -96,8 +96,8 @@ Terceira pessoa, por trás do carro, em ângulo alto, quase top-down, para mostr
 - **Pistas procedurais:** A→B, **1518–1625 m**, 4 setores de ~354–438 m sorteados do pool de seis cenários, 7 tipos de curva (incluindo **hairpin extremo 13–14 m** e **kink**), largura 4,6–15,0 m, chokes de 4,6–5,4 m, 6–8 powerups, 50–75 obstáculos, 1–2 bifurcações, 1–3 obstáculos móveis e 2–3 platôs planos. Seed 1–100.
 - **Default:** abrir `/` sorteia uma procedural; **NOVA** gera outra; o menu **PISTAS** escolhe seed ou pista fixa.
 - A pista tem subidas e descidas; pontos íngremes criam saltos.
-- **Bifurcações:** em retas longas, um ramo com spline/altura/largura próprios sai da pista principal e volta a se juntar. O jogador escolhe o lado; não há recompensa exclusiva nesta versão. A pista fixa continua sem bifurcação.
-- **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor. Cada evento é um animal/veículo do cenário que atravessa a pista quando o carro se aproxima e colide. O começo da run fica preservado.
+- **Bifurcações:** em trechos longos de 150–260 m, um ramo com spline/altura/largura próprios nasce na borda da pista, corre paralelo por alguns metros, abre 28–48 m e volta a encostar. O jogador escolhe o lado; não há recompensa exclusiva nesta versão. A pista fixa continua sem bifurcação.
+- **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor. Cada evento é um animal/veículo do cenário que atravessa a pista quando o carro se aproxima e colide. A travessia é rápida (4,8–10,5 m/s) para exigir uma reação curta. O começo da run fica preservado.
 - **Fora da pista dá para se recuperar.** O piso acidentado desacelera, trepida e pode tirar o carro do chão; obstáculos sólidos dão ricochete. Se não bater, o jogador pode voltar à pista.
 - **Limite do mundo:** além de ~12 m da borda, o carro é recuperado automaticamente perdendo tempo.
 - **Caminhos alternativos/linhas de risco-recompensa:** a bifurcação v1 implementa a escolha de caminho sem recompensa assimétrica; linhas de risco/recompensa continuam em aberto.
