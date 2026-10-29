@@ -847,10 +847,21 @@ Esta rodada implementa o pacote de conteúdo/UX pedido no playtest: novos cenár
 - Testes: 100/100 seeds válidas; 99 seeds com forks v2 (67 com 1, 32 com 2) e 1 fallback v1 (seed 48); ramos 189,8–344,6 m; `typecheck` e 100 seeds OK. Entrada/saída com `maxAir=0` após a guarda de `projectNearest`.
 - Debug: `?gen=v1` (rollback), `?branch=0&bt=0.9` (teleporte para o ramo), scripts `proc-validate --gen v2` e `proc-diversity --gen v2`.
 
+### Gerador v3 por blocos (Oct 29, 2026)
+
+- Novo módulo `src/track/procedural/ProceduralTrackV3.ts`; v1 e v2 ficam intactas para rollback (`?gen=v2`, `?gen=v1`).
+- A pista v3 é uma sequência de 5–6 blocos de cenário. Blocos lineares têm uma rota completa; blocos com split têm entrada/saída comuns e duas rotas completas (A e B).
+- 1–2 splits por pista; cada rota tem ~600–790 m, curvas, largura/elevação próprias, ombros e bordas dos dois lados, cenário dos dois lados, postes, hazards, obstáculos, powerups e kickers locais.
+- O miolo do Y é paisagem (terreno com relevo + props), não um canteiro plano. `Scenery` passou a considerar todos os caminhos no backdrop e a preencher o miolo; `TrackMesh` encolhe os ombros no split e `ForkMesh` desenha a rota completa com ombros dos dois lados.
+- Conteúdo path-aware: `TrackHazard`, `TrackObstacle` e `TrackPowerup` têm `pathId`; hazards só ativam no caminho atual. `TrackBranch` aceita zonas/kickers locais. `Track.sampleAtPath/heightAtPath/...` usam `0 = principal, 1..N = rota`.
+- Parciais: 3, somente em fronteiras comuns de blocos. As bandeiras físicas mostram apenas **SPLIT** (sem nome de bioma).
+- Validação: 100/100 seeds v3; 84 seeds com 1 split e 16 com 2; comprimento 2.538–3.761 m; rotas 598–790 m; largura mínima 5,50 m; raio mínimo 11,5 m; sem autointerseção no eixo; `typecheck`, build e pista fixa OK. Entrada/saída de rota com `maxAir=0` no teste headless.
+- Debug: `?gen=v3` (padrão), `?gen=v2`, `?gen=v1`, `?branch=0&bt=0.9`; `scripts/proc-validate-v3.ts` gera relatório e SVG top-down.
+
 ### Pendências
 
 - Playtest no celular real: sentir grip de neve/asfalto/terra/praia e calibrar valores.
-- Avaliar a v2 das bifurcações no playtest: legibilidade, comprimento, entrada/saída e se a escolha parece um mini traçado. Comparar com `?gen=v1`.
+- Avaliar a v3 das bifurcações no playtest: legibilidade, se cada rota parece uma pista normal, se o miolo parece paisagem e se a escolha é divertida. Comparar com `?gen=v2` e `?gen=v1`.
 - Calibrar frequência/timing dos hazards e a justiça da colisão.
 - Validar poeira em neve/praia em movimento e performance de cenários no celular.
 - Recalibrar medalhas/parciais com os novos pisos, se o playtest pedir.

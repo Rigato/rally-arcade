@@ -5,6 +5,7 @@ import type { SceneryFamily } from '../game/scenarios';
 import type { Track, TrackZoneId } from '../track/Track';
 import type { TrackBranch } from '../track/TrackBranch';
 import type { TrackZone } from '../game/types';
+import type { TrackBlock } from '../game/types';
 import { zoneBlendAt, type ZoneId } from '../track/zones';
 import { createBannerTexture } from './canvasText';
 
@@ -58,6 +59,24 @@ interface SceneryItem {
   color: THREE.Color;
 }
 
+interface TerrainSample {
+  readonly pathId: number;
+  readonly s: number;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly width: number;
+  readonly zone: TrackZoneId;
+}
+
+interface TerrainHeight {
+  readonly y: number;
+  readonly zone: TrackZoneId;
+  readonly s: number;
+  readonly pathId: number;
+  readonly distance: number;
+}
+
 /** Passo (m) da distribuição de props por família de cenário. */
 const SCATTER_STEPS: Record<SceneryFamily, readonly [number, number]> = {
   forest: [3.7, 6.3],
@@ -94,6 +113,9 @@ export class Scenery {
   private readonly textures: THREE.Texture[] = [];
 
   private readonly items: SceneryItem[] = [];
+  private readonly terrainSamples: TerrainSample[] = [];
+  private readonly terrainGrid = new Map<string, TerrainSample[]>();
+  private hasRouteBranches = false;
   private readonly kickers: ReadonlyArray<{ readonly s: number; readonly length: number }>;
   private readonly zones: readonly TrackZone[];
   private readonly portalSs: readonly number[];
@@ -103,6 +125,7 @@ export class Scenery {
     this.zones = track.def.zones;
     this.portalSs = this.zones.slice(1).map((zone) => zone.start);
     this.kickers = track.def.kickers;
+    this.buildTerrainSamples(track);
 
     // Cada setor tem seu próprio PRNG: o cenário de cada zona é estável mesmo
     // que outro setor mude de extensão.
@@ -132,6 +155,24 @@ export class Scenery {
       const rng = mulberry32(0x0b1a5c00 + (index + 1) * 0x9e3779b1);
       this.scatterBranch(track, branch, rng);
     });
+
+    // Blocos com split: preenche o miolo do Y com cenário do bioma do bloco,
+    // usando o mesmo terreno do backdrop.
+    if (track.def.blocks) {
+      track.def.blocks.forEach((block, index) => {
+        if (block.kind !== 'split') {
+          return;
+        }
+        const branch = track.def.forks
+          ?.flatMap((fork) => fork.branches)
+          .find((entry) => entry.id === block.routeId);
+        if (!branch) {
+          return;
+        }
+        const rng = mulberry32(0x5eedb10c + (index + 1) * 0x85ebca6b);
+        this.scatterSplitIsland(track, block, branch.id, rng);
+      });
+    }
 
     this.group.add(this.buildTerrainBackdrop(track));
     this.group.add(this.buildPines());
@@ -203,8 +244,10 @@ export class Scenery {
           const z = sample.position.z + sample.right.z * u;
           const y = track.heightAt(ss, u) - 0.02;
 
-          // Não colocar decoração no meio de um ramo de bifurcação.
-          if (track.distanceToBranches(x, z) < 12) {
+          // Não colocar decoração no meio de uma estrada alternativa. No v3,
+          // só a faixa da rota é bloqueada; o resto do miolo pode receber
+          // cenário. No v2 (legacy), mantém o corredor de 12 m.
+          if (this.isNearRouteRoad(track, x, z, 2)) {
             continue;
           }
 
@@ -219,10 +262,8 @@ export class Scenery {
   }
 
   /**
-   * Decora o ombro externo de um ramo de bifurcação.
-   *
-   * O lado interno encosta na pista principal, então nada é colocado ali. A
-   * entrada e a saída ficam livres para a transição não parecer bloqueada.
+   * Decora o ombro de um ramo. No v3 a rota é completa: decora os dois lados
+   * (o interno preenche o miolo do Y). No v2 legacy, só o lado externo.
    */
   private scatterBranch(
     track: Track,
@@ -235,30 +276,347 @@ export class Scenery {
       return;
     }
 
-    const zone = track.zoneAt(branch.startS);
+    const fullRoute = branch.kind === 'route';
+    const sides = fullRoute ? [-1, 1] : [branch.side];
     let s = from;
 
     while (s < to) {
-      // Pequenas clareiras, como no scatter principal, mas mais raras: o ramo
-      // é estreito e precisa de leitura contínua do ombro.
       if (rng() >= 0.14) {
         const ss = clamp(s + (rng() - 0.5) * 2.4, from, to);
         const sample = branch.sampleAt(ss);
         const half = branch.widthAt(ss) * 0.5;
-        // 3–10 m além da borda, sempre do lado externo do ramo.
-        const lateral = half + 3 + rng() * 7;
-        const u = branch.side * lateral;
-        const x = sample.position.x + sample.right.x * u;
-        const z = sample.position.z + sample.right.z * u;
-        const y = branch.heightAt(ss, u) - 0.02;
+        const zone = branch.zoneAt(ss);
 
-        this.items.push(
-          this.makeItem(zone, x, y, z, rng, Math.abs(u) - half),
-        );
+        for (const side of sides) {
+          // 3–10 m além da borda, no lado externo e/ou interno.
+          const lateral = half + 3 + rng() * 7;
+          const u = side * lateral;
+          const x = sample.position.x + sample.right.x * u;
+          const z = sample.position.z + sample.right.z * u;
+          if (this.isNearRoad(track, x, z, branch, half + 2)) {
+            continue;
+          }
+          const y = branch.heightAt(ss, u) - 0.02;
+          this.items.push(
+            this.makeItem(zone, x, y, z, rng, Math.abs(u) - half),
+          );
+        }
       }
 
       s += BRANCH_SCATTER_STEP_MIN +
         rng() * (BRANCH_SCATTER_STEP_MAX - BRANCH_SCATTER_STEP_MIN);
+    }
+  }
+
+  private buildTerrainSamples(track: Track): void {
+    this.terrainSamples.length = 0;
+    this.terrainGrid.clear();
+    this.hasRouteBranches = track.branches.some(
+      (branch) => branch.kind === 'route',
+    );
+
+    const add = (sample: TerrainSample): void => {
+      this.terrainSamples.push(sample);
+      const key = this.terrainCellKey(sample.x, sample.z);
+      const bucket = this.terrainGrid.get(key);
+      if (bucket) {
+        bucket.push(sample);
+      } else {
+        this.terrainGrid.set(key, [sample]);
+      }
+    };
+
+    for (let s = 0; s <= track.length; s += 4) {
+      const sample = track.sampleAt(s);
+      add({
+        pathId: 0,
+        s,
+        x: sample.position.x,
+        y: sample.position.y,
+        z: sample.position.z,
+        width: sample.width,
+        zone: track.zoneAt(s),
+      });
+    }
+
+    track.branches.forEach((branch, index) => {
+      if (branch.kind !== 'route') {
+        return;
+      }
+      for (let s = 0; s <= branch.length; s += 4) {
+        const sample = branch.sampleAt(s);
+        add({
+          pathId: index + 1,
+          s,
+          x: sample.position.x,
+          y: sample.position.y,
+          z: sample.position.z,
+          width: sample.width,
+          zone: branch.zoneAt(s),
+        });
+      }
+    });
+  }
+
+  private terrainCellKey(x: number, z: number): string {
+    return `${Math.floor(x / 80)},${Math.floor(z / 80)}`;
+  }
+
+  private terrainSamplesNear(x: number, z: number): readonly TerrainSample[] {
+    const cx = Math.floor(x / 80);
+    const cz = Math.floor(z / 80);
+    const result: TerrainSample[] = [];
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dz = -1; dz <= 1; dz += 1) {
+        const bucket = this.terrainGrid.get(`${cx + dx},${cz + dz}`);
+        if (bucket) {
+          result.push(...bucket);
+        }
+      }
+    }
+    return result.length > 0 ? result : this.terrainSamples;
+  }
+
+  /**
+   * Altura do terreno visual no mundo. Mistura o caminho mais próximo com o
+   * mais próximo de OUTRO caminho, para o miolo do Y não ficar numa parede.
+   */
+  private terrainHeightAt(x: number, z: number): TerrainHeight {
+    let nearest: TerrainSample | null = null;
+    let nearestDistanceSq = Infinity;
+    const nearby = this.terrainSamplesNear(x, z);
+
+    for (const sample of nearby) {
+      const dx = sample.x - x;
+      const dz = sample.z - z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq < nearestDistanceSq) {
+        nearest = sample;
+        nearestDistanceSq = distanceSq;
+      }
+    }
+
+    if (!nearest) {
+      return { y: 0, zone: 'forest', s: 0, pathId: 0, distance: 0 };
+    }
+
+    // Prefere uma amostra de outro caminho (miolo entre rotas). Se não
+    // existir, usa a amostra mais próxima de outro trecho do mesmo caminho,
+    // preservando o fundo suave entre pernas paralelas (pista fixa/v2).
+    let blend: TerrainSample | null = null;
+    let blendDistanceSq = Infinity;
+    let samePathFar: TerrainSample | null = null;
+    let samePathFarDistanceSq = Infinity;
+
+    for (const sample of nearby) {
+      const dx = sample.x - x;
+      const dz = sample.z - z;
+      const distanceSq = dx * dx + dz * dz;
+      if (sample.pathId !== nearest.pathId) {
+        if (distanceSq < blendDistanceSq) {
+          blend = sample;
+          blendDistanceSq = distanceSq;
+        }
+        continue;
+      }
+      if (Math.abs(sample.s - nearest.s) < 40) {
+        continue;
+      }
+      if (distanceSq < samePathFarDistanceSq) {
+        samePathFar = sample;
+        samePathFarDistanceSq = distanceSq;
+      }
+    }
+
+    if (!blend && samePathFar) {
+      blend = samePathFar;
+      blendDistanceSq = samePathFarDistanceSq;
+    }
+
+    // Fallback global para pistas com pernas paralelas distantes (pista fixa
+    // e v2): procura a amostra mais próxima de outro trecho.
+    if (!blend && !this.hasRouteBranches) {
+      for (const sample of this.terrainSamples) {
+        if (sample.pathId === nearest.pathId &&
+            Math.abs(sample.s - nearest.s) < 40) {
+          continue;
+        }
+        const dx = sample.x - x;
+        const dz = sample.z - z;
+        const distanceSq = dx * dx + dz * dz;
+        if (distanceSq < blendDistanceSq) {
+          blend = sample;
+          blendDistanceSq = distanceSq;
+        }
+      }
+    }
+
+    const weight1 = 1 / (nearestDistanceSq + 1);
+    const weight2 = blend && Number.isFinite(blendDistanceSq)
+      ? 1 / (blendDistanceSq + 1)
+      : 0;
+    const blendedY = blend && weight2 > 0
+      ? (nearest.y * weight1 + blend.y * weight2) / (weight1 + weight2)
+      : nearest.y;
+
+    const lateral = Math.sqrt(nearestDistanceSq);
+    const half = nearest.width * 0.5;
+    const inner = half + 11.9;
+    const outside = Math.max(0, lateral - inner);
+    const slope = Math.min(Math.max(0, outside - 2) * 0.12, 5);
+    const ripple =
+      (Math.sin(nearest.s * 0.055 + lateral * 0.11) * 0.3 +
+        Math.sin(nearest.s * 0.017 - lateral * 0.03) * 0.6) *
+      Math.min(1, outside / 8);
+    const nearDepression = 0.18 + 0.26 * (1 - clamp(outside / 14, 0, 1));
+    const island = this.hasRouteBranches
+      ? clamp((Math.max(0, lateral - half - 2) - 2) / 20, 0, 1)
+      : 0;
+    const hill = island > 0
+      ? (
+        Math.sin(x * 0.032 + z * 0.017) * 1.8 +
+        Math.cos(z * 0.041 - x * 0.013) * 1.2
+      ) * island
+      : 0;
+
+    return {
+      y: blendedY - nearDepression - slope + ripple + hill,
+      zone: nearest.zone,
+      s: nearest.s,
+      pathId: nearest.pathId,
+      distance: Math.max(0, lateral - half),
+    };
+  }
+
+  /** `true` se (x,z) está na faixa de qualquer estrada do v3. */
+  private isNearRouteRoad(
+    track: Track,
+    x: number,
+    z: number,
+    margin: number,
+  ): boolean {
+    for (const branch of track.branches) {
+      const projection = branch.project(x, z);
+      if (branch.kind === 'route') {
+        if (
+          projection.distance <
+          branch.widthAt(projection.s) * 0.5 + margin
+        ) {
+          return true;
+        }
+      } else if (projection.distance < 12) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** `true` se (x,z) está em cima da pista principal ou de outro ramo. */
+  private isNearRoad(
+    track: Track,
+    x: number,
+    z: number,
+    current: TrackBranch,
+    margin: number,
+  ): boolean {
+    const main = track.project(x, z);
+    if (main.distance < track.widthAt(main.s) * 0.5 + margin) {
+      return true;
+    }
+    for (const branch of track.branches) {
+      if (branch === current) {
+        continue;
+      }
+      const projection = branch.project(x, z);
+      if (
+        projection.distance <
+        branch.widthAt(projection.s) * 0.5 + margin
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Preenche o miolo de um bloco com split. Amostra o bounding box do bloco,
+   * rejeita estradas e usa o mesmo terreno do backdrop.
+   */
+  private scatterSplitIsland(
+    track: Track,
+    block: TrackBlock,
+    routeId: string,
+    rng: () => number,
+  ): void {
+    const branch = track.branches.find((entry) => entry.id === routeId);
+    if (!branch) {
+      return;
+    }
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let s = block.startS; s <= block.endS; s += 12) {
+      const sample = track.sampleAt(s);
+      minX = Math.min(minX, sample.position.x);
+      maxX = Math.max(maxX, sample.position.x);
+      minZ = Math.min(minZ, sample.position.z);
+      maxZ = Math.max(maxZ, sample.position.z);
+    }
+    for (let s = 0; s <= branch.length; s += 12) {
+      const sample = branch.sampleAt(s);
+      minX = Math.min(minX, sample.position.x);
+      maxX = Math.max(maxX, sample.position.x);
+      minZ = Math.min(minZ, sample.position.z);
+      maxZ = Math.max(maxZ, sample.position.z);
+    }
+
+    const spacing = 6.5;
+    let placed = 0;
+    for (let z = minZ - 10; z <= maxZ + 10 && placed < 260; z += spacing) {
+      for (let x = minX - 10; x <= maxX + 10 && placed < 260; x += spacing) {
+        if (rng() > 0.55) {
+          continue;
+        }
+        const px = x + (rng() - 0.5) * spacing * 0.8;
+        const pz = z + (rng() - 0.5) * spacing * 0.8;
+        if (this.isNearRouteRoad(track, px, pz, 2.5)) {
+          continue;
+        }
+        const mainDistance = track.project(px, pz).distance;
+        const branchDistance = branch.project(px, pz).distance;
+        if (mainDistance > 95 || branchDistance > 95) {
+          continue;
+        }
+        const terrain = this.terrainHeightAt(px, pz);
+        if (terrain.distance < 2.5) {
+          continue;
+        }
+        let tooClose = false;
+        for (const item of this.items) {
+          const dx = item.x - px;
+          const dz = item.z - pz;
+          if (dx * dx + dz * dz < 2 * 2) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (tooClose) {
+          continue;
+        }
+        this.items.push(
+          this.makeItem(
+            block.scenario,
+            px,
+            terrain.y - 0.02,
+            pz,
+            rng,
+            terrain.distance,
+          ),
+        );
+        placed += 1;
+      }
     }
   }
 
@@ -464,29 +822,25 @@ export class Scenery {
     let maxX = -Infinity;
     let minZ = Infinity;
     let maxZ = -Infinity;
-    for (const point of track.def.points) {
-      minX = Math.min(minX, point.x);
-      maxX = Math.max(maxX, point.x);
-      minZ = Math.min(minZ, point.z);
-      maxZ = Math.max(maxZ, point.z);
+    if (this.terrainSamples.length > 0) {
+      for (const sample of this.terrainSamples) {
+        minX = Math.min(minX, sample.x);
+        maxX = Math.max(maxX, sample.x);
+        minZ = Math.min(minZ, sample.z);
+        maxZ = Math.max(maxZ, sample.z);
+      }
+    } else {
+      for (const point of track.def.points) {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minZ = Math.min(minZ, point.z);
+        maxZ = Math.max(maxZ, point.z);
+      }
     }
     minX -= margin;
     maxX += margin;
     minZ -= margin;
     maxZ += margin;
-
-    // Amostras do centro usadas para suavizar o fundo entre pernas paralelas.
-    // Sem isso, o vizinho mais próximo troca de perna e cria uma parede.
-    const centerSamples: Array<{ s: number; x: number; y: number; z: number }> = [];
-    for (let s = 0; s <= track.length; s += 4) {
-      const sample = track.sampleAt(s);
-      centerSamples.push({
-        s,
-        x: sample.position.x,
-        y: sample.position.y,
-        z: sample.position.z,
-      });
-    }
 
     const cols = Math.ceil((maxX - minX) / spacing) + 1;
     const rows = Math.ceil((maxZ - minZ) / spacing) + 1;
@@ -498,70 +852,24 @@ export class Scenery {
       const z = minZ + row * spacing;
       for (let col = 0; col < cols; col += 1) {
         const x = minX + col * spacing;
-
-        let nearestS = 0;
-        let nearestDistanceSq = Infinity;
-        let nearestY = 0;
-        for (const sample of centerSamples) {
-          const dx = sample.x - x;
-          const dz = sample.z - z;
-          const distanceSq = dx * dx + dz * dz;
-          if (distanceSq < nearestDistanceSq) {
-            nearestDistanceSq = distanceSq;
-            nearestS = sample.s;
-            nearestY = sample.y;
-          }
-        }
-
-        let secondDistanceSq = Infinity;
-        let secondY = 0;
-        for (const sample of centerSamples) {
-          if (Math.abs(sample.s - nearestS) < 40) {
-            continue;
-          }
-          const dx = sample.x - x;
-          const dz = sample.z - z;
-          const distanceSq = dx * dx + dz * dz;
-          if (distanceSq < secondDistanceSq) {
-            secondDistanceSq = distanceSq;
-            secondY = sample.y;
-          }
-        }
-
-        const weight1 = 1 / (nearestDistanceSq + 1);
-        const weight2 = Number.isFinite(secondDistanceSq)
-          ? 1 / (secondDistanceSq + 1)
-          : 0;
-        const blendedY =
-          (nearestY * weight1 + secondY * weight2) / (weight1 + weight2);
-
-        const lateral = Math.sqrt(nearestDistanceSq);
-        const half = track.widthAt(nearestS) * 0.5;
-        const inner = half + 11.9;
-        const outside = Math.max(0, lateral - inner);
-        const slope = Math.min(Math.max(0, outside - 2) * 0.12, 5.0);
-        const ripple =
-          (Math.sin(nearestS * 0.055 + lateral * 0.11) * 0.3 +
-            Math.sin(nearestS * 0.017 - lateral * 0.03) * 0.6) *
-          Math.min(1, outside / 8);
-        // No corredor da pista o relevo fica rebaixado: a malha de fundo tem
-        // células de 6 m e a corda entre vértices passa por cima da rampa
-        // convexa dos kickers. Sem essa folga o terreno cobre a pista.
-        const nearDepression = 0.18 + 0.26 * (1 - clamp(outside / 14, 0, 1));
-        const y = blendedY - nearDepression - slope + ripple;
-
+        const terrain = this.terrainHeightAt(x, z);
         const vertex = row * cols + col;
+
         positions[vertex * 3] = x;
-        positions[vertex * 3 + 1] = y;
+        positions[vertex * 3 + 1] = terrain.y;
         positions[vertex * 3 + 2] = z;
 
-        const blend = zoneBlendAt(this.zones, nearestS);
-        const fromZone = this.zones[blend.from]?.id ?? 'forest';
-        const toZone = this.zones[blend.to]?.id ?? 'forest';
         const grain = 0.9 + hash2(col, row) * 0.18;
-        tempTerrainColor
-          .copy(TERRAIN_COLORS[fromZone])
-          .lerp(TERRAIN_COLORS[toZone], blend.t);
+        if (terrain.pathId === 0) {
+          const blend = zoneBlendAt(this.zones, terrain.s);
+          const fromZone = this.zones[blend.from]?.id ?? 'forest';
+          const toZone = this.zones[blend.to]?.id ?? 'forest';
+          tempTerrainColor
+            .copy(TERRAIN_COLORS[fromZone])
+            .lerp(TERRAIN_COLORS[toZone], blend.t);
+        } else {
+          tempTerrainColor.copy(TERRAIN_COLORS[terrain.zone]);
+        }
         colors[vertex * 3] = tempTerrainColor.r * grain;
         colors[vertex * 3 + 1] = tempTerrainColor.g * grain;
         colors[vertex * 3 + 2] = tempTerrainColor.b * grain;
@@ -1285,16 +1593,21 @@ export class Scenery {
         continue;
       }
 
+      const sides = branch.kind === 'route'
+        ? [-1, 1]
+        : [branch.side];
       for (let s = from; s <= to; s += EDGE_POST_SPACING) {
         const sample = branch.sampleAt(s);
         const half = branch.widthAt(s) * 0.5;
-        const u = branch.side * (half + BRANCH_POST_CLEARANCE);
-        placements.push({
-          x: sample.position.x + sample.right.x * u,
-          y: branch.heightAt(s, u),
-          z: sample.position.z + sample.right.z * u,
-          yaw: Math.atan2(sample.tangent.x, sample.tangent.z),
-        });
+        for (const side of sides) {
+          const u = side * (half + BRANCH_POST_CLEARANCE);
+          placements.push({
+            x: sample.position.x + sample.right.x * u,
+            y: branch.heightAt(s, u),
+            z: sample.position.z + sample.right.z * u,
+            yaw: Math.atan2(sample.tangent.x, sample.tangent.z),
+          });
+        }
       }
     }
 

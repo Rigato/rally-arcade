@@ -297,6 +297,15 @@ export interface TrackForkBranch {
   readonly width: number;
   /** Lado da pista principal em que o ramo se abre (+1 = direita). */
   readonly side: 1 | -1;
+  /**
+   * `route` = rota completa do gerador v3, com zonas, ombros dos dois lados
+   * e conteúdo próprio. Ausente/`legacy` mantém o ramo antigo (v1/v2).
+   */
+  readonly kind?: 'legacy' | 'route';
+  /** Zonas locais do ramo, com `s` relativo ao início dele. */
+  readonly zones?: readonly TrackZone[];
+  /** Kickers locais do ramo (s relativo ao início dele). */
+  readonly kickers?: readonly TrackKicker[];
 }
 
 /**
@@ -326,18 +335,23 @@ export interface TrackHazard {
   readonly kind: HazardKind;
   readonly zoneIndex: number;
   readonly scenario: ScenarioId;
-  /** `s` da pista principal onde o objeto cruza. */
+  /** `s` do caminho onde o objeto cruza (principal ou rota). */
   readonly s: number;
   readonly direction: 1 | -1;
   readonly speed: number;
   readonly radius: number;
   readonly height: number;
+  /** 0/ausente = pista principal; 1..N = rota alternativa. */
+  readonly pathId?: number;
 }
 
 export interface TrackKicker {
+  /** `s` do caminho (principal ou rota). */
   readonly s: number;
   readonly length: number;
   readonly height: number;
+  /** 0/ausente = pista principal; 1..N = rota alternativa. */
+  readonly pathId?: number;
 }
 
 export interface TrackObstacle {
@@ -345,18 +359,36 @@ export interface TrackObstacle {
   readonly s: number;
   readonly u: number;
   readonly radius: number;
+  /** 0/ausente = pista principal; 1..N = rota alternativa. */
+  readonly pathId?: number;
 }
 
 export interface TrackPowerup {
   readonly type: PowerupType;
   readonly s: number;
   readonly u: number;
+  /** 0/ausente = pista principal; 1..N = rota alternativa. */
+  readonly pathId?: number;
 }
 
 export interface TrackSplit {
   readonly s: number;
   readonly name: string;
   readonly target: number;
+}
+
+/** Bloco de cenário do gerador v3. `startS/endS` usam o eixo lógico. */
+export interface TrackBlock {
+  readonly id: string;
+  readonly index: number;
+  readonly kind: 'linear' | 'split';
+  readonly scenario: ScenarioId;
+  readonly startS: number;
+  readonly endS: number;
+  /** Preenchido em blocos com split: id do ramo/rota alternativa. */
+  readonly routeId?: string;
+  /** Comprimento 3D da rota alternativa (m). */
+  readonly routeLength?: number;
 }
 
 export interface TrackDef {
@@ -372,4 +404,6 @@ export interface TrackDef {
   readonly forks?: readonly TrackFork[];
   /** Obstáculos móveis opcionais (pistas procedurais; a fixa não usa). */
   readonly hazards?: readonly TrackHazard[];
+  /** Blocos de cenário do gerador v3 (metadados de debug/validação). */
+  readonly blocks?: readonly TrackBlock[];
 }

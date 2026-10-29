@@ -5,12 +5,16 @@ import type { Track } from './Track';
 import type { TrackBranch } from './TrackBranch';
 
 const SHOULDER_OFFSETS = [8, 4.5, 1.8];
+const INNER_SHOULDER_OFFSETS = [1.4];
+/** Ombros da rota completa, do mais interno para o mais externo. */
+const ROUTE_SHOULDER_OFFSETS = [1.2, 2.5, 4];
 const ROAD_LIFT = 0.045;
 const EDGE_LIFT = 0.06;
 const EDGE_WIDTH = 0.42;
 const ROW_STEP = 1.5;
 
 const tempColor = new THREE.Color();
+const tempTerrain = new THREE.Color();
 
 /**
  * Malha visual dos ramos de bifurcação.
@@ -18,6 +22,11 @@ const tempColor = new THREE.Color();
  * É separada da `TrackMesh` principal para não misturar a faixa da pista
  * principal com os desvios. Cada ramo tem asfalto/terra/neve coerente com o
  * cenário do setor e ombros de 8 m para esconder o terreno de fundo.
+ *
+ * - `legacy`: só o ombro externo, encostando na pista principal pelo lado
+ *   interno (visual v1/v2 preservado).
+ * - `route`: rota completa do v3, com ombros e bordas dos dois lados. Nas
+ *   pontas o ombro interno é suprimido para não pintar sobre a pista.
  */
 export class ForkMesh {
   readonly group = new THREE.Group();
@@ -47,8 +56,11 @@ export class ForkMesh {
   private buildBranch(track: Track, branch: TrackBranch): THREE.Group {
     const group = new THREE.Group();
     group.name = `fork-branch-${branch.id}`;
-    const scenario = SCENARIOS[track.zoneAt(branch.startS)];
-    const columns = SHOULDER_OFFSETS.length + 3;
+    const fullRoute = branch.kind === 'route';
+    const legacyScenario = SCENARIOS[track.zoneAt(branch.startS)];
+    const columns = fullRoute
+      ? INNER_SHOULDER_OFFSETS.length + ROUTE_SHOULDER_OFFSETS.length + 3
+      : SHOULDER_OFFSETS.length + 3;
     const rows = Math.max(2, Math.ceil(branch.length / ROW_STEP) + 1);
     const positions = new Float32Array(rows * columns * 3);
     const colors = new Float32Array(rows * columns * 3);
@@ -65,14 +77,36 @@ export class ForkMesh {
         smoothstep(clamp(t / 0.12, 0, 1)) *
         smoothstep(clamp((1 - t) / 0.12, 0, 1));
 
-      // A borda interna do ramo encosta na pista principal; só o lado de fora
-      // recebe ombro. Assim o ramo não pinta por cima da pista no merge.
-      lateral[0] = -side * half;
-      lateral[1] = 0;
-      lateral[2] = side * half;
-      for (let k = 0; k < SHOULDER_OFFSETS.length; k += 1) {
-        lateral[3 + k] = side * (half + SHOULDER_OFFSETS[k] * shoulderScale);
+      if (fullRoute) {
+        // Rota completa: ombro interno mais curto (4 m) para o miolo do Y não
+        // virar um apron plano. Ele some nas pontas para encostar na pista.
+        const innerScale =
+          smoothstep(clamp(t / 0.18, 0, 1)) *
+          smoothstep(clamp((1 - t) / 0.18, 0, 1));
+
+        for (let k = 0; k < INNER_SHOULDER_OFFSETS.length; k += 1) {
+          lateral[k] = -side * (half + INNER_SHOULDER_OFFSETS[k] * innerScale);
+        }
+        lateral[INNER_SHOULDER_OFFSETS.length] = -side * half;
+        lateral[INNER_SHOULDER_OFFSETS.length + 1] = 0;
+        lateral[INNER_SHOULDER_OFFSETS.length + 2] = side * half;
+        for (let k = 0; k < ROUTE_SHOULDER_OFFSETS.length; k += 1) {
+          lateral[INNER_SHOULDER_OFFSETS.length + 3 + k] =
+            side * (half + ROUTE_SHOULDER_OFFSETS[k] * shoulderScale);
+        }
+      } else {
+        // Ramo legado: a borda interna encosta na pista principal; só o lado
+        // de fora recebe ombro.
+        lateral[0] = -side * half;
+        lateral[1] = 0;
+        lateral[2] = side * half;
+        for (let k = 0; k < SHOULDER_OFFSETS.length; k += 1) {
+          const offset = SHOULDER_OFFSETS[SHOULDER_OFFSETS.length - 1 - k];
+          lateral[3 + k] = side * (half + offset * shoulderScale);
+        }
       }
+
+      const scenario = fullRoute ? SCENARIOS[branch.zoneAt(s)] : legacyScenario;
 
       for (let k = 0; k < columns; k += 1) {
         const u = lateral[k];
@@ -86,7 +120,27 @@ export class ForkMesh {
         positions[vertex * 3 + 1] = y;
         positions[vertex * 3 + 2] = z;
 
-        tempColor.setHex(isRoad ? scenario.colors.road : scenario.colors.shoulder);
+        const outerStart = INNER_SHOULDER_OFFSETS.length + 3;
+        const outerBlend = fullRoute && k >= outerStart
+          ? (k - outerStart) /
+            Math.max(1, ROUTE_SHOULDER_OFFSETS.length - 1)
+          : 0;
+        tempColor.setHex(
+          isRoad
+            ? scenario.colors.road
+            : fullRoute && k < INNER_SHOULDER_OFFSETS.length
+              ? scenario.colors.terrain
+              : scenario.colors.shoulder,
+        );
+        if (fullRoute && isRoad) {
+          // A TrackMesh principal usa uma textura de grão que escurece o
+          // asfalto/terra; a rota usa só cor por vértice. Aproxima o brilho.
+          tempColor.multiplyScalar(0.74);
+        }
+        if (!isRoad && outerBlend > 0) {
+          tempTerrain.setHex(scenario.colors.terrain);
+          tempColor.lerp(tempTerrain, outerBlend * 0.85);
+        }
         const grain = 0.94 + hash2(i, k) * 0.12;
         colors[vertex * 3] = tempColor.r * grain;
         colors[vertex * 3 + 1] = tempColor.g * grain;
@@ -124,32 +178,62 @@ export class ForkMesh {
     this.materials.push(material);
     group.add(mesh);
 
-    group.add(this.buildOuterEdgeRibbon(branch, scenario.colors.edge));
+    group.add(
+      this.buildEdgeRibbon(
+        branch,
+        branch.length * (fullRoute ? 0.01 : 0.06),
+        branch.length * (fullRoute ? 0.99 : 0.94),
+        branch.side,
+        legacyScenario.colors.edge,
+        fullRoute,
+        'outer',
+      ),
+    );
+
+    if (fullRoute) {
+      group.add(
+        this.buildEdgeRibbon(
+          branch,
+          branch.length * 0.02,
+          branch.length * 0.98,
+          -branch.side,
+          legacyScenario.colors.edge,
+          true,
+          'inner',
+        ),
+      );
+    }
+
     return group;
   }
 
-  private buildOuterEdgeRibbon(
+  private buildEdgeRibbon(
     branch: TrackBranch,
+    from: number,
+    to: number,
+    side: number,
     edgeColor: number,
+    perZoneColor: boolean,
+    edge: 'outer' | 'inner',
   ): THREE.Mesh {
-    const from = branch.length * 0.06;
-    const to = branch.length * 0.94;
     const span = Math.max(1, to - from);
     const rows = Math.max(2, Math.ceil(span / ROW_STEP) + 1);
     const verticesPerRow = 2;
     const positions = new Float32Array(rows * verticesPerRow * 3);
     const colors = new Float32Array(rows * verticesPerRow * 3);
     const indices: number[] = [];
-    tempColor.setHex(edgeColor);
 
     for (let i = 0; i < rows; i += 1) {
       const s = Math.min(from + (i / (rows - 1)) * span, to);
       const sample = branch.sampleAt(s);
       const half = sample.width * 0.5;
+      tempColor.setHex(
+        perZoneColor ? SCENARIOS[branch.zoneAt(s)].colors.edge : edgeColor,
+      );
 
       for (let innerIndex = 0; innerIndex < 2; innerIndex += 1) {
         const inset = innerIndex === 0 ? 0 : EDGE_WIDTH;
-        const u = branch.side * (half - inset);
+        const u = side * (half - inset);
         const vertex = i * verticesPerRow + innerIndex;
 
         positions[vertex * 3] = sample.position.x + sample.right.x * u;
@@ -184,7 +268,7 @@ export class ForkMesh {
       side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = `fork-branch-outer-edge-${branch.id}`;
+    mesh.name = `fork-branch-${edge}-edge-${branch.id}`;
     this.geometries.push(geometry);
     this.materials.push(material);
     return mesh;

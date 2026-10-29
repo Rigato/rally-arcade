@@ -16,6 +16,7 @@ import { TrackMesh } from '../track/TrackMesh';
 import { TRACK_01 } from '../track/track01';
 import { generateProceduralTrack } from '../track/procedural/ProceduralTrack';
 import { generateProceduralTrackV2 } from '../track/procedural/ProceduralTrackV2';
+import { generateProceduralTrackV3 } from '../track/procedural/ProceduralTrackV3';
 import { Hud, type HudDebugInfo } from '../ui/Hud';
 import { Results } from '../ui/Results';
 import { TrackMenu } from '../ui/TrackMenu';
@@ -354,7 +355,7 @@ export class Game {
           return hazards.isEnabled();
         },
         get nextS(): number | null {
-          return hazards.getNextS(currentCarS());
+          return hazards.getNextS(currentCarS(), currentPathId() + 1);
         },
       };
       (
@@ -495,12 +496,25 @@ export class Game {
 
   /** Teleporta para ~70 m antes do próximo hazard e retorna o `s` dele. */
   teleportToNextHazard(): number | null {
-    const s = this.hazards.getNextS(this.car.state.trackS);
-    if (s === null) {
+    const target = this.hazards.getNextTarget(
+      this.car.state.trackS,
+      this.activePathId + 1,
+    );
+    if (!target) {
       return null;
     }
-    this.teleportToS(Math.max(0, s - 70));
-    return s;
+    if (target.pathId > 0) {
+      const branch = this.track.branches[target.pathId - 1];
+      if (branch) {
+        this.teleportToBranch(
+          target.pathId - 1,
+          clamp((target.localS - 70) / branch.length, 0, 1),
+        );
+        return target.logicalS;
+      }
+    }
+    this.teleportToS(Math.max(0, target.logicalS - 70));
+    return target.logicalS;
   }
 
   /** Wireframe dos colisores (debug, desligado por padrão). */
@@ -754,7 +768,7 @@ export class Game {
 
     const state = this.car.state;
     if (this.state === 'RUNNING') {
-      this.hazards.update(fixedDt, state.trackS);
+      this.hazards.update(fixedDt, state.trackS, this.activePathId + 1);
     }
     const before = this.track.projectNearest(
       state.position.x,
@@ -767,7 +781,7 @@ export class Game {
     this.activePathS = before.pathS;
     this.activeBranchS = before.pathS;
     const trackSurface = this.track.surfaceAtPath(
-      before.pathId,
+      before.pathId + 1,
       before.pathS,
       before.u,
     );
@@ -1021,7 +1035,7 @@ export class Game {
    */
   private updateRumble(): void {
     const state = this.car.state;
-    const half = this.track.widthAtPath(this.activePathId, this.activePathS) * 0.5;
+    const half = this.track.widthAtPath(this.activePathId + 1, this.activePathS) * 0.5;
     const distanceBeyond = Math.max(0, Math.abs(state.trackU) - half);
     const offRoad = this.currentSurfaceId.endsWith('-offroad')
       ? distanceBeyond
@@ -1048,7 +1062,7 @@ export class Game {
     }
 
     const state = this.car.state;
-    const half = this.track.widthAtPath(this.activePathId, this.activePathS) * 0.5;
+    const half = this.track.widthAtPath(this.activePathId + 1, this.activePathS) * 0.5;
     const beyondEdge = this.currentSurfaceId.endsWith('-offroad')
       ? Math.abs(state.trackU) - half
       : 0;
@@ -1167,8 +1181,14 @@ export class Game {
       s: state.trackS,
       u: state.trackU,
       y: state.position.y,
-      zone: scenarioLabel(this.track.zoneAt(state.trackS)).toUpperCase(),
-      offRoad: this.track.offTrackDistance(state.trackS, state.trackU),
+      zone: scenarioLabel(
+        this.track.zoneAtPath(this.activePathId + 1, this.activePathS),
+      ).toUpperCase(),
+      offRoad: Math.max(
+        0,
+        Math.abs(state.trackU) -
+          this.track.widthAtPath(this.activePathId + 1, this.activePathS) * 0.5,
+      ),
       obstacles: this.obstacles.getCount(),
       hazards:
         `${this.hazards.getCount()} total · ` +
@@ -1176,8 +1196,8 @@ export class Game {
         `${this.hazards.isEnabled() ? 'ON' : 'OFF'}`,
       path:
         this.activePathId < 0
-          ? 'principal'
-          : `ramo ${this.activePathId + 1} (${this.activePathS.toFixed(0)} m)`,
+          ? 'rota A'
+          : `rota ${this.activePathId + 2} (${this.activePathS.toFixed(0)} m)`,
       impact: this.lastImpact,
       powerups: this.describePowerups(),
     };
@@ -1330,9 +1350,25 @@ function resolveTrackDef(): typeof TRACK_01 {
 
   if (track === 'proc' || track === null) {
     const seed = parseTrackSeed(params.get('seed')) ?? randomTrackSeed();
-    const version = params.get('gen') === 'v1' ? 1 : 2;
+    const rawVersion = params.get('gen');
+    const version = rawVersion === 'v1' ? 1 : rawVersion === 'v2' ? 2 : 3;
 
-    if (version === 2) {
+    if (version === 3) {
+      try {
+        const generated = generateProceduralTrackV3(seed);
+        console.info(
+          `[Game] pista procedural v3 seed=${seed} (${generated.id}).`,
+        );
+        return generated;
+      } catch (error) {
+        console.warn(
+          '[Game] falha no gerador procedural v3; tentando a v2.',
+          error,
+        );
+      }
+    }
+
+    if (version >= 2) {
       try {
         const generated = generateProceduralTrackV2(seed);
         console.info(

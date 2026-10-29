@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp } from '../core/math';
+import { clamp, lerp } from '../core/math';
 import { HAZARD_TUNING } from '../game/config';
 import type { Car } from '../car/Car';
 import type { HazardKind, TrackHazard } from '../game/types';
@@ -14,9 +14,22 @@ const CROSSING_MARGIN = 9;
 
 type HazardState = 'idle' | 'crossing' | 'done';
 
+export interface HazardTarget {
+  readonly logicalS: number;
+  readonly pathId: number;
+  readonly localS: number;
+}
+
 interface HazardRuntime {
   readonly def: TrackHazard;
   readonly group: THREE.Group;
+  /** 0 = pista principal; 1..N = rota alternativa. */
+  readonly pathId: number;
+  /**
+   * `s` equivalente na pista principal (eixo lógico). Para a principal é o
+   * próprio `def.s`; para rotas interpola entre `branch.startS/endS`.
+   */
+  readonly logicalS: number;
   state: HazardState;
   progress: number;
   crossingDistance: number;
@@ -71,16 +84,28 @@ export class Hazards {
       group.visible = false;
       this.group.add(group);
 
-      const sample = track.sampleAt(def.s);
+      const pathId =
+        (def.pathId ?? 0) > 0 && track.branches[(def.pathId ?? 0) - 1]
+          ? (def.pathId as number)
+          : 0;
+      const branch = pathId > 0 ? track.branches[pathId - 1] : undefined;
+      const localLength = branch?.length ?? track.length;
+      const sample = track.sampleAtPath(pathId, def.s);
       const half = sample.width * 0.5;
       const startU = def.direction > 0 ? -(half + CROSSING_MARGIN) : half + CROSSING_MARGIN;
       const endU = -startU;
       const rightX = sample.right.x * def.direction;
       const rightZ = sample.right.z * def.direction;
+      const ratio = localLength > 1e-6 ? clamp(def.s / localLength, 0, 1) : 0;
+      const logicalS = branch
+        ? lerp(branch.startS, branch.endS, ratio)
+        : def.s;
 
       this.events.push({
         def,
         group,
+        pathId,
+        logicalS,
         state: 'idle',
         progress: 0,
         crossingDistance: Math.abs(endU - startU),
@@ -108,18 +133,34 @@ export class Hazards {
     return this.events.map((event) => event.def);
   }
 
-  /** Próximo hazard à frente (debug). */
-  getNextS(s: number): number | null {
-    let best: number | null = null;
+  /**
+   * Próximo hazard à frente no caminho `pathId` (debug). Usa o `s` lógico
+   * (eixo principal) para permitir comparar rotas com a pista principal.
+   */
+  getNextTarget(s: number, pathId = 0): HazardTarget | null {
+    let best: HazardRuntime | null = null;
     for (const event of this.events) {
-      if (event.state === 'done' || event.def.s <= s) {
+      if (event.pathId !== pathId) {
         continue;
       }
-      if (best === null || event.def.s < best) {
-        best = event.def.s;
+      if (event.state === 'done' || event.logicalS <= s) {
+        continue;
+      }
+      if (best === null || event.logicalS < best.logicalS) {
+        best = event;
       }
     }
-    return best;
+    return best
+      ? {
+          logicalS: best.logicalS,
+          pathId: best.pathId,
+          localS: best.def.s,
+        }
+      : null;
+  }
+
+  getNextS(s: number, pathId = 0): number | null {
+    return this.getNextTarget(s, pathId)?.logicalS ?? null;
   }
 
   setEnabled(enabled: boolean): void {
@@ -146,21 +187,26 @@ export class Hazards {
   }
 
   /**
-   * Avança os eventos. `carS` é a posição na pista principal; o gatilho usa
-   * a distância de reação para o objeto já estar atravessando na chegada.
+   * Avança os eventos do caminho atual. `carS` é a posição no eixo lógico da
+   * pista principal (para rotas, o `mainS` projetado); `pathId` seleciona
+   * quais hazards podem ser ativados: 0 = principal, 1..N = rota. Assim um
+   * hazard da rota B nunca dispara enquanto o carro está na rota A.
+   *
+   * O gatilho usa a distância de reação para o objeto já estar atravessando
+   * na chegada.
    */
-  update(dt: number, carS: number): void {
+  update(dt: number, carS: number, pathId = 0): void {
     if (!this.enabled) {
       return;
     }
 
     for (const event of this.events) {
-      if (event.state === 'done') {
+      if (event.pathId !== pathId || event.state === 'done') {
         continue;
       }
 
       if (event.state === 'idle') {
-        const distance = event.def.s - carS;
+        const distance = event.logicalS - carS;
         if (distance < -12) {
           event.state = 'done';
           event.group.visible = false;
@@ -183,10 +229,10 @@ export class Hazards {
       );
 
       const u = event.startU + (event.endU - event.startU) * event.progress;
-      const sample = this.track.sampleAt(event.def.s);
+      const sample = this.track.sampleAtPath(event.pathId, event.def.s);
       const x = sample.position.x + sample.right.x * u;
       const z = sample.position.z + sample.right.z * u;
-      const y = this.track.heightAt(event.def.s, u);
+      const y = this.pathHeightAt(event.pathId, event.def.s, u);
 
       event.group.position.set(x, y, z);
       event.group.rotation.y = event.heading;
@@ -277,6 +323,11 @@ export class Hazards {
     }
 
     return maxImpact;
+  }
+
+  private pathHeightAt(pathId: number, s: number, u: number): number {
+    const branch = pathId > 0 ? this.track.branches[pathId - 1] : undefined;
+    return branch ? branch.heightAt(s, u) : this.track.heightAt(s, u);
   }
 
   private syncCarSpeed(car: Car): void {

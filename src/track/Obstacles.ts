@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clamp } from '../core/math';
 import { SCENARIOS } from '../game/scenarios';
 import type { Car } from '../car/Car';
+import type { TrackKicker } from '../game/types';
 import type { Track, TrackZoneId } from './Track';
 
 /**
@@ -28,6 +29,8 @@ export interface ObstacleInfo {
   readonly index: number;
   readonly type: ObstacleType;
   readonly variant: ObstacleVariant;
+  /** 0 = pista principal; 1..N = rota alternativa (v3). */
+  readonly pathId?: number;
   readonly s: number;
   readonly u: number;
   readonly x: number;
@@ -347,46 +350,45 @@ export class Obstacles {
   /** Lista de problemas de geração; vazia quando tudo está dentro das regras. */
   validate(): string[] {
     const issues: string[] = [];
-    const firstS = this.track.startS + START_CLEARANCE;
-    const lastS = this.track.length - FINISH_CLEARANCE;
 
     for (const obstacle of this.items) {
-      const half = this.track.widthAt(obstacle.s) * 0.5;
+      const pathId = obstacle.pathId ?? 0;
+      const pathLength = this.track.pathLength(pathId);
+      const half = this.track.widthAtPath(pathId, obstacle.s) * 0.5;
       const edgeDistance = Math.abs(obstacle.u) - half;
 
       if (edgeDistance - obstacle.radius < EDGE_CLEARANCE - 1e-6) {
         issues.push(
-          `#${obstacle.index} (${obstacle.type}) invade o ombro: ` +
+          `#${obstacle.index} (${obstacle.type}, path ${pathId}) invade o ombro: ` +
             `${edgeDistance.toFixed(2)} m da borda, raio ${obstacle.radius.toFixed(2)}.`,
         );
       }
 
-      if (obstacle.s < firstS - 1e-6 || obstacle.s > lastS + 1e-6) {
+      if (obstacle.s < GENERATION_START_OFFSET - 1e-6 ||
+          obstacle.s > pathLength - GENERATION_END_OFFSET + 1e-6) {
         issues.push(
-          `#${obstacle.index} (${obstacle.type}) fora da faixa segura: s=${obstacle.s.toFixed(1)}.`,
+          `#${obstacle.index} (${obstacle.type}, path ${pathId}) fora da faixa segura: s=${obstacle.s.toFixed(1)}.`,
         );
       }
 
-      for (const portalS of this.portalSs) {
-        if (Math.abs(obstacle.s - portalS) < PORTAL_CLEARANCE - 1e-6) {
-          issues.push(
-            `#${obstacle.index} perto do portal de s=${portalS}: s=${obstacle.s.toFixed(1)}.`,
-          );
+      if (pathId === 0) {
+        for (const portalS of this.portalSs) {
+          if (Math.abs(obstacle.s - portalS) < PORTAL_CLEARANCE - 1e-6) {
+            issues.push(
+              `#${obstacle.index} perto do portal de s=${portalS}: s=${obstacle.s.toFixed(1)}.`,
+            );
+          }
         }
       }
 
-      if (obstacle.s > this.track.length - FINISH_CLEARANCE + 1e-6) {
-        issues.push(`#${obstacle.index} perto da chegada: s=${obstacle.s.toFixed(1)}.`);
-      }
-
-      for (const kicker of this.track.def.kickers) {
+      for (const kicker of this.kickersForPath(pathId)) {
         if (
           obstacle.s >= kicker.s - KICKER_CLEARANCE &&
           obstacle.s <=
             kicker.s + kicker.length + KICKER_CLEARANCE + LANDING_CLEARANCE
         ) {
           issues.push(
-            `#${obstacle.index} na faixa da rampa/pouso de s=${kicker.s} m: ` +
+            `#${obstacle.index} na faixa da rampa/pouso de s=${kicker.s} m (path ${pathId}): ` +
               `s=${obstacle.s.toFixed(1)}.`,
           );
         }
@@ -399,7 +401,7 @@ export class Obstacles {
       }
 
       for (const other of this.items) {
-        if (other.index <= obstacle.index) {
+        if ((other.pathId ?? 0) !== pathId || other.index <= obstacle.index) {
           continue;
         }
         const dx = other.x - obstacle.x;
@@ -429,85 +431,128 @@ export class Obstacles {
   }
 
   private generate(): void {
-    const rng = mulberry32(0x5eed0b57);
-    const from = this.track.startS + GENERATION_START_OFFSET;
-    const to = this.track.length - GENERATION_END_OFFSET;
+    const mainRng = mulberry32(0x5eed0b57);
+    this.generatePath(0, mainRng, TARGET_MIN, TARGET_MAX);
+
+    for (let index = 0; index < this.track.branches.length; index += 1) {
+      const branch = this.track.branches[index];
+      if (branch.kind !== 'route') {
+        continue;
+      }
+      const pathId = index + 1;
+      const rng = mulberry32(0x5eed0b57 ^ (pathId * 0x9e3779b1));
+      const scale = clamp(branch.length / 620, 0.55, 1.25);
+      const targetMin = Math.max(12, Math.round(26 * scale));
+      const targetMax = Math.max(targetMin + 4, Math.round(34 * scale));
+      this.generatePath(pathId, rng, targetMin, targetMax);
+    }
+
+    // A ordem de geração já é crescente em s; ordenar garante índices estáveis.
+    this.items.sort((a, b) => (a.pathId ?? 0) - (b.pathId ?? 0) || a.s - b.s);
+    for (let i = 0; i < this.items.length; i += 1) {
+      (this.items[i] as { index: number }).index = i;
+    }
+  }
+
+  private generatePath(
+    pathId: number,
+    rng: () => number,
+    targetMin: number,
+    targetMax: number,
+  ): void {
+    const pathLength = this.track.pathLength(pathId);
+    const from = pathId === 0
+      ? this.track.startS + GENERATION_START_OFFSET
+      : GENERATION_START_OFFSET;
+    const to = pathLength - GENERATION_END_OFFSET;
+    if (to <= from) {
+      return;
+    }
+
+    let count = this.items.filter((item) => (item.pathId ?? 0) === pathId).length;
     let s = from;
     let attempts = 0;
 
     while (s <= to && attempts < MAX_PLACEMENT_ATTEMPTS) {
       attempts += 1;
 
-      if (this.items.length >= TARGET_MAX) {
+      if (count >= targetMax) {
         break;
       }
 
       const jitteredS = clamp(s + (rng() - 0.5) * 2.4, from, to);
       const side = rng() < 0.5 ? -1 : 1;
-      this.tryPlace(jitteredS, side, rng);
+      if (this.tryPlace(pathId, jitteredS, side, rng)) {
+        count += 1;
+      }
 
       s += S_STEP_MIN + rng() * (S_STEP_MAX - S_STEP_MIN);
     }
 
     // Segunda passada (mais densa) só se a primeira ficou abaixo do mínimo.
-    if (this.items.length < TARGET_MIN) {
+    if (count < targetMin) {
       let fillS = from;
-      while (fillS <= to && this.items.length < TARGET_MIN) {
+      while (fillS <= to && count < targetMin) {
         const jitter = (rng() - 0.5) * 8;
-        this.tryPlace(
-          clamp(fillS + jitter, from, to),
-          this.items.length % 2 === 0 ? 1 : -1,
-          rng,
-        );
+        if (
+          this.tryPlace(
+            pathId,
+            clamp(fillS + jitter, from, to),
+            count % 2 === 0 ? 1 : -1,
+            rng,
+          )
+        ) {
+          count += 1;
+        }
         fillS += 6 + rng() * 4;
       }
     }
-
-    // A ordem de geração já é crescente em s; ordenar garante índices estáveis.
-    this.items.sort((a, b) => a.s - b.s);
-    for (let i = 0; i < this.items.length; i += 1) {
-      (this.items[i] as { index: number }).index = i;
-    }
   }
 
-  private tryPlace(s: number, side: number, rng: () => number): void {
-    if (!this.isClearOfTrackFeatures(s)) {
-      return;
+  private tryPlace(
+    pathId: number,
+    s: number,
+    side: number,
+    rng: () => number,
+  ): boolean {
+    if (!this.isClearOfTrackFeatures(pathId, s)) {
+      return false;
     }
 
-    const zone = this.track.zoneAt(s);
+    const zone = this.track.zoneAtPath(pathId, s);
     const type = this.pickType(zone, rng);
     const dimensions = this.pickDimensions(type, zone, rng);
     const minOffset = EDGE_CLEARANCE + dimensions.radius;
     const span = EDGE_MAX_OFFSET - minOffset;
 
     if (span <= 0) {
-      return;
+      return false;
     }
 
     // Uniforme na faixa disponível: distâncias variadas da borda.
     const offset = minOffset + rng() * span;
-    const sample = this.track.sampleAt(s);
+    const sample = this.track.sampleAtPath(pathId, s);
     const u = side * (sample.width * 0.5 + offset);
     const x = sample.position.x + sample.right.x * u;
     const z = sample.position.z + sample.right.z * u;
 
-    if (this.track.distanceToBranches(x, z) < 14) {
-      return;
+    if (!this.isClearOfOtherRoads(pathId, x, z, dimensions.radius)) {
+      return false;
     }
 
-    const groundY = this.track.heightAt(s, u);
+    const groundY = this.track.heightAtPath(pathId, s, u);
 
     for (const other of this.items) {
       const dx = other.x - x;
       const dz = other.z - z;
       if (dx * dx + dz * dz < MIN_OBSTACLE_GAP * MIN_OBSTACLE_GAP) {
-        return;
+        return false;
       }
     }
 
     this.items.push({
       index: -1,
+      pathId,
       type,
       variant: dimensions.variant,
       s,
@@ -522,26 +567,74 @@ export class Obstacles {
       length: dimensions.length,
       color: this.pickColor(type, zone, rng),
     });
+    return true;
   }
 
-  private isClearOfTrackFeatures(s: number): boolean {
-    if (s < this.track.startS + START_CLEARANCE) {
+  private isClearOfTrackFeatures(pathId: number, s: number): boolean {
+    const pathLength = this.track.pathLength(pathId);
+    const from = pathId === 0
+      ? this.track.startS + START_CLEARANCE
+      : 12;
+    if (s < from || s > pathLength - FINISH_CLEARANCE) {
       return false;
     }
-    if (s > this.track.length - FINISH_CLEARANCE) {
-      return false;
-    }
-    for (const portalS of this.portalSs) {
-      if (Math.abs(s - portalS) < PORTAL_CLEARANCE) {
-        return false;
+
+    if (pathId === 0) {
+      for (const portalS of this.portalSs) {
+        if (Math.abs(s - portalS) < PORTAL_CLEARANCE) {
+          return false;
+        }
       }
     }
 
-    for (const kicker of this.track.def.kickers) {
+    for (const kicker of this.kickersForPath(pathId)) {
       if (
         s >= kicker.s - KICKER_CLEARANCE &&
         s <= kicker.s + kicker.length + KICKER_CLEARANCE + LANDING_CLEARANCE
       ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /** Kickers do caminho: principal em `def.kickers`, rota no branch local. */
+  private kickersForPath(pathId: number): readonly TrackKicker[] {
+    if (pathId <= 0) {
+      return this.track.def.kickers.filter((kicker) => (kicker.pathId ?? 0) === 0);
+    }
+    return this.track.branches[pathId - 1]?.kickers ?? [];
+  }
+
+  /**
+   * Impede obstáculos de invadir a pista principal ou outra rota. O obstáculo
+   * fica no ombro do caminho atual, então só precisa respeitar a faixa das
+   * outras estradas.
+   */
+  private isClearOfOtherRoads(
+    pathId: number,
+    x: number,
+    z: number,
+    radius: number,
+  ): boolean {
+    if (pathId !== 0) {
+      const main = this.track.project(x, z);
+      if (main.distance < this.track.widthAt(main.s) * 0.5 + radius + 2) {
+        return false;
+      }
+    }
+
+    for (let index = 0; index < this.track.branches.length; index += 1) {
+      const branch = this.track.branches[index];
+      if (index + 1 === pathId) {
+        continue;
+      }
+      if (pathId === 0 && branch.kind !== 'route') {
+        continue;
+      }
+      const projection = branch.project(x, z);
+      if (projection.distance < branch.widthAt(projection.s) * 0.5 + radius + 2) {
         return false;
       }
     }

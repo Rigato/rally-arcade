@@ -112,6 +112,15 @@ export class Track {
     y: 0,
     zone: 'forest',
   };
+  private readonly pathSampleOut: MutableSample = {
+    s: 0,
+    position: new THREE.Vector3(),
+    tangent: new THREE.Vector3(0, 0, 1),
+    right: new THREE.Vector3(1, 0, 0),
+    width: MIN_WIDTH,
+    y: 0,
+    zone: 'forest',
+  };
   private readonly projection: TrackProjection = { s: 0, u: 0, distance: 0 };
   private readonly heightProjection: TrackProjection = { s: 0, u: 0, distance: 0 };
   private readonly nearestProjection: TrackNearestProjection = {
@@ -182,11 +191,18 @@ export class Track {
         const zone = this.zoneDefAt(branch.startS);
         const fallbackOffroad: SurfaceId =
           zone.id === 'forest' ? 'forest-offroad' : 'desert-offroad';
-        return new TrackBranch(
-          branch,
-          zone.surface,
-          zone.offroad ?? fallbackOffroad,
-        );
+        const zones = branch.zones && branch.zones.length > 0
+          ? branch.zones
+          : [
+              {
+                start: 0,
+                end: branch.length,
+                id: zone.id,
+                surface: zone.surface,
+                offroad: zone.offroad ?? fallbackOffroad,
+              },
+            ];
+        return new TrackBranch(branch, zones, branch.kickers ?? []);
       }),
     );
 
@@ -227,6 +243,44 @@ export class Track {
     out.zone = this.zoneAt(clamped);
 
     return out;
+  }
+
+  /** Amostra um caminho: 0/negativo = principal, 1..N = rota alternativa. */
+  sampleAtPath(pathId: number, s: number): TrackSample {
+    if (pathId <= 0) {
+      return this.sampleAt(s);
+    }
+    const branch = this.branches[pathId - 1];
+    if (!branch) {
+      return this.sampleAt(s);
+    }
+
+    const sample = branch.sampleAt(s);
+    const out = this.pathSampleOut;
+    out.s = sample.s;
+    out.position.copy(sample.position);
+    out.tangent.copy(sample.tangent);
+    out.right.copy(sample.right);
+    out.width = sample.width;
+    out.y = sample.y;
+    out.zone = sample.zone;
+    return out;
+  }
+
+  /** Comprimento de um caminho (principal ou rota). */
+  pathLength(pathId: number): number {
+    if (pathId <= 0) {
+      return this.length;
+    }
+    return this.branches[pathId - 1]?.length ?? this.length;
+  }
+
+  /** Zona em `s` de um caminho (principal ou rota). */
+  zoneAtPath(pathId: number, s: number): TrackZoneId {
+    if (pathId <= 0) {
+      return this.zoneAt(s);
+    }
+    return this.branches[pathId - 1]?.zoneAt(s) ?? this.zoneAt(0);
   }
 
   widthAt(s: number): number {
@@ -336,19 +390,28 @@ export class Track {
     return this.surfaceAt(this.heightProjection.s, this.heightProjection.u);
   }
 
-  /** Largura do caminho escolhido (-1 = principal). */
+  /** Largura do caminho: 0/negativo = principal, 1..N = rota alternativa. */
   widthAtPath(pathId: number, s: number): number {
-    const branch = this.branches[pathId];
+    if (pathId <= 0) {
+      return this.widthAt(s);
+    }
+    const branch = this.branches[pathId - 1];
     return branch ? branch.widthAt(s) : this.widthAt(s);
   }
 
   heightAtPath(pathId: number, s: number, u: number): number {
-    const branch = this.branches[pathId];
+    if (pathId <= 0) {
+      return this.heightAt(s, u);
+    }
+    const branch = this.branches[pathId - 1];
     return branch ? branch.heightAt(s, u) : this.heightAt(s, u);
   }
 
   surfaceAtPath(pathId: number, s: number, u: number): SurfaceId {
-    const branch = this.branches[pathId];
+    if (pathId <= 0) {
+      return this.surfaceAt(s, u);
+    }
+    const branch = this.branches[pathId - 1];
     return branch ? branch.surfaceAt(s, u) : this.surfaceAt(s, u);
   }
 
@@ -434,7 +497,7 @@ export class Track {
       preferredPathId,
       hintBranchS,
     );
-    return this.heightAtPath(nearest.pathId, nearest.pathS, nearest.u);
+    return this.heightAtPath(nearest.pathId + 1, nearest.pathS, nearest.u);
   }
 
   /** Piso do caminho mais próximo (principal ou ramo). */
@@ -452,7 +515,7 @@ export class Track {
       preferredPathId,
       hintBranchS,
     );
-    return this.surfaceAtPath(nearest.pathId, nearest.pathS, nearest.u);
+    return this.surfaceAtPath(nearest.pathId + 1, nearest.pathS, nearest.u);
   }
 
   /** Distância horizontal até o ramo mais próximo (debug/obstáculos). */
@@ -522,6 +585,9 @@ export class Track {
     let total = 0;
 
     for (const kicker of this.def.kickers) {
+      if ((kicker.pathId ?? 0) !== 0) {
+        continue;
+      }
       const local = s - kicker.s;
       if (local < 0 || local > kicker.length) {
         continue;
@@ -692,6 +758,9 @@ export class Track {
 
   private validateKickers(): void {
     for (const kicker of this.def.kickers) {
+      if ((kicker.pathId ?? 0) !== 0) {
+        continue;
+      }
       const start = kicker.s;
       const end = kicker.s + kicker.length;
       const landingEnd = end + KICKER_LANDING_CHECK;

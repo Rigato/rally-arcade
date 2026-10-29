@@ -21,6 +21,9 @@ const ROAD_COLORS = Object.fromEntries(
 const SHOULDER_COLORS = Object.fromEntries(
   SCENARIO_IDS.map((id) => [id, new THREE.Color(SCENARIOS[id].colors.shoulder)]),
 ) as Record<ZoneId, THREE.Color>;
+const TERRAIN_COLORS = Object.fromEntries(
+  SCENARIO_IDS.map((id) => [id, new THREE.Color(SCENARIOS[id].colors.terrain)]),
+) as Record<ZoneId, THREE.Color>;
 const EDGE_COLORS = Object.fromEntries(
   SCENARIO_IDS.map((id) => [id, new THREE.Color(SCENARIOS[id].colors.edge)]),
 ) as Record<ZoneId, THREE.Color>;
@@ -29,6 +32,7 @@ const BAND_LIGHT = new THREE.Color(0xf2eee0);
 const BAND_FINISH = new THREE.Color(0xc94f3b);
 
 const tempColor = new THREE.Color();
+const tempTerrainColor = new THREE.Color();
 
 /**
  * Malha da pista em faixas de ~1 m.
@@ -43,10 +47,23 @@ export class TrackMesh {
   private readonly geometries: THREE.BufferGeometry[] = [];
   private readonly materials: THREE.Material[] = [];
   private readonly grainTexture: THREE.CanvasTexture;
+  /** Janelas de split v3: os ombros encolhem para abrir o miolo do Y. */
+  private readonly goreWindows: ReadonlyArray<{
+    readonly startS: number;
+    readonly endS: number;
+  }>;
 
   constructor(track: Track) {
     this.group.name = 'track';
     this.grainTexture = createGrainTexture();
+    this.goreWindows = (track.def.forks ?? []).flatMap((fork) =>
+      fork.branches
+        .filter((branch) => branch.kind === 'route')
+        .map(() => ({
+          startS: fork.startS,
+          endS: fork.endS,
+        })),
+    );
 
     this.group.add(this.buildSurface(track));
     this.group.add(this.buildEdgeRibbons(track));
@@ -66,8 +83,18 @@ export class TrackMesh {
     this.materials.length = 0;
   }
 
-  private buildSurface(track: Track): THREE.Mesh {
-    const columns = COLUMNS;
+  private goreScaleAt(s: number): number {
+    let scale = 1;
+    for (const window of this.goreWindows) {
+      const inside =
+        smoothstep(clamp((s - window.startS + 45) / 35, 0, 1)) *
+        smoothstep(clamp((window.endS + 45 - s) / 35, 0, 1));
+      scale = Math.min(scale, 1 - 0.78 * inside);
+    }
+    return scale;
+  }
+
+  private buildSurface(track: Track): THREE.Mesh {    const columns = COLUMNS;
     const rows = track.sampleCount + 1;
     const positions = new Float32Array(rows * columns * 3);
     const colors = new Float32Array(rows * columns * 3);
@@ -87,9 +114,11 @@ export class TrackMesh {
 
       // Ombros com 5 faixas por lado: resolução suficiente para as ondulações
       // de 2–5 m em u. A pista continua com 3 colunas e fica lisa.
+      const leftGore = this.goreScaleAt(s);
+      const rightGore = leftGore;
       for (let k = 0; k < SHOULDER_OFFSETS.length; k += 1) {
-        lateral[k] = -half - SHOULDER_OFFSETS[k];
-        lateral[columns - 1 - k] = half + SHOULDER_OFFSETS[k];
+        lateral[k] = -half - SHOULDER_OFFSETS[k] * leftGore;
+        lateral[columns - 1 - k] = half + SHOULDER_OFFSETS[k] * rightGore;
       }
       lateral[SHOULDER_OFFSETS.length] = -half;
       lateral[SHOULDER_OFFSETS.length + 1] = 0;
@@ -117,6 +146,14 @@ export class TrackMesh {
           tempColor
             .copy(SHOULDER_COLORS[fromZone])
             .lerp(SHOULDER_COLORS[toZone], blend.t);
+          const sideGore = u < 0 ? leftGore : rightGore;
+          const goreBlend = clamp((1 - sideGore) / 0.78, 0, 1);
+          if (goreBlend > 0) {
+            tempTerrainColor
+              .copy(TERRAIN_COLORS[fromZone])
+              .lerp(TERRAIN_COLORS[toZone], blend.t);
+            tempColor.lerp(tempTerrainColor, goreBlend);
+          }
         }
 
         let grain = 0.94 + 0.12 * hash2(i, k);
@@ -345,6 +382,11 @@ function pushBandVertex(
 function hash2(a: number, b: number): number {
   const value = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
   return value - Math.floor(value);
+}
+
+function smoothstep(t: number): number {
+  const clamped = clamp(t, 0, 1);
+  return clamped * clamped * (3 - 2 * clamped);
 }
 
 /** Textura procedural de grão, repetida via UV. */

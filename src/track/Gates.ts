@@ -45,12 +45,12 @@ export class Gates {
     this.group.name = 'gates';
 
     let transitionIndex = 0;
-    for (let i = 1; i < track.def.zones.length; i += 1) {
-      const zone = track.def.zones[i];
-      const scenario = SCENARIOS[zone.id];
+    for (const split of track.def.splits) {
+      const zoneId = track.zoneAt(split.s);
+      const scenario = SCENARIOS[zoneId];
       transitionIndex += 1;
       const style: PortalStyle = {
-        text: scenario.shortLabel,
+        text: 'SPLIT',
         background: scenario.gate.background,
         foreground: scenario.gate.foreground,
         border: scenario.gate.border,
@@ -58,8 +58,8 @@ export class Gates {
       this.group.add(
         this.buildPortal(
           track,
-          zone.start,
-          `gate-${zone.id}-${transitionIndex}`,
+          split.s,
+          `gate-split-${transitionIndex}`,
           style,
         ),
       );

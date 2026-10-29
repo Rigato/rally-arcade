@@ -3,9 +3,12 @@ import { clamp, lerp } from '../core/math';
 import type {
   SurfaceId,
   TrackForkBranch,
+  TrackKicker,
   TrackPoint,
+  TrackZone,
 } from '../game/types';
 import { offRoadHeightAt } from './terrainNoise';
+import type { TrackZoneId } from './Track';
 
 const SAMPLE_STEP = 1;
 const MIN_WIDTH = 4.2;
@@ -18,6 +21,7 @@ export interface BranchSample {
   right: THREE.Vector3;
   width: number;
   y: number;
+  zone: TrackZoneId;
 }
 
 export interface BranchProjection {
@@ -29,8 +33,9 @@ export interface BranchProjection {
 /**
  * Sampler de um ramo de bifurcação.
  *
- * O ramo é uma spline independente que começa e termina na pista principal.
- * A física e a malha leem o mesmo `heightAt`, como no `Track`.
+ * No v1/v2 é o desvio antigo: começa/termina na borda da pista principal e
+ * só o lado externo tem ombro. No v3 (`kind: 'route'`) é uma rota completa,
+ * com zonas locais, kickers e ombros dos dois lados.
  */
 export class TrackBranch {
   readonly id: string;
@@ -42,6 +47,10 @@ export class TrackBranch {
   readonly sampleCount: number;
   readonly width: number;
   readonly side: 1 | -1;
+  readonly kind: 'legacy' | 'route';
+  readonly zones: readonly TrackZone[];
+  readonly kickers: readonly TrackKicker[];
+  /** Mantidos para compatibilidade com HUD/debug e fallback de piso. */
   readonly surface: SurfaceId;
   readonly offroad: SurfaceId;
 
@@ -60,19 +69,23 @@ export class TrackBranch {
     right: new THREE.Vector3(1, 0, 0),
     width: MIN_WIDTH,
     y: 0,
+    zone: 'forest',
   };
   private readonly projection: BranchProjection = { s: 0, u: 0, distance: 0 };
 
   constructor(
     branch: TrackForkBranch,
-    surface: SurfaceId,
-    offroad: SurfaceId,
+    zones: readonly TrackZone[],
+    kickers: readonly TrackKicker[] = [],
   ) {
     this.id = branch.id;
     this.startS = branch.startS;
     this.endS = branch.endS;
-    this.surface = surface;
-    this.offroad = offroad;
+    this.kind = branch.kind ?? 'legacy';
+    this.zones = zones;
+    this.kickers = kickers;
+    this.surface = zones[0]?.surface ?? 'gravel';
+    this.offroad = zones[0]?.offroad ?? 'forest-offroad';
     this.width = branch.width;
     this.side = branch.side ?? 1;
 
@@ -151,6 +164,7 @@ export class TrackBranch {
     out.right.set(out.tangent.z / horizontal, 0, -out.tangent.x / horizontal);
     out.width = this.widthAt(clamped);
     out.y = out.position.y;
+    out.zone = this.zoneAt(clamped);
 
     return out;
   }
@@ -171,21 +185,41 @@ export class TrackBranch {
     const j = Math.min(i + 1, this.sampleCount);
     const t = clamp(f - i, 0, 1);
 
-    const baseY = lerp(this.py[i], this.py[j], t);
+    const baseY = lerp(this.py[i], this.py[j], t) + this.kickerHeightAt(clamped);
 
     const distance = Math.abs(u) - this.widthAt(clamped) * 0.5;
     if (distance <= 0) {
       return baseY;
     }
 
-    // O lado interno do ramo encosta na pista principal: continua plano para
-    // não criar um degrau/bump quando a física troca de caminho. Só o lado
-    // externo recebe o relevo de ombro.
+    if (this.kind === 'route') {
+      // Rota completa: o ombro interno existe no miolo do fork. Perto da
+      // entrada/saída ele fica plano para encostar na pista principal.
+      const blend =
+        smoothstep(clamp(clamped / 28, 0, 1)) *
+        smoothstep(clamp((this.length - clamped) / 28, 0, 1));
+      if (u * this.side < 0) {
+        return baseY + offRoadHeightAt(clamped, u, distance) * blend;
+      }
+      return baseY + offRoadHeightAt(clamped, u, distance);
+    }
+
+    // Ramo legado: o lado interno encosta na pista principal e continua plano.
     if (u * this.side < 0) {
       return baseY;
     }
 
     return baseY + offRoadHeightAt(clamped, u, distance);
+  }
+
+  zoneAt(s: number): TrackZoneId {
+    const clamped = clamp(s, 0, this.length);
+    for (const zone of this.zones) {
+      if (clamped >= zone.start && clamped < zone.end) {
+        return zone.id;
+      }
+    }
+    return this.zones[this.zones.length - 1]?.id ?? 'forest';
   }
 
   heightAtWorld(x: number, z: number, hintS?: number): number {
@@ -195,11 +229,40 @@ export class TrackBranch {
 
   surfaceAt(s: number, u: number): SurfaceId {
     const half = this.widthAt(s) * 0.5;
-    // Lado interno = pista principal; nunca reportar off-road ali.
-    if (u * this.side <= half) {
+    // Lado interno = pista principal; nunca reportar off-road ali (legado).
+    if (this.kind !== 'route' && u * this.side <= half) {
       return this.surface;
     }
-    return this.offroad;
+    if (Math.abs(u) <= half + 0.35) {
+      return this.zoneSurfaceAt(s).surface;
+    }
+    return this.zoneSurfaceAt(s).offroad ?? this.offroad;
+  }
+
+  private zoneSurfaceAt(s: number): { surface: SurfaceId; offroad?: SurfaceId } {
+    const clamped = clamp(s, 0, this.length);
+    for (const zone of this.zones) {
+      if (clamped >= zone.start && clamped < zone.end) {
+        return zone;
+      }
+    }
+    return this.zones[this.zones.length - 1] ?? {
+      surface: this.surface,
+      offroad: this.offroad,
+    };
+  }
+
+  private kickerHeightAt(s: number): number {
+    let total = 0;
+    for (const kicker of this.kickers) {
+      const local = s - kicker.s;
+      if (local < 0 || local > kicker.length) {
+        continue;
+      }
+      const t = local / kicker.length;
+      total += kicker.height * t * t;
+    }
+    return total;
   }
 
   project(x: number, z: number, hintS?: number): BranchProjection {
@@ -322,4 +385,9 @@ export class TrackBranch {
 
     return clamp(points[points.length - 1].width, MIN_WIDTH, MAX_WIDTH);
   }
+}
+
+function smoothstep(t: number): number {
+  const clamped = clamp(t, 0, 1);
+  return clamped * clamped * (3 - 2 * clamped);
 }

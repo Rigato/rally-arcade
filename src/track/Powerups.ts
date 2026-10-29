@@ -33,6 +33,8 @@ const COLORS: Record<PowerupType, { ring: number; core: number }> = {
 
 interface Pickup {
   readonly type: PowerupType;
+  /** 0 = pista principal; 1..N = rota alternativa. */
+  readonly pathId: number;
   readonly s: number;
   readonly u: number;
   readonly x: number;
@@ -109,7 +111,9 @@ export class Powerups {
     };
 
     for (const def of track.def.powerups) {
-      this.items.push(this.createPickup(def.type, def.s, def.u));
+      this.items.push(
+        this.createPickup(def.type, def.s, def.u, def.pathId ?? 0),
+      );
     }
 
     const turbo = this.items.filter((item) => item.type === 'turbo').length;
@@ -297,17 +301,30 @@ export class Powerups {
     return { ring, core };
   }
 
-  private createPickup(type: PowerupType, s: number, u: number): Pickup {
-    const clampedS = clamp(s, 0, this.track.length);
-    const sample = this.track.sampleAt(clampedS);
+  private createPickup(
+    type: PowerupType,
+    s: number,
+    u: number,
+    pathId: number,
+  ): Pickup {
+    // pathId inválido cai na pista principal em vez de quebrar o pickup.
+    const resolvedPathId =
+      pathId > 0 && this.track.branches[pathId - 1] ? pathId : 0;
+    const pathLength = this.track.pathLength(resolvedPathId);
+    const clampedS = clamp(s, 0, pathLength);
+    const sample = this.track.sampleAtPath(resolvedPathId, clampedS);
     const x = sample.position.x + sample.right.x * u;
     const z = sample.position.z + sample.right.z * u;
-    const groundY = this.track.heightAt(clampedS, u);
+    // A largura/altura vêm do caminho local (rota ou principal).
+    const groundY = this.pathHeightAt(resolvedPathId, clampedS, u);
     const heading = Math.atan2(sample.tangent.x, sample.tangent.z);
     const materials = this.materialsByType[type];
 
     const root = new THREE.Group();
-    root.name = `powerup-${type}-${clampedS.toFixed(0)}`;
+    root.name =
+      resolvedPathId > 0
+        ? `powerup-${type}-p${resolvedPathId}-${clampedS.toFixed(0)}`
+        : `powerup-${type}-${clampedS.toFixed(0)}`;
     root.position.set(x, groundY + HOVER_HEIGHT, z);
     root.rotation.y = heading;
 
@@ -326,6 +343,7 @@ export class Powerups {
 
     return {
       type,
+      pathId: resolvedPathId,
       s: clampedS,
       u,
       x,
@@ -337,5 +355,15 @@ export class Powerups {
       phase: clampedS * 0.07,
       collected: false,
     };
+  }
+
+  /**
+   * Altura do chão no caminho. `Track.heightAtPath` indexa os ramos por
+   * `pathId` e não por `pathId - 1`, então usamos o ramo diretamente quando
+   * o caminho é alternativo; na principal delega para `heightAt`.
+   */
+  private pathHeightAt(pathId: number, s: number, u: number): number {
+    const branch = pathId > 0 ? this.track.branches[pathId - 1] : undefined;
+    return branch ? branch.heightAt(s, u) : this.track.heightAt(s, u);
   }
 }
