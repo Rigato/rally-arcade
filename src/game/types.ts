@@ -9,7 +9,28 @@ export interface Vec2 {
 
 export type RaceState = 'READY' | 'RUNNING' | 'RECOVERING' | 'FINISHED';
 
-export type SurfaceId = 'gravel' | 'sand' | 'forest-offroad' | 'desert-offroad';
+/** Cenário visual/jogável de um setor. O piso físico é independente. */
+export type ScenarioId =
+  | 'forest'
+  | 'desert'
+  | 'snow'
+  | 'village'
+  | 'dirt'
+  | 'beach';
+
+export type SurfaceId =
+  | 'gravel'
+  | 'sand'
+  | 'snow'
+  | 'asphalt'
+  | 'dirt'
+  | 'beach-sand'
+  | 'forest-offroad'
+  | 'desert-offroad'
+  | 'snow-offroad'
+  | 'village-offroad'
+  | 'dirt-offroad'
+  | 'beach-offroad';
 
 /**
  * Piso do terreno. Todos os campos são mutáveis: o painel de tuning do M1b
@@ -242,8 +263,72 @@ export interface TrackPoint {
 export interface TrackZone {
   readonly start: number;
   readonly end: number;
-  readonly id: 'forest' | 'desert';
-  readonly surface: 'gravel' | 'sand';
+  readonly id: ScenarioId;
+  readonly surface: SurfaceId;
+  /** Piso fora da pista; quando ausente, mantém o fallback histórico. */
+  readonly offroad?: SurfaceId;
+}
+
+/** Perfil de poeira/partículas de um piso. */
+export interface DustProfile {
+  readonly color: number;
+  readonly secondaryColor: number;
+  readonly rateMultiplier: number;
+  readonly sizeMultiplier: number;
+  readonly alphaMultiplier: number;
+  readonly lifeMultiplier: number;
+  readonly riseMin: number;
+  readonly riseMax: number;
+  readonly gravity: number;
+  readonly slipStartDeg: number;
+  readonly slipRangeDeg: number;
+}
+
+/** Ramo alternativo de uma bifurcação; começa e termina na pista principal. */
+export interface TrackForkBranch {
+  readonly id: string;
+  readonly points: readonly TrackPoint[];
+  /** `s` da pista principal no início/fim do ramo. */
+  readonly startS: number;
+  readonly endS: number;
+  /** Comprimento 3D do ramo (m). */
+  readonly length: number;
+  readonly width: number;
+}
+
+/**
+ * Bifurcação: a pista principal continua sendo uma opção e cada ramo é uma
+ * alternativa que sai e volta para ela. Não há final próprio.
+ */
+export interface TrackFork {
+  readonly id: string;
+  readonly startS: number;
+  readonly endS: number;
+  readonly branches: readonly TrackForkBranch[];
+}
+
+/** Obstáculos móveis que atravessam a pista. */
+export type HazardKind =
+  | 'camel'
+  | 'deer'
+  | 'reindeer'
+  | 'car'
+  | 'truck'
+  | 'tractor'
+  | 'cow'
+  | 'buggy';
+
+export interface TrackHazard {
+  readonly id: string;
+  readonly kind: HazardKind;
+  readonly zoneIndex: number;
+  readonly scenario: ScenarioId;
+  /** `s` da pista principal onde o objeto cruza. */
+  readonly s: number;
+  readonly direction: 1 | -1;
+  readonly speed: number;
+  readonly radius: number;
+  readonly height: number;
 }
 
 export interface TrackKicker {
@@ -280,4 +365,8 @@ export interface TrackDef {
   readonly powerups: readonly TrackPowerup[];
   readonly splits: readonly TrackSplit[];
   readonly medals: MedalTargets;
+  /** Bifurcações opcionais (pistas procedurais; a fixa não usa). */
+  readonly forks?: readonly TrackFork[];
+  /** Obstáculos móveis opcionais (pistas procedurais; a fixa não usa). */
+  readonly hazards?: readonly TrackHazard[];
 }

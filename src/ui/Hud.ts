@@ -54,6 +54,8 @@ function readStoredControlsSide(): ControlsSide {
 
 const SPLIT_BANNER_MS = 2500;
 const POWERUP_FLASH_MS = 750;
+/** Fundo da barra do velocímetro: acima disto satura no fim. */
+const SPEEDOMETER_MAX_KMH = 200;
 const POWERUP_LABELS: Record<PowerupType, string> = {
   turbo: 'TURBO',
   grip: 'GRIP',
@@ -72,6 +74,8 @@ export interface HudTrackInfo {
 export interface HudOptions {
   debug?: boolean;
   track?: HudTrackInfo;
+  /** Chamado pelo botão `MENU` da trackbar (o HUD não abre o menu sozinho). */
+  onMenu?: () => void;
 }
 
 /** Dados de debug que não vêm da física do carro. */
@@ -92,6 +96,10 @@ export interface HudDebugInfo {
   offRoad: number;
   /** Quantidade de obstáculos sólidos gerados. */
   obstacles: number;
+  /** Obstáculos móveis: total, ativos e próximo `s`. */
+  hazards: string;
+  /** Caminho ativo (principal ou ramo de bifurcação). */
+  path: string;
   /** Intensidade da última colisão com obstáculo (m/s; 0 = sem impacto). */
   impact: number;
   /** Powerups ativos já formatados (ex.: "TURBO 1,4s"). */
@@ -117,6 +125,8 @@ export class Hud {
   readonly leftBrakeButton: HTMLButtonElement;
   readonly rightBrakeButton: HTMLButtonElement;
   readonly brakeButton: HTMLButtonElement;
+  /** Botão da trackbar que abre o menu de pistas (não inicia a corrida). */
+  readonly menuButton: HTMLButtonElement;
 
   private readonly root: HTMLElement;
   private readonly touchUi: HTMLElement;
@@ -133,7 +143,9 @@ export class Hud {
   private readonly controls: HTMLElement;
   private readonly bestTimeEl: HTMLElement;
   private readonly newTrackButton: HTMLButtonElement;
-  private readonly fixedTrackButton: HTMLButtonElement;
+  private readonly trackLabel: HTMLElement;
+  private readonly speedValue: HTMLElement;
+  private readonly speedBarFill: HTMLElement;
   private readonly progressFill: HTMLElement;
   private readonly progressTrack: HTMLElement;
   private readonly progressDistance: HTMLElement;
@@ -159,8 +171,10 @@ export class Hud {
   private readonly debugValues: Record<string, HTMLElement> = {};
 
   private resetHandler: (() => void) | null = null;
+  private menuHandler: (() => void) | null = null;
   private lastTimeText = '';
   private lastBestText = '';
+  private lastSpeedKmh = -1;
   private lastProgressPercent = -1;
   private lastDistanceM = -1;
   private lastTelemetry: CarTelemetry | null = null;
@@ -190,6 +204,7 @@ export class Hud {
     this.controlsSide = readStoredControlsSide();
 
     this.debugVisible = options.debug ?? false;
+    this.menuHandler = options.onMenu ?? null;
     const track = options.track ?? DEFAULT_TRACK_INFO;
     this.trackStartS = track.startS;
     this.trackFinishS = Math.max(track.finishS, track.startS + 1);
@@ -277,6 +292,16 @@ export class Hud {
     const trackBar = document.createElement('div');
     trackBar.className = 'hud__trackbar';
 
+    this.menuButton = document.createElement('button');
+    this.menuButton.className = 'hud__track-button hud__track-button--menu';
+    this.menuButton.type = 'button';
+    this.menuButton.textContent = '☰ PISTAS';
+    this.menuButton.title = 'Abrir menu de pistas';
+    this.menuButton.setAttribute('aria-label', 'Abrir menu de pistas');
+    this.menuButton.setAttribute('aria-expanded', 'false');
+    this.menuButton.addEventListener('pointerdown', this.stopTouchPropagation);
+    this.menuButton.addEventListener('click', this.handleMenu);
+
     const newTrackButton = document.createElement('button');
     newTrackButton.className = 'hud__track-button';
     newTrackButton.type = 'button';
@@ -286,16 +311,11 @@ export class Hud {
     newTrackButton.addEventListener('click', this.handleNewTrack);
     this.newTrackButton = newTrackButton;
 
-    const fixedTrackButton = document.createElement('button');
-    fixedTrackButton.className = 'hud__track-button';
-    fixedTrackButton.type = 'button';
-    fixedTrackButton.textContent = 'FIXA';
-    fixedTrackButton.title = 'Voltar para a pista fixa';
-    fixedTrackButton.setAttribute('aria-label', 'Voltar para a pista fixa');
-    fixedTrackButton.addEventListener('click', this.handleFixedTrack);
-    this.fixedTrackButton = fixedTrackButton;
+    this.trackLabel = document.createElement('span');
+    this.trackLabel.className = 'hud__track-label';
+    this.trackLabel.hidden = true;
 
-    trackBar.append(newTrackButton, fixedTrackButton);
+    trackBar.append(this.menuButton, newTrackButton, this.trackLabel);
     header.append(trackBar);
 
     this.splitBanner = document.createElement('div');
@@ -433,6 +453,8 @@ export class Hud {
     this.addDebugRow('track', 'S / U');
     this.addDebugRow('offroad', 'OFF-ROAD');
     this.addDebugRow('obstacles', 'OBSTÁCULOS');
+    this.addDebugRow('hazards', 'HAZARDS');
+    this.addDebugRow('path', 'CAMINHO');
     this.addDebugRow('impact', 'IMPACTO');
     this.addDebugRow('powerups', 'POWERUP');
     this.addDebugRow('height', 'Y');
@@ -465,6 +487,35 @@ export class Hud {
     this.powerupFlash.hidden = true;
     this.powerupFlash.setAttribute('aria-hidden', 'true');
 
+    // Velocímetro compacto no canto inferior oposto aos controles.
+    const speedometer = document.createElement('div');
+    speedometer.className = 'hud__speedo';
+    speedometer.setAttribute('aria-label', 'Velocímetro');
+    speedometer.setAttribute('aria-live', 'off');
+
+    const speedRow = document.createElement('div');
+    speedRow.className = 'hud__speedo-row';
+
+    this.speedValue = document.createElement('span');
+    this.speedValue.className = 'hud__speedo-value';
+    this.speedValue.textContent = '0';
+
+    const speedUnit = document.createElement('span');
+    speedUnit.className = 'hud__speedo-unit';
+    speedUnit.textContent = 'KM/H';
+
+    speedRow.append(this.speedValue, speedUnit);
+
+    const speedBar = document.createElement('span');
+    speedBar.className = 'hud__speedo-bar';
+    speedBar.setAttribute('aria-hidden', 'true');
+
+    this.speedBarFill = document.createElement('i');
+    this.speedBarFill.className = 'hud__speedo-fill';
+    speedBar.append(this.speedBarFill);
+
+    speedometer.append(speedRow, speedBar);
+
     this.recoveryOverlay = document.createElement('div');
     this.recoveryOverlay.className = 'hud__recovery';
     this.recoveryOverlay.setAttribute('aria-hidden', 'true');
@@ -496,6 +547,7 @@ export class Hud {
       this.recoveryOverlay,
       this.goOverlay,
       this.touchUi,
+      speedometer,
       this.debugPanel,
     );
     this.root.prepend(this.impactOverlay);
@@ -513,6 +565,39 @@ export class Hud {
 
     this.lastTimeText = text;
     this.timer.textContent = text;
+  }
+
+  /**
+   * Velocímetro digital. A barra normaliza em 200 km/h; o DOM só é tocado
+   * quando o valor arredondado muda (o jogo pode chamar a ~10 Hz).
+   */
+  setSpeed(kmh: number): void {
+    const safe = Number.isFinite(kmh) ? Math.max(kmh, 0) : 0;
+    const rounded = Math.round(safe);
+    if (rounded === this.lastSpeedKmh) {
+      return;
+    }
+
+    this.lastSpeedKmh = rounded;
+    this.speedValue.textContent = String(rounded);
+    this.speedBarFill.style.width =
+      `${clamp((safe / SPEEDOMETER_MAX_KMH) * 100, 0, 100).toFixed(1)}%`;
+  }
+
+  /** Rótulo curto da pista atual na trackbar (vazio esconde). */
+  setTrackLabel(label: string): void {
+    const text = label.trim();
+    this.trackLabel.textContent = text;
+    this.trackLabel.title = text;
+    this.trackLabel.hidden = text.length === 0;
+  }
+
+  setMenuOpen(open: boolean): void {
+    this.menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  onMenu(handler: () => void): void {
+    this.menuHandler = handler;
   }
 
   /** Mostra `MELHOR --:--.---` até existir um recorde salvo. */
@@ -767,10 +852,12 @@ export class Hud {
     this.clearPowerups();
     this.resetButton.removeEventListener('click', this.handleReset);
     this.newTrackButton.removeEventListener('click', this.handleNewTrack);
-    this.fixedTrackButton.removeEventListener('click', this.handleFixedTrack);
+    this.menuButton.removeEventListener('pointerdown', this.stopTouchPropagation);
+    this.menuButton.removeEventListener('click', this.handleMenu);
     this.handButton.removeEventListener('pointerdown', this.stopTouchPropagation);
     this.handButton.removeEventListener('click', this.handleHandToggle);
     this.resetHandler = null;
+    this.menuHandler = null;
   }
 
   private createControlButton(
@@ -821,6 +908,7 @@ export class Hud {
   /** Aplica o lado atual ao stack e destaca a opção no menu. */
   private applyControlsSide(): void {
     this.touchUi.dataset.side = this.controlsSide;
+    this.root.dataset.controlsSide = this.controlsSide;
     document.documentElement.dataset.controlsSide = this.controlsSide;
     this.handRightOption.setAttribute(
       'aria-pressed',
@@ -908,16 +996,11 @@ export class Hud {
     window.location.assign(url.toString());
   };
 
-  /** Força `track=fixed`, remove seed/s e preserva debug/touch. */
-  private readonly handleFixedTrack = (event: MouseEvent): void => {
+  /** Abre o menu de pistas; quem decide o que fazer é o handler do jogo. */
+  private readonly handleMenu = (event: MouseEvent): void => {
     event.preventDefault();
     event.stopPropagation();
-
-    const url = new URL(window.location.href);
-    url.searchParams.set('track', 'fixed');
-    url.searchParams.delete('seed');
-    url.searchParams.delete('s');
-    window.location.assign(url.toString());
+    this.menuHandler?.();
   };
 
   private createPowerupChip(type: PowerupType): {
@@ -1015,6 +1098,8 @@ export class Hud {
     this.debugValues.obstacles.textContent = debugInfo
       ? String(debugInfo.obstacles)
       : '—';
+    this.debugValues.hazards.textContent = debugInfo?.hazards ?? '—';
+    this.debugValues.path.textContent = debugInfo?.path ?? '—';
     this.debugValues.impact.textContent =
       debugInfo && debugInfo.impact > 0
         ? `${formatNumber(debugInfo.impact, 1)} m/s`

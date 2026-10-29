@@ -27,7 +27,11 @@ import { CatmullRomCurve3, Vector3 } from 'three';
 import type {
   MedalTargets,
   PowerupType,
+  ScenarioId,
   TrackDef,
+  TrackFork,
+  TrackForkBranch,
+  TrackHazard,
   TrackKicker,
   TrackObstacle,
   TrackPoint,
@@ -35,6 +39,8 @@ import type {
   TrackSplit,
   TrackZone,
 } from '../../game/types';
+import { SCENARIOS, SCENARIO_IDS } from '../../game/scenarios';
+import { FORK_TUNING, HAZARD_TUNING } from '../../game/config';
 import { Track } from '../Track';
 import type { TrackZoneId } from '../Track';
 import { createRng, type Rng } from './rng';
@@ -160,6 +166,10 @@ export interface ProceduralLayout {
   /** Fração da pista coberta por faixas planas. */
   readonly flatFraction?: number;
   readonly flatBands?: readonly { readonly startS: number; readonly endS: number }[];
+  /** Bifurcações geradas (ramos que saem e voltam à pista principal). */
+  readonly forks?: readonly TrackFork[];
+  /** Obstáculos móveis gerados para a corrida. */
+  readonly hazards?: readonly TrackHazard[];
 }
 
 export interface ProceduralFeatures {
@@ -191,6 +201,10 @@ export interface ProceduralStats {
   /** Cobertura das faixas planas (0..1). */
   readonly flatFraction: number;
   readonly features: ProceduralFeatures | null;
+  /** Quantidade de bifurcações (ramos alternativos). */
+  readonly forks?: number;
+  /** Quantidade de obstáculos móveis. */
+  readonly hazards?: number;
 }
 
 interface Bump {
@@ -582,18 +596,35 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
   }
   const scale = length / total;
 
+  const medals = buildMedalsV5(length);
+  const splitsAndZones = buildZonesAndSplitsV5(rng, length, medals.gold);
+  const forks = buildForks(
+    rng,
+    controlPoints,
+    curves,
+    splitsAndZones.zones,
+    length,
+  );
+
   const kickers = placeKickersOnStraights(
     rng,
     straights,
     curves,
     length,
     scale,
+    forks,
   );
   if (kickers.length === 0) {
     return null;
   }
-  const medals = buildMedalsV5(length);
-  const splitsAndZones = buildZonesAndSplitsV5(rng, length, medals.gold);
+  const hazards = buildHazards(
+    rng,
+    splitsAndZones.zones,
+    length,
+    kickers,
+    curves,
+    forks,
+  );
   const powerups = placePowerupsOnTrack(
     rng,
     raw,
@@ -602,7 +633,14 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
     length,
     scale,
   );
-  const obstacles = placeObstaclesOffTrack(rng, raw, widthAt, length, scale);
+  const obstacles = placeObstaclesOffTrack(
+    rng,
+    raw,
+    widthAt,
+    splitsAndZones.zones,
+    length,
+    scale,
+  );
   if (obstacles.length < MIN_OBSTACLES) {
     return null;
   }
@@ -616,6 +654,8 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
     powerups,
     splits: splitsAndZones.splits,
     medals,
+    forks,
+    hazards,
   };
 
   layoutByDef.set(def, {
@@ -629,6 +669,8 @@ function buildSegmentCandidate(rng: Rng, seed: number): TrackDef | null {
     widthFeatures: widthProfile.features,
     flatFraction: elevation.flatFraction,
     flatBands: elevation.bands,
+    forks,
+    hazards,
   });
 
   return def;
@@ -1270,21 +1312,444 @@ function buildWidthProfileV5(
   };
 }
 
+/**
+ * Cria 1–2 bifurcações em trechos longos e pouco curvados. O ramo é gerado
+ * deslocando lateralmente os pontos de controle da pista principal com uma
+ * curva de sino: ele sai do centro, abre 14–26 m e volta ao mesmo ponto. A
+ * pista principal continua existindo como a outra opção.
+ */
+function buildForks(
+  rng: Rng,
+  points: readonly TrackPoint[],
+  curves: readonly ProceduralCurveInfo[],
+  zones: readonly TrackZone[],
+  length: number,
+): readonly TrackFork[] {
+  if (points.length < 20 || length < 400) {
+    return [];
+  }
+
+  const sValues = cumulativePointLengths(points);
+  const extremeRanges = curves
+    .filter((curve) => curve.category === 'hairpin-extreme')
+    .map((curve) => ({ startS: curve.startS, endS: curve.endS }));
+
+  interface Candidate {
+    startIndex: number;
+    endIndex: number;
+    startS: number;
+    endS: number;
+    score: number;
+  }
+
+  const collect = (minRatio: number, maxTurn: number): Candidate[] => {
+    const candidates: Candidate[] = [];
+
+    for (let startIndex = 2; startIndex < points.length - 8; startIndex += 1) {
+      const startS = sValues[startIndex];
+      if (startS < 130) {
+        continue;
+      }
+
+      for (
+        let endIndex = startIndex + 8;
+        endIndex < points.length - 2;
+        endIndex += 1
+      ) {
+        const endS = sValues[endIndex];
+        const span = endS - startS;
+        if (span < 100) {
+          continue;
+        }
+        if (span > 200) {
+          break;
+        }
+        if (endS > length - 110) {
+          break;
+        }
+
+        if (
+          extremeRanges.some(
+            (range) =>
+              endS > range.startS - 35 && startS < range.endS + 35,
+          )
+        ) {
+          continue;
+        }
+
+        if (zoneIndexAtS(zones, startS) !== zoneIndexAtS(zones, endS)) {
+          continue;
+        }
+
+        let pathLength = 0;
+        let turn = 0;
+        let previousHeading: number | null = null;
+        for (let i = startIndex + 1; i <= endIndex; i += 1) {
+          const a = points[i - 1];
+          const b = points[i];
+          pathLength += Math.hypot(b.x - a.x, b.z - a.z);
+          const heading = Math.atan2(b.x - a.x, b.z - a.z);
+          if (previousHeading !== null) {
+            turn += Math.abs(shortestAngle(previousHeading, heading));
+          }
+          previousHeading = heading;
+        }
+
+        const chord = Math.hypot(
+          points[endIndex].x - points[startIndex].x,
+          points[endIndex].z - points[startIndex].z,
+        );
+        const ratio = pathLength > 1e-6 ? chord / pathLength : 0;
+        if (ratio < minRatio || turn > maxTurn) {
+          continue;
+        }
+
+        candidates.push({
+          startIndex,
+          endIndex,
+          startS,
+          endS,
+          score: turn + (1 - ratio) * 4,
+        });
+        break;
+      }
+    }
+
+    return candidates;
+  };
+
+  let candidates = collect(0.82, (55 * Math.PI) / 180);
+  if (candidates.length === 0) {
+    candidates = collect(0.68, (90 * Math.PI) / 180);
+  }
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const wanted = rng.chance(0.45) ? 2 : 1;
+  const selected: Candidate[] = [];
+  const shuffled = shuffle(candidates, rng).sort((a, b) => a.score - b.score);
+
+  for (const candidate of shuffled) {
+    if (selected.length >= Math.min(wanted, FORK_TUNING.maxForks)) {
+      break;
+    }
+    if (
+      selected.some(
+        (other) =>
+          candidate.startS < other.endS + 50 &&
+          candidate.endS > other.startS - 50,
+      )
+    ) {
+      continue;
+    }
+    selected.push(candidate);
+  }
+
+  selected.sort((a, b) => a.startS - b.startS);
+
+  const forks: TrackFork[] = [];
+
+  for (let index = 0; index < selected.length; index += 1) {
+    const candidate = selected[index];
+    const side = rng.sign();
+    const amplitude = rng.range(14, 26);
+    const heightAmplitude = rng.range(0, 1.8);
+    const nominalWidth = rng.range(
+      FORK_TUNING.branchWidth - 0.6,
+      FORK_TUNING.branchWidth + 0.8,
+    );
+    const branchPoints: TrackPoint[] = [];
+
+    for (let i = candidate.startIndex; i <= candidate.endIndex; i += 1) {
+      const t =
+        (i - candidate.startIndex) /
+        Math.max(1, candidate.endIndex - candidate.startIndex);
+      const point = points[i];
+      const previous = points[Math.max(0, i - 1)];
+      const next = points[Math.min(points.length - 1, i + 1)];
+      const dx = next.x - previous.x;
+      const dz = next.z - previous.z;
+      const horizontal = Math.hypot(dx, dz) || 1;
+      const rightX = dz / horizontal;
+      const rightZ = -dx / horizontal;
+      const bulge = Math.sin(Math.PI * t);
+      const offset =
+        side * amplitude * bulge +
+        side * amplitude * 0.18 * Math.sin(Math.PI * 2 * t);
+      const y = point.y + heightAmplitude * bulge;
+      const width = 4.6 + (nominalWidth - 4.6) * bulge;
+
+      branchPoints.push({
+        x: point.x + rightX * offset,
+        z: point.z + rightZ * offset,
+        y,
+        width,
+      });
+    }
+
+    if (branchPoints.length < 6) {
+      continue;
+    }
+
+    let branchLength = 0;
+    for (let i = 1; i < branchPoints.length; i += 1) {
+      const a = branchPoints[i - 1];
+      const b = branchPoints[i];
+      branchLength += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    }
+
+    if (branchLength < 70) {
+      continue;
+    }
+
+    if (
+      branchNearMain(
+        branchPoints,
+        points,
+        candidate.startIndex,
+        candidate.endIndex,
+      )
+    ) {
+      continue;
+    }
+
+    const branch: TrackForkBranch = {
+      id: `fork-${index + 1}-a`,
+      points: branchPoints,
+      startS: candidate.startS,
+      endS: candidate.endS,
+      length: branchLength,
+      width: nominalWidth,
+    };
+
+    forks.push({
+      id: `fork-${index + 1}`,
+      startS: candidate.startS,
+      endS: candidate.endS,
+      branches: [branch],
+    });
+  }
+
+  return forks;
+}
+
+function branchNearMain(
+  branchPoints: readonly TrackPoint[],
+  mainPoints: readonly TrackPoint[],
+  startIndex: number,
+  endIndex: number,
+): boolean {
+  for (let i = 2; i < branchPoints.length - 2; i += 2) {
+    const branchPoint = branchPoints[i];
+
+    for (let j = 0; j < mainPoints.length; j += 2) {
+      if (j >= startIndex - 8 && j <= endIndex + 8) {
+        continue;
+      }
+
+      const mainPoint = mainPoints[j];
+      const distance = Math.hypot(
+        branchPoint.x - mainPoint.x,
+        branchPoint.z - mainPoint.z,
+      );
+      if (distance < 11) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function cumulativePointLengths(points: readonly TrackPoint[]): number[] {
+  const values = [0];
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    total += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    values.push(total);
+  }
+  return values;
+}
+
+function zoneIndexAtS(zones: readonly TrackZone[], s: number): number {
+  for (let i = 0; i < zones.length; i += 1) {
+    if (s >= zones[i].start && s < zones[i].end) {
+      return i;
+    }
+  }
+  return Math.max(0, zones.length - 1);
+}
+
+const HAZARD_SPEEDS: Record<TrackHazard['kind'], number> = {
+  camel: 3.2,
+  deer: 4.2,
+  reindeer: 4.0,
+  car: 7.0,
+  truck: 6.0,
+  tractor: 3.5,
+  cow: 2.8,
+  buggy: 6.0,
+};
+
+const HAZARD_RADII: Record<TrackHazard['kind'], { radius: number; height: number }> = {
+  camel: { radius: 1.3, height: 2.4 },
+  deer: { radius: 1.0, height: 1.8 },
+  reindeer: { radius: 1.0, height: 1.8 },
+  car: { radius: 1.2, height: 1.6 },
+  truck: { radius: 1.7, height: 2.6 },
+  tractor: { radius: 1.5, height: 2.2 },
+  cow: { radius: 1.2, height: 1.7 },
+  buggy: { radius: 1.2, height: 1.6 },
+};
+
+/**
+ * 1–3 obstáculos móveis por pista, com chance por setor e pelo menos um
+ * garantido. O posicionamento é deliberadamente aleatório dentro do setor,
+ * preservando só a largada/chegada, rampas, hairpin extremo e bifurcações.
+ */
+function buildHazards(
+  rng: Rng,
+  zones: readonly TrackZone[],
+  length: number,
+  kickers: readonly TrackKicker[],
+  curves: readonly ProceduralCurveInfo[],
+  forks: readonly TrackFork[],
+): readonly TrackHazard[] {
+  const zoneIndexes = zones
+    .map((_, index) => index)
+    .filter(() => rng.chance(HAZARD_TUNING.zoneChance));
+
+  if (zoneIndexes.length === 0) {
+    zoneIndexes.push(rng.int(0, zones.length - 1));
+  }
+
+  shuffle(zoneIndexes, rng);
+
+  while (zoneIndexes.length > HAZARD_TUNING.maxPerRun) {
+    zoneIndexes.pop();
+  }
+
+  const extremeRanges = curves
+    .filter((curve) => curve.category === 'hairpin-extreme')
+    .map((curve) => ({ startS: curve.startS, endS: curve.endS }));
+
+  const hazards: TrackHazard[] = [];
+  const usedZones = new Set<number>();
+
+  const tryPlace = (zoneIndex: number): TrackHazard | null => {
+    const zone = zones[zoneIndex];
+    const minimum = Math.max(
+      zone.start + 40,
+      HAZARD_TUNING.minStartClearance,
+    );
+    const maximum = Math.min(
+      zone.end - 40,
+      length - HAZARD_TUNING.finishClearance,
+    );
+
+    if (maximum <= minimum) {
+      return null;
+    }
+
+    for (let attempt = 0; attempt < 160; attempt += 1) {
+      const s = rng.range(minimum, maximum);
+
+      if (
+        kickers.some(
+          (kicker) => s > kicker.s - 28 && s < kicker.s + kicker.length + 28,
+        )
+      ) {
+        continue;
+      }
+      if (
+        extremeRanges.some(
+          (range) => s > range.startS - 40 && s < range.endS + 40,
+        )
+      ) {
+        continue;
+      }
+      if (
+        forks.some((fork) => s > fork.startS - 25 && s < fork.endS + 25)
+      ) {
+        continue;
+      }
+      if (hazards.some((hazard) => Math.abs(hazard.s - s) < 90)) {
+        continue;
+      }
+
+      const scenario = zone.id;
+      const kind = rng.pick(SCENARIOS[scenario].hazardKinds);
+      const dimensions = HAZARD_RADII[kind];
+
+      return {
+        id: `hazard-${zoneIndex + 1}-${kind}`,
+        kind,
+        zoneIndex,
+        scenario,
+        s,
+        direction: rng.sign() as 1 | -1,
+        speed: HAZARD_SPEEDS[kind],
+        radius: dimensions.radius,
+        height: dimensions.height,
+      };
+    }
+
+    return null;
+  };
+
+  for (const zoneIndex of zoneIndexes) {
+    if (usedZones.has(zoneIndex)) {
+      continue;
+    }
+
+    const hazard = tryPlace(zoneIndex);
+    if (hazard) {
+      hazards.push(hazard);
+      usedZones.add(zoneIndex);
+    }
+  }
+
+  // Garantia de pelo menos 1: procura qualquer setor ainda elegível.
+  if (hazards.length === 0) {
+    for (let zoneIndex = 0; zoneIndex < zones.length; zoneIndex += 1) {
+      const hazard = tryPlace(zoneIndex);
+      if (hazard) {
+        hazards.push(hazard);
+        break;
+      }
+    }
+  }
+
+  hazards.sort((a, b) => a.s - b.s);
+  return hazards;
+}
+
 function placeKickersOnStraights(
   rng: Rng,
   straights: readonly ProceduralStraightInfo[],
   curves: readonly ProceduralCurveInfo[],
   length: number,
   scale: number,
+  forks: readonly TrackFork[],
 ): readonly TrackKicker[] {
   const desired = rng.chance(0.7) ? 2 : 1;
-  // Nunca coloca rampa na aproximação/saída do hairpin extremo.
-  const reserved = curves
-    .filter((curve) => curve.category === 'hairpin-extreme')
-    .flatMap((curve) => [
-      { startS: curve.startS - 12, endS: curve.startS + 12 },
-      { startS: curve.endS - 12, endS: curve.endS + 12 },
-    ]);
+  // Nunca coloca rampa na aproximação/saída do hairpin extremo nem no meio de
+  // uma bifurcação.
+  const reserved = [
+    ...curves
+      .filter((curve) => curve.category === 'hairpin-extreme')
+      .flatMap((curve) => [
+        { startS: curve.startS - 12, endS: curve.startS + 12 },
+        { startS: curve.endS - 12, endS: curve.endS + 12 },
+      ]),
+    ...forks.map((fork) => ({
+      startS: fork.startS - 10,
+      endS: fork.endS + 10,
+    })),
+  ];
   const candidates = shuffle(
     straights.filter(
       (straight) =>
@@ -1360,7 +1825,7 @@ function placePowerupsOnTrack(
   const total = raw[raw.length - 1].s;
 
   for (let attempt = 0; attempt < 900 && placed.length < count; attempt += 1) {
-    const rawS = rng.range(15, Math.max(20, total - 18));
+    const rawS = rng.range(45, Math.max(50, total - 18));
     const s = rawS * scale;
     if (s > length - 12) {
       continue;
@@ -1433,6 +1898,7 @@ function placeObstaclesOffTrack(
   rng: Rng,
   raw: readonly RawPoint[],
   widthAt: (s: number) => number,
+  zones: readonly TrackZone[],
   length: number,
   scale: number,
 ): readonly TrackObstacle[] {
@@ -1483,8 +1949,8 @@ function placeObstaclesOffTrack(
     }
 
     const zoneIndex = Math.min(3, Math.floor((rawS / Math.max(1, total)) * 4));
-    const zoneId: TrackZoneId = zoneIndex % 2 === 0 ? 'forest' : 'desert';
-    const type = pickObstacleType(rng, zoneId);
+    const zone = zones[zoneIndex] ?? zones[zones.length - 1];
+    const type = pickObstacleType(rng, zone.id);
     const radius =
       type === 'tree'
         ? rng.range(0.8, 1.4)
@@ -2100,16 +2566,21 @@ function buildZonesAndSplitsV5(
   }
   bounds[bounds.length - 1] = length;
 
+  // 4 cenários distintos do pool de 6. A pista vira uma volta pelo mundo,
+  // com trocas de piso e de leitura visual a cada ~350–450 m.
+  const scenarios = shuffle(SCENARIO_IDS, rng).slice(0, 4);
   const zones: TrackZone[] = [];
   const splits: TrackSplit[] = [];
 
   for (let i = 0; i < 4; i += 1) {
-    const id: TrackZoneId = i % 2 === 0 ? 'forest' : 'desert';
+    const id = scenarios[i] ?? SCENARIO_IDS[i % SCENARIO_IDS.length];
+    const scenario = SCENARIOS[id];
     zones.push({
       start: bounds[i],
       end: i === 3 ? length : bounds[i + 1],
       id,
-      surface: id === 'forest' ? 'gravel' : 'sand',
+      surface: scenario.roadSurface,
+      offroad: scenario.offroadSurface,
     });
   }
 
@@ -2277,19 +2748,36 @@ function placeObstacles(
 
 function pickObstacleType(
   rng: Rng,
-  zone: TrackZoneId,
+  scenario: ScenarioId,
 ): TrackObstacle['type'] {
   const roll = rng.next();
 
-  if (zone === 'forest') {
-    if (roll < 0.45) return 'tree';
-    if (roll < 0.8) return 'rock';
-    return 'log';
+  switch (scenario) {
+    case 'forest':
+      if (roll < 0.45) return 'tree';
+      if (roll < 0.8) return 'rock';
+      return 'log';
+    case 'desert':
+      if (roll < 0.55) return 'rock';
+      if (roll < 0.85) return 'log';
+      return 'tree';
+    case 'snow':
+      if (roll < 0.4) return 'tree';
+      if (roll < 0.8) return 'rock';
+      return 'log';
+    case 'village':
+      if (roll < 0.3) return 'tree';
+      if (roll < 0.7) return 'rock';
+      return 'log';
+    case 'dirt':
+      if (roll < 0.4) return 'tree';
+      if (roll < 0.65) return 'rock';
+      return 'log';
+    case 'beach':
+      if (roll < 0.55) return 'rock';
+      if (roll < 0.85) return 'log';
+      return 'tree';
   }
-
-  if (roll < 0.55) return 'rock';
-  if (roll < 0.85) return 'log';
-  return 'tree';
 }
 
 /** Medalhas do gerador novo, na escala física do carro (maxSpeed 39,1 m/s). */
@@ -2385,7 +2873,14 @@ export function validateProceduralTrack(
     );
   }
 
-  validateZones(track, def, length, limits, fail);
+  validateZones(
+    track,
+    def,
+    length,
+    limits,
+    options.profile ?? 'v5',
+    fail,
+  );
   validateSplits(def, length, options.profile ?? 'v5', fail);
 
   let minWidth = Infinity;
@@ -2431,6 +2926,8 @@ export function validateProceduralTrack(
   }
 
   validateKickers(track, def, length, fail, warn);
+  validateForks(track, def, length, fail, warn);
+  validateHazards(track, def, length, fail);
   validatePowerups(def, length, widthAt, limits, fail);
   validateObstacles(def, length, widthAt, limits, fail);
   validateLayoutFeatures(
@@ -2519,6 +3016,8 @@ export function validateProceduralTrack(
       minSectionDistance: tooClose ? tooClose.distance : Infinity,
       flatFraction: layout?.flatFraction ?? 0,
       features: buildFeatures(layout),
+      forks: def.forks?.length ?? 0,
+      hazards: def.hazards?.length ?? 0,
     },
   };
 }
@@ -2743,6 +3242,7 @@ function validateZones(
   def: TrackDef,
   length: number,
   limits: ProfileLimits,
+  profile: ValidationProfile,
   fail: (message: string) => void,
 ): void {
   if (def.zones.length !== 4) {
@@ -2750,18 +3250,43 @@ function validateZones(
     return;
   }
 
+  const seen = new Set<ScenarioId>();
+
   for (let i = 0; i < def.zones.length; i += 1) {
     const zone = def.zones[i];
-    const expectedId: TrackZoneId = i % 2 === 0 ? 'forest' : 'desert';
-    const expectedSurface = expectedId === 'forest' ? 'gravel' : 'sand';
     const zoneLength = zone.end - zone.start;
 
-    if (zone.id !== expectedId) {
-      fail(`zona ${i + 1} deveria ser ${expectedId}, veio ${zone.id}`);
+    if (profile === 'legacy') {
+      const expectedId: TrackZoneId = i % 2 === 0 ? 'forest' : 'desert';
+      const expectedSurface = expectedId === 'forest' ? 'gravel' : 'sand';
+      if (zone.id !== expectedId) {
+        fail(`zona ${i + 1} deveria ser ${expectedId}, veio ${zone.id}`);
+      }
+      if (zone.surface !== expectedSurface) {
+        fail(`superfície da zona ${i + 1} incompatível com ${zone.id}`);
+      }
+    } else {
+      const scenario = SCENARIOS[zone.id];
+      if (!scenario) {
+        fail(`zona ${i + 1} tem cenário desconhecido ${zone.id}`);
+      } else {
+        if (zone.surface !== scenario.roadSurface) {
+          fail(
+            `superfície ${zone.surface} incompatível com o cenário ${zone.id}`,
+          );
+        }
+        if (zone.offroad !== scenario.offroadSurface) {
+          fail(
+            `off-road ${zone.offroad ?? '—'} incompatível com o cenário ${zone.id}`,
+          );
+        }
+      }
+      seen.add(zone.id);
+      if (i > 0 && def.zones[i - 1].id === zone.id) {
+        fail(`zona ${i + 1} repete o cenário da anterior (${zone.id})`);
+      }
     }
-    if (zone.surface !== expectedSurface) {
-      fail(`superfície da zona ${i + 1} incompatível com ${zone.id}`);
-    }
+
     if (zoneLength < limits.minZoneLength || zoneLength > limits.maxZoneLength) {
       fail(
         `zona ${i + 1} tem ${zoneLength.toFixed(1)} m ` +
@@ -2776,8 +3301,12 @@ function validateZones(
     }
   }
 
+  if (profile === 'v5' && seen.size < 3) {
+    fail(`pista com ${seen.size} cenários distintos (mínimo 3)`);
+  }
+
   const zoneAtStart = track.zoneAt(0);
-  if (zoneAtStart !== 'forest') {
+  if (profile === 'legacy' && zoneAtStart !== 'forest') {
     fail('a primeira zona deveria ser floresta');
   }
 }
@@ -3016,6 +3545,109 @@ function computeMaxGrade(
   return maximum;
 }
 
+function validateForks(
+  track: Track,
+  def: TrackDef,
+  length: number,
+  fail: (message: string) => void,
+  warn: (message: string) => void,
+): void {
+  const forks = def.forks ?? [];
+  if (forks.length > FORK_TUNING.maxForks) {
+    fail(`bifurcações demais: ${forks.length} (máx ${FORK_TUNING.maxForks})`);
+  }
+  if (forks.length === 0) {
+    warn('pista sem bifurcação');
+    return;
+  }
+
+  for (let i = 0; i < forks.length; i += 1) {
+    const fork = forks[i];
+    if (fork.startS < 100 || fork.endS > length - 80 || fork.endS - fork.startS < 70) {
+      fail(
+        `bifurcação ${i + 1} em s=${fork.startS.toFixed(0)}..${fork.endS.toFixed(0)} ` +
+          `fora da faixa segura`,
+      );
+    }
+
+    if (i > 0 && fork.startS < forks[i - 1].endS + 40) {
+      fail(`bifurcação ${i + 1} encosta na anterior`);
+    }
+
+    for (const branchInfo of fork.branches) {
+      if (
+        Math.abs(branchInfo.startS - fork.startS) > 0.5 ||
+        Math.abs(branchInfo.endS - fork.endS) > 0.5
+      ) {
+        fail(`ramo ${branchInfo.id} não casa com o início/fim da bifurcação`);
+      }
+      if (branchInfo.points.length < 6) {
+        fail(`ramo ${branchInfo.id} tem poucos pontos de controle`);
+      }
+
+      const branch = track.branches.find((entry) => entry.id === branchInfo.id);
+      if (!branch) {
+        fail(`ramo ${branchInfo.id} não foi construído no Track`);
+        continue;
+      }
+
+      const startMain = track.sampleAt(branch.startS);
+      const endMain = track.sampleAt(branch.endS);
+      const startBranch = branch.sampleAt(0);
+      const endBranch = branch.sampleAt(branch.length);
+      const startDistance = Math.hypot(
+        startMain.position.x - startBranch.position.x,
+        startMain.position.z - startBranch.position.z,
+      );
+      const endDistance = Math.hypot(
+        endMain.position.x - endBranch.position.x,
+        endMain.position.z - endBranch.position.z,
+      );
+
+      if (startDistance > 2 || endDistance > 2) {
+        fail(
+          `ramo ${branchInfo.id} não começa/termina na pista ` +
+            `(${startDistance.toFixed(1)} m / ${endDistance.toFixed(1)} m)`,
+        );
+      }
+
+      let minBranchWidth = Infinity;
+      for (let s = 0; s <= branch.length; s += 2) {
+        minBranchWidth = Math.min(minBranchWidth, branch.widthAt(s));
+      }
+      if (minBranchWidth < 4.4) {
+        fail(`ramo ${branchInfo.id} estreita demais (${minBranchWidth.toFixed(2)} m)`);
+      }
+
+      // O ramo pode se afastar, mas não deve encostar em outro trecho da pista
+      // principal fora da própria bifurcação.
+      for (let s = 8; s < branch.length - 8; s += 4) {
+        const sample = branch.sampleAt(s);
+        const projection = track.project(
+          sample.position.x,
+          sample.position.z,
+        );
+        if (
+          projection.s > fork.startS - 8 &&
+          projection.s < fork.endS + 8
+        ) {
+          continue;
+        }
+        const clearance =
+          track.widthAt(projection.s) * 0.5 +
+          branch.widthAt(s) * 0.5 +
+          2;
+        if (projection.distance < clearance) {
+          warn(
+            `ramo ${branchInfo.id} passa a ${projection.distance.toFixed(1)} m ` +
+              `da pista principal em s=${projection.s.toFixed(0)} m`,
+          );
+        }
+      }
+    }
+  }
+}
+
 function validateKickers(
   track: Track,
   def: TrackDef,
@@ -3069,6 +3701,60 @@ function validateKickers(
       warn(
         `kicker ${i + 1} com desvio de ${maximumDeviation.toFixed(2)} rad`,
       );
+    }
+  }
+}
+
+function validateHazards(
+  track: Track,
+  def: TrackDef,
+  length: number,
+  fail: (message: string) => void,
+): void {
+  const hazards = def.hazards ?? [];
+  if (hazards.length < 1 || hazards.length > HAZARD_TUNING.maxPerRun) {
+    fail(
+      `hazards fora da faixa 1..${HAZARD_TUNING.maxPerRun} ` +
+        `(${hazards.length})`,
+    );
+  }
+
+  for (let i = 0; i < hazards.length; i += 1) {
+    const hazard = hazards[i];
+    const zone = def.zones[hazard.zoneIndex];
+    if (!zone) {
+      fail(`hazard ${i + 1} aponta para setor inexistente`);
+      continue;
+    }
+    if (hazard.scenario !== zone.id) {
+      fail(`hazard ${i + 1} não pertence ao cenário do setor`);
+    }
+    if (!SCENARIOS[zone.id].hazardKinds.includes(hazard.kind)) {
+      fail(`hazard ${i + 1} (${hazard.kind}) não é válido em ${zone.id}`);
+    }
+    if (
+      hazard.s < HAZARD_TUNING.minStartClearance ||
+      hazard.s > length - HAZARD_TUNING.finishClearance
+    ) {
+      fail(`hazard ${i + 1} em s=${hazard.s.toFixed(0)} fora da faixa segura`);
+    }
+    if (hazard.s < zone.start || hazard.s > zone.end) {
+      fail(`hazard ${i + 1} fora do setor ${hazard.zoneIndex + 1}`);
+    }
+    if (
+      def.kickers.some(
+        (kicker) =>
+          hazard.s > kicker.s - 20 &&
+          hazard.s < kicker.s + kicker.length + 20,
+      )
+    ) {
+      fail(`hazard ${i + 1} em cima de uma rampa`);
+    }
+    if (track.branches.some((branch) => {
+      const delta = hazard.s - branch.startS;
+      return delta > -15 && hazard.s < branch.endS + 15;
+    })) {
+      fail(`hazard ${i + 1} dentro de uma bifurcação`);
     }
   }
 }

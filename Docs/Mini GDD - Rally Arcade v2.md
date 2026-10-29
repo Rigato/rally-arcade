@@ -1,8 +1,8 @@
-# Mini GDD - Rally Arcade v2.1
+# Mini GDD - Rally Arcade v2.2
 
 Oct 28, 2026 · @George
 
-> **Revisão 2.1 (Oct 28, 2026).** Este documento foi atualizado para refletir o protótipo v7: GO + auto-aceleração + 5 botões touch, pista procedural aleatória como default, pista fixa via **FIXA**, hairpin extremo, medalhas atuais e poeira. O GDD v2 original está preservado em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
+> **Revisão 2.2 (Oct 28, 2026).** Este documento foi atualizado para refletir o protótipo v8: seis cenários (floresta, deserto, neve, vilarejo, estrada de terra e praia), poeira por piso, bifurcações procedurais, obstáculos móveis por cenário, menu de pistas/seeds e velocímetro. O GDD v2.1 está preservado no histórico do documento; o v2 original continua em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
 
 ## Ficha e High Concept
 
@@ -22,7 +22,7 @@ Rally Arcade é um jogo de corrida arcade para celular, jogável com uma mão, e
 O jogo se sustenta em três sensações: dirigir gostoso, viver o rally e rejogar sempre uma pista nova.
 
 1. **Gostoso de dirigir e fácil de jogar.** Dá para jogar com uma mão só, com o polegar, com o celular de pé. O carro é solto de traseira e derrapa. Os terrenos mudam o comportamento do carro, principalmente o grip. O esquema atual usa **GO + auto-aceleração + 5 botões** (◀/▶, ◀F/▶F e FREIO), com menu para escolher o lado da mão.
-2. **Elementos importantes de rally.** Saltos, curvas de vários tipos (incluindo hairpin normal e extremo) e cenários diferentes. Hoje: floresta/cascalho e deserto/areia. Neve, vilarejo, asfalto e estrada de terra continuam no roadmap.
+2. **Elementos importantes de rally.** Saltos, curvas de vários tipos (incluindo hairpin normal e extremo) e cenários diferentes. Implementados: **floresta/cascalho, deserto/areia, neve, vilarejo/asfalto, estrada de terra e praia/areia de praia**. Cada cenário tem piso, paleta, poeira e obstáculos próprios.
 3. **Pista procedural para alta rejogabilidade.** Já implementada como protótipo e agora é o **modo padrão**: abrir `/` sorteia uma seed 1–100. A pista fixa continua como test track no botão **FIXA**.
 
 ## 2. O Diferencial (The Hook)
@@ -67,6 +67,8 @@ O controle é pensado para o celular em portrait e para uma mão só. O esquema 
 - **Reiniciar:** botão no topo ou R.
 - **PC:** teclado A/← esquerda, D/→ direita, S/↓ freio, Espaço handbrake, R reset, H telemetria. O mouse ainda só clica no GO/canvas; o esquema de mouse do GDD v2 não foi implementado.
 - **Desktop:** os controles touch ficam ocultos; o GO mostra “CLIQUE OU ENTER”.
+- **Menu de pistas:** **☰ PISTAS** abre uma grade de seeds 1–100 com melhor tempo, campo para digitar seed, **SORTEAR** e **PISTA FIXA**. Abrir durante a corrida pausa simulação e cronômetro; no resultado há **ESCOLHER PISTA**.
+- **Velocímetro:** km/h e barra de velocidade no canto inferior, espelhado conforme o lado do stack MÃO.
 
 ### Derrapagem
 
@@ -82,20 +84,23 @@ Terceira pessoa, por trás do carro, em ângulo alto, quase top-down, para mostr
 
 ### Terrenos
 
-- Cada cenário tem um tipo principal de piso: **floresta/cascalho** e **deserto/areia**.
-- Fora da pista há pisos próprios (floresta/deserto) mais soltos, com mais arrasto e trepidação.
-- O terreno muda **grip**, aceleração, frenagem, arrasto, resposta do esterço e bump.
-- **Novos cenários** (neve, vilarejo, asfalto, estrada de terra) continuam no roadmap.
+- Cada cenário tem um tipo principal de piso: **floresta/cascalho, deserto/areia, neve, vilarejo/asfalto, estrada de terra e praia/areia de praia**.
+- Fora da pista há pisos próprios por cenário, mais soltos, com mais arrasto e trepidação.
+- O terreno muda **grip**, aceleração, frenagem, arrasto, resposta do esterço, bump e limite de velocidade.
+- A neve solta mais a traseira, o asfalto do vilarejo agarra mais, a terra fica entre cascalho e areia e a praia puxa para fora.
+- **Poeira por cenário:** cor, densidade, tamanho, vida, subida e gravidade variam por piso; o deserto usa tom mais escuro para contraste e a neve um spray branco-azulado.
 
 ### Pista e fora da pista
 
 - **Pista fixa:** `track01-v3`, A→B, **1096,8 m**, 4 setores, raio mínimo 30,2 m, 2 rampas, 4 powerups, 50 obstáculos. Acessível por **FIXA** / `?track=fixed`.
-- **Pistas procedurais:** A→B, **1518–1624 m**, 4 setores de ~354–438 m, 7 tipos de curva (incluindo **hairpin extremo 13–14 m** e **kink**), largura 4,6–15,0 m, chokes de 4,6–5,4 m, 6–8 powerups, 50–75 obstáculos, 2–3 platôs planos. Seed 1–100.
-- **Default:** abrir `/` sorteia uma procedural; **NOVA** gera outra; **FIXA** carrega a pista fixa.
+- **Pistas procedurais:** A→B, **1518–1625 m**, 4 setores de ~354–438 m sorteados do pool de seis cenários, 7 tipos de curva (incluindo **hairpin extremo 13–14 m** e **kink**), largura 4,6–15,0 m, chokes de 4,6–5,4 m, 6–8 powerups, 50–75 obstáculos, 1–2 bifurcações, 1–3 obstáculos móveis e 2–3 platôs planos. Seed 1–100.
+- **Default:** abrir `/` sorteia uma procedural; **NOVA** gera outra; o menu **PISTAS** escolhe seed ou pista fixa.
 - A pista tem subidas e descidas; pontos íngremes criam saltos.
+- **Bifurcações:** em retas longas, um ramo com spline/altura/largura próprios sai da pista principal e volta a se juntar. O jogador escolhe o lado; não há recompensa exclusiva nesta versão. A pista fixa continua sem bifurcação.
+- **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor. Cada evento é um animal/veículo do cenário que atravessa a pista quando o carro se aproxima e colide. O começo da run fica preservado.
 - **Fora da pista dá para se recuperar.** O piso acidentado desacelera, trepida e pode tirar o carro do chão; obstáculos sólidos dão ricochete. Se não bater, o jogador pode voltar à pista.
 - **Limite do mundo:** além de ~12 m da borda, o carro é recuperado automaticamente perdendo tempo.
-- **Caminhos alternativos/linhas de risco-recompensa:** ainda não implementados; continuam como ideia em aberto.
+- **Caminhos alternativos/linhas de risco-recompensa:** a bifurcação v1 implementa a escolha de caminho sem recompensa assimétrica; linhas de risco/recompensa continuam em aberto.
 
 ### Saltos
 
@@ -128,7 +133,7 @@ O visual é low poly 3D e nada realista; o som planejado mistura rally house com
 - **Tom sonoro planejado:** Rally House, com deep house enérgico, vocal loops de phonk, UK garage e estética retrô de jogos de corrida.
 - **Detalhes de som planejados:** motor, estouros/pops do escapamento e derrapagem diferente por piso/cenário.
 - **Estado do áudio:** **não implementado** no MVP; fica para uma fase de polimento.
-- **Poeira:** implementada e proporcional ao slip. No deserto a cor ainda tem pouco contraste com o chão; modular volume/cor por bioma é um item futuro.
+- **Poeira:** implementada e proporcional ao slip, com perfis por piso: cor primária/secundária, taxa, tamanho, alpha, vida, subida e gravidade. O deserto foi escurecido para contrastar com a areia; a neve usa spray branco-azulado.
 
 ## 6. Benchmarks e Inspirações
 
@@ -149,6 +154,10 @@ O MVP existe para testar se dirigir é gostoso, antes de investir em arte e fase
 - [x] Suspensão e rolagem só visuais da carroceria, incluindo o pouso dos saltos.
 - [x] Dois powerups: turbo temporário e grip extra.
 - [x] Dois cenários com pisos diferentes: floresta com cascalho e deserto com areia.
+- [x] **Além do MVP:** mais quatro cenários (neve, vilarejo, estrada de terra e praia) com pisos, paletas, poeira e obstáculos próprios.
+- [x] **Além do MVP:** 1–2 bifurcações procedurais por pista, com ramo de spline/altura/largura próprios.
+- [x] **Além do MVP:** 1–3 obstáculos móveis por pista, com tipo por cenário e toggle de debug.
+- [x] **Além do MVP:** menu de pistas/seeds e velocímetro.
 - [x] Uma pista fixa de 30–60 s com subidas, descidas, largura variável e ao menos um salto.
 - [x] Fora da pista recuperável, com obstáculos, piso acidentado, ricochete e limite do mundo.
 - [x] Cronômetro, distância percorrida e tempo parcial a cada troca de cenário.
@@ -169,32 +178,35 @@ O MVP existe para testar se dirigir é gostoso, antes de investir em arte e fase
 Depois de validar o feeling, a ideia é crescer em progressão, variedade e profundidade de mecânicas.
 
 - **Progressão fora da corrida:** cada medalha rende dinheiro para tunar o carro e comprar outros, com vários modelos de rally. Certas fases/mundos só abrem com determinado carro. **Não iniciado.**
-- **Mais cenários:** neve, vilarejos, asfalto, estrada de terra. **Não iniciado.**
+- **Mais cenários:** neve, vilarejo, estrada de terra e praia **implementados no protótipo v8**; asfalto/variações adicionais continuam possíveis.
 - **Dificuldade crescente:** mais mudanças de cenário e composições mais difíceis, com desafios a cada X tempos. **Não iniciado.**
 - **Suspensão** influenciando o comportamento lateral do carro, além do visual. **Não iniciado.**
 - **Saltos:** manobras e controle no ar/aterrissagem. **Não iniciado.**
 - **Público** ajudando a recolocar o carro na pista. **Não iniciado.**
 - **Áudio completo** (Rally House, motor, escapamento, derrapagem por piso). **Não iniciado.**
-- **Procedural como produto:** menu de seeds, histórico/favoritos, compartilhar seed, daily challenge e editor. **Parcial:** já há default aleatório, NOVA/FIXA e URLs com seed, mas não há menu/editor.
-- **Caminhos alternativos/linhas de risco-recompensa.** **Não iniciado.**
+- **Procedural como produto:** menu de seeds **implementado**; histórico/favoritos, compartilhar seed, daily challenge e editor continuam pendentes.
+- **Caminhos alternativos/linhas de risco-recompensa:** bifurcação v1 implementada sem recompensa assimétrica; linhas de risco/recompensa continuam em aberto.
+- **Obstáculos móveis:** 1–3 por pista com tipo por cenário **implementados**; variedade de modelos e comportamento por cenário podem crescer.
 
 ## 9. Pontos em aberto para testar
 
 - **Freio de mão no touch:** 6º botão, gesto, combo ou manter teclado-only? O hairpin extremo atual exige freio normal.
-- **Medalhas:** o +3 s melhorou; continuar testando ouro/prata/bronze e as parciais.
-- **Poeira no deserto:** corrigir contraste da cor com o chão e modular volume/cor por bioma.
+- **Medalhas:** o +3 s melhorou; continuar testando ouro/prata/bronze e as parciais, agora com pisos variados.
+- **Poeira:** perfis por piso implementados; validar contraste em neve/praia em movimento.
 - **Hairpin extremo:** 13–14 m foi aprovado; se ainda estiver fácil, testar 12–13 m com ombro local menor.
-- **Default procedural:** mostrar a seed no HUD/resultado ou permitir repetir a pista sem sair do fluxo?
-- **Caminhos alternativos:** entram no MVP ou ficam para depois?
+- **Bifurcações:** a v1 é um ramo que sai e volta; testar se a escolha é legível e divertida. Caminhos com comprimentos/riscos diferentes ficam para depois.
+- **Obstáculos móveis:** testar frequência (1–3), timing de travessia e se a colisão é justa; ajustar por cenário.
+- **Cenários:** calibrar grip/aceleração de neve, asfalto, terra e praia no celular.
+- **Default procedural:** o menu PISTAS mostra a seed e permite repetir a pista.
 - **Limite do mundo:** calibrar os 12 m e o tempo perdido na recuperação.
 - **Áudio e progressão:** definir o próximo grande pilar antes de investir.
-- **Performance:** validar partículas/cenários em celular real; FPS de headless não representa.
+- **Performance:** validar partículas/cenários/hazards em celular real; FPS de headless não representa.
 
 ## 10. Documentos relacionados
 
 - [`../README.md`](../README.md) — quickstart, comandos, controles, deploy.
-- [`Implementation Plan - Rally Arcade MVP.md`](Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md) — decisões de implementação e histórico v1–v7.
+- [`Implementation Plan - Rally Arcade MVP.md`](Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md) — decisões de implementação e histórico v1–v8.
 - [`Handoff - Rally Arcade.md`](Handoff%20-%20Rally%20Arcade.md) — estado atual, gaps do GDD e agenda da próxima sessão de plan.
-- [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2 antes desta revisão.
+- [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2 antes da revisão v2.1.
 - [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md) — GDD v1 original.
-- [`screenshots/`](screenshots/) — capturas de referência (GO, controles, menu de mão, pista, choke, hairpin extremo, contact sheet procedural).
+- [`screenshots/`](screenshots/) — capturas de referência (GO, controles, menu de mão, cenários, pista, choke, hairpin extremo, contact sheet procedural).

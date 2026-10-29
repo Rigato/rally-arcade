@@ -4,6 +4,7 @@ import {
   BODY_TUNING,
   CAMERA_TUNING,
   CAR_TUNING,
+  DUST_TUNING,
   INPUT_TUNING,
   POWERUP_TUNING,
   RACE_TUNING,
@@ -20,16 +21,32 @@ const COPY_LABEL_MS = 1400;
 const SURFACE_LABELS: Record<SurfaceId, string> = {
   gravel: 'Cascalho',
   sand: 'Areia',
+  snow: 'Neve',
+  asphalt: 'Asfalto',
+  dirt: 'Estrada de terra',
+  'beach-sand': 'Areia de praia',
   'forest-offroad': 'Fora — floresta',
   'desert-offroad': 'Fora — deserto',
+  'snow-offroad': 'Fora — neve',
+  'village-offroad': 'Fora — vilarejo',
+  'dirt-offroad': 'Fora — terra',
+  'beach-offroad': 'Fora — praia',
 };
 
 const SURFACE_OPTIONS: Record<string, ForcedSurface> = {
   Automático: 'auto',
   Cascalho: 'gravel',
   Areia: 'sand',
+  Neve: 'snow',
+  Asfalto: 'asphalt',
+  'Estrada de terra': 'dirt',
+  'Areia de praia': 'beach-sand',
   'Fora — floresta': 'forest-offroad',
   'Fora — deserto': 'desert-offroad',
+  'Fora — neve': 'snow-offroad',
+  'Fora — vilarejo': 'village-offroad',
+  'Fora — terra': 'dirt-offroad',
+  'Fora — praia': 'beach-offroad',
 };
 
 export interface TuningPanelOptions {
@@ -77,6 +94,7 @@ export class TuningPanel {
     this.buildCameraFolder();
     this.buildInputFolder();
     this.buildSurfaceFolder();
+    this.buildDustFolder();
     this.buildRaceFolder();
     this.buildDebugFolder();
   }
@@ -219,6 +237,19 @@ export class TuningPanel {
     }
   }
 
+  private buildDustFolder(): void {
+    const folder = this.gui.addFolder('Poeira');
+
+    folder
+      .add(DUST_TUNING, 'enabled')
+      .name('Ativa')
+      .onChange(() => this.scheduleSave());
+
+    this.addNumber(folder, DUST_TUNING, 'rateScale', 'Taxa ×', 0, 2.5, 0.05);
+    this.addNumber(folder, DUST_TUNING, 'sizeScale', 'Tamanho ×', 0.3, 2, 0.05);
+    this.addNumber(folder, DUST_TUNING, 'alphaScale', 'Alpha ×', 0.2, 2, 0.05);
+  }
+
   private buildRaceFolder(): void {
     const folder = this.gui.addFolder('Powerups / Corrida');
     const powerups = folder.addFolder('Powerups');
@@ -278,6 +309,7 @@ export class TuningPanel {
       telemetry: this.hud.isDebugVisible(),
       surface: this.game.getForcedSurface() as string,
       showColliders: false,
+      hazards: this.game.areHazardsEnabled(),
       s: Number(this.game.getTrackS().toFixed(1)),
     };
 
@@ -286,6 +318,13 @@ export class TuningPanel {
       .name('Telemetria')
       .onChange((value: unknown) => {
         this.hud.setDebugVisible(Boolean(value));
+      });
+
+    folder
+      .add(debugState, 'hazards')
+      .name('Hazards ativos')
+      .onChange((value: unknown) => {
+        this.game.setHazardsEnabled(Boolean(value));
       });
 
     folder
@@ -338,6 +377,19 @@ export class TuningPanel {
         'nextObstacle',
       )
       .name('→ Próximo obstáculo');
+
+    folder
+      .add(
+        {
+          nextHazard: () => {
+            this.game.teleportToNextHazard();
+            debugState.s = Number(this.game.getTrackS().toFixed(1));
+            sController.updateDisplay();
+          },
+        },
+        'nextHazard',
+      )
+      .name('→ Próximo hazard');
 
     this.copyController = folder
       .add({ copy: () => void this.copyJson() }, 'copy')

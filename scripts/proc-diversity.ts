@@ -300,6 +300,10 @@ function writeContactSheet(items: readonly Row[], path: string): void {  const s
   const zoneColors: Record<string, string> = {
     forest: '#4f9a5d',
     desert: '#d3a95f',
+    snow: '#d7e6ee',
+    village: '#8a8d78',
+    dirt: '#a9794f',
+    beach: '#e0c58c',
   };
   const parts: string[] = [];
 
@@ -311,7 +315,7 @@ function writeContactSheet(items: readonly Row[], path: string): void {  const s
     `<text x="16" y="24" fill="#f0ece0" font-family="monospace" font-size="16">Rally Arcade — diversidade procedural (${shown.length} seeds, ${columns}×${rows})</text>`,
   );
   parts.push(
-    `<text x="16" y="42" fill="#9aa89c" font-family="monospace" font-size="10">verde = largada · branco = chegada · cores = setores floresta/deserto · escala independente por célula</text>`,
+    `<text x="16" y="42" fill="#9aa89c" font-family="monospace" font-size="10">verde = largada · branco = chegada · cores = cenários · tracejado = pista principal</text>`,
   );
 
   shown.forEach((row, index) => {
@@ -371,6 +375,17 @@ function writeContactSheet(items: readonly Row[], path: string): void {  const s
       `<polyline points="${samples.map((sample) => project(sample.x, sample.z)).join(' ')}" fill="none" stroke="#0d100e" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>`,
     );
 
+    for (const fork of row.def.forks ?? []) {
+      for (const branch of fork.branches) {
+        const points = branch.points
+          .map((point) => project(point.x, point.z))
+          .join(' ');
+        parts.push(
+          `<polyline points="${points}" fill="none" stroke="#e8dcc4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.72"/>`,
+        );
+      }
+    }
+
     const start = samples[0];
     const finish = samples[samples.length - 1];
     const [sx, sy] = project(start.x, start.z).split(',');
@@ -380,7 +395,7 @@ function writeContactSheet(items: readonly Row[], path: string): void {  const s
       `<circle cx="${fx}" cy="${fy}" r="5" fill="#ffffff"/>`,
     );
 
-    const label = `#${row.seed} ${row.length.toFixed(0)} m · r${row.minRadius.toFixed(0)} · A→B ${row.startToFinish.toFixed(0)} m`;
+    const label = `#${row.seed} ${row.length.toFixed(0)} m · r${row.minRadius.toFixed(0)} · A→B ${row.startToFinish.toFixed(0)} m · F${row.def.forks?.length ?? 0} H${row.def.hazards?.length ?? 0}`;
     const counts = `L${row.counts.long} M${row.counts.medium} C${row.counts.short} E${row.counts.elbow} H${row.counts.hairpin} X${row.counts['hairpin-extreme']} K${row.counts.kink}`;
     const balance = `chk ${row.chokes} · est ${row.longNarrow} · larg ${row.wide} · plano ${(row.flatFraction * 100).toFixed(0)}% · esq ${row.leftSweep.toFixed(0)}° / dir ${row.rightSweep.toFixed(0)}°`;
     parts.push(

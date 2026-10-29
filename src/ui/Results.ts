@@ -23,8 +23,10 @@ export class Results {
   private readonly newBestEl: HTMLElement;
   private readonly targetValues = new Map<MedalId, HTMLElement>();
   private readonly retryButton: HTMLButtonElement;
+  private readonly chooseTrackButton: HTMLButtonElement;
 
   private retryHandler: (() => void) | null = null;
+  private chooseTrackHandler: (() => void) | null = null;
 
   constructor(host: HTMLElement) {
     this.overlay = document.createElement('div');
@@ -98,6 +100,13 @@ export class Results {
     this.retryButton.textContent = 'CORRER DE NOVO';
     this.retryButton.addEventListener('click', this.handleRetry);
 
+    this.chooseTrackButton = document.createElement('button');
+    this.chooseTrackButton.className = 'results__choose';
+    this.chooseTrackButton.type = 'button';
+    this.chooseTrackButton.textContent = 'ESCOLHER PISTA';
+    this.chooseTrackButton.setAttribute('aria-label', 'Escolher pista');
+    this.chooseTrackButton.addEventListener('click', this.handleChooseTrack);
+
     this.panel.append(
       kicker,
       this.timeEl,
@@ -106,6 +115,7 @@ export class Results {
       targets,
       stats,
       this.retryButton,
+      this.chooseTrackButton,
     );
     this.overlay.append(this.panel);
     host.append(this.overlay);
@@ -113,6 +123,11 @@ export class Results {
 
   onRetry(handler: () => void): void {
     this.retryHandler = handler;
+  }
+
+  /** Botão secundário: o jogo abre o menu de pistas (o Results não abre). */
+  onChooseTrack(handler: () => void): void {
+    this.chooseTrackHandler = handler;
   }
 
   show(result: RaceResult): void {
@@ -187,7 +202,9 @@ export class Results {
 
   dispose(): void {
     this.retryButton.removeEventListener('click', this.handleRetry);
+    this.chooseTrackButton.removeEventListener('click', this.handleChooseTrack);
     this.retryHandler = null;
+    this.chooseTrackHandler = null;
     this.overlay.remove();
   }
 
@@ -212,6 +229,10 @@ export class Results {
 
   private readonly handleRetry = (): void => {
     this.retryHandler?.();
+  };
+
+  private readonly handleChooseTrack = (): void => {
+    this.chooseTrackHandler?.();
   };
 }
 

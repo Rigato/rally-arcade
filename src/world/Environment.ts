@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { lerp } from '../core/math';
-import type { TrackZone } from '../game/types';
+import type { ScenarioId, TrackZone } from '../game/types';
+import { SCENARIOS, SCENARIO_IDS } from '../game/scenarios';
 import { zoneBlendAt, type ZoneId } from '../track/zones';
 
 interface EnvironmentPalette {
@@ -16,36 +17,25 @@ interface EnvironmentPalette {
   sunPosition: THREE.Vector3;
 }
 
-const FOREST: EnvironmentPalette = {
-  hemiIntensity: 1.25,
-  sunIntensity: 2.0,
-  fogNear: 55,
-  fogFar: 235,
-  sky: new THREE.Color(0xb5c3bf),
-  fog: new THREE.Color(0xb5c3bf),
-  hemiSky: new THREE.Color(0xdce9ee),
-  hemiGround: new THREE.Color(0x36452f),
-  sun: new THREE.Color(0xfff0d0),
-  sunPosition: new THREE.Vector3(28, 42, 18),
-};
+function paletteFor(id: ScenarioId): EnvironmentPalette {
+  const source = SCENARIOS[id].environment;
+  return {
+    hemiIntensity: source.hemiIntensity,
+    sunIntensity: source.sunIntensity,
+    fogNear: source.fogNear,
+    fogFar: source.fogFar,
+    sky: new THREE.Color(source.sky),
+    fog: new THREE.Color(source.fog),
+    hemiSky: new THREE.Color(source.hemiSky),
+    hemiGround: new THREE.Color(source.hemiGround),
+    sun: new THREE.Color(source.sun),
+    sunPosition: new THREE.Vector3().fromArray(source.sunPosition),
+  };
+}
 
-const DESERT: EnvironmentPalette = {
-  hemiIntensity: 1.35,
-  sunIntensity: 2.25,
-  fogNear: 50,
-  fogFar: 220,
-  sky: new THREE.Color(0xe9d0a5),
-  fog: new THREE.Color(0xe6cda5),
-  hemiSky: new THREE.Color(0xffe5bd),
-  hemiGround: new THREE.Color(0x9c7a4a),
-  sun: new THREE.Color(0xffd39a),
-  sunPosition: new THREE.Vector3(45, 34, -16),
-};
-
-const PALETTES: Record<ZoneId, EnvironmentPalette> = {
-  forest: FOREST,
-  desert: DESERT,
-};
+const PALETTES = Object.fromEntries(
+  SCENARIO_IDS.map((id) => [id, paletteFor(id)]),
+) as Record<ZoneId, EnvironmentPalette>;
 
 const DEFAULT_ZONES: readonly TrackZone[] = [
   { start: 0, end: 250, id: 'forest', surface: 'gravel' },
@@ -55,9 +45,9 @@ const DEFAULT_ZONES: readonly TrackZone[] = [
 ];
 
 /**
- * Céu, névoa e luzes da pista. As paletas acompanham as quatro zonas
- * intercaladas e misturam perto de cada limite de setor (floresta ↔ deserto),
- * sem skybox e sem shadow maps.
+ * Céu, névoa e luzes da pista. As paletas acompanham os quatro setores e
+ * misturam perto de cada limite (qualquer combinação de cenários), sem skybox
+ * e sem shadow maps.
  */
 export class Environment {
   readonly hemisphere: THREE.HemisphereLight;
@@ -79,18 +69,19 @@ export class Environment {
     this.zones = zones;
 
     this.scene.background = this.skyColor;
-    this.fog = new THREE.Fog(FOREST.fog.getHex(), FOREST.fogNear, FOREST.fogFar);
+    const first = PALETTES[this.zones[0]?.id ?? 'forest'];
+    this.fog = new THREE.Fog(first.fog.getHex(), first.fogNear, first.fogFar);
     this.scene.fog = this.fog;
 
     this.hemisphere = new THREE.HemisphereLight(
-      FOREST.hemiSky.getHex(),
-      FOREST.hemiGround.getHex(),
-      FOREST.hemiIntensity,
+      first.hemiSky.getHex(),
+      first.hemiGround.getHex(),
+      first.hemiIntensity,
     );
     this.hemisphere.name = 'environment-hemisphere';
-    this.sun = new THREE.DirectionalLight(FOREST.sun.getHex(), FOREST.sunIntensity);
+    this.sun = new THREE.DirectionalLight(first.sun.getHex(), first.sunIntensity);
     this.sun.name = 'environment-sun';
-    this.sun.position.copy(FOREST.sunPosition);
+    this.sun.position.copy(first.sunPosition);
 
     this.scene.add(this.hemisphere, this.sun);
     this.update(0);

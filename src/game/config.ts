@@ -69,6 +69,50 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     speedLimit: 0.92,
     offRoadBrake: 0,
   },
+  snow: {
+    id: 'snow',
+    label: 'Neve',
+    grip: 2.35,
+    acceleration: 0.82,
+    drag: 1.15,
+    bump: 0.35,
+    steerMultiplier: 0.9,
+    speedLimit: 0.95,
+    offRoadBrake: 0,
+  },
+  asphalt: {
+    id: 'asphalt',
+    label: 'Asfalto',
+    grip: 6.1,
+    acceleration: 1.08,
+    drag: 0.9,
+    bump: 0.22,
+    steerMultiplier: 1.04,
+    speedLimit: 1,
+    offRoadBrake: 0,
+  },
+  dirt: {
+    id: 'dirt',
+    label: 'Estrada de terra',
+    grip: 3.55,
+    acceleration: 0.92,
+    drag: 1.15,
+    bump: 1.0,
+    steerMultiplier: 0.96,
+    speedLimit: 0.96,
+    offRoadBrake: 0,
+  },
+  'beach-sand': {
+    id: 'beach-sand',
+    label: 'Areia de praia',
+    grip: 2.55,
+    acceleration: 0.82,
+    drag: 1.3,
+    bump: 0.65,
+    steerMultiplier: 0.93,
+    speedLimit: 0.9,
+    offRoadBrake: 0,
+  },
   'forest-offroad': {
     id: 'forest-offroad',
     label: 'Fora da pista — floresta',
@@ -91,6 +135,75 @@ export const SURFACES: Record<SurfaceId, SurfaceDef> = {
     speedLimit: 0.62,
     offRoadBrake: 8.0,
   },
+  'snow-offroad': {
+    id: 'snow-offroad',
+    label: 'Fora da pista — neve',
+    grip: 1.45,
+    acceleration: 0.6,
+    drag: 2.0,
+    bump: 1.25,
+    steerMultiplier: 0.82,
+    speedLimit: 0.5,
+    offRoadBrake: 12.0,
+  },
+  'village-offroad': {
+    id: 'village-offroad',
+    label: 'Fora da pista — vilarejo',
+    grip: 2.8,
+    acceleration: 0.8,
+    drag: 1.6,
+    bump: 1.0,
+    steerMultiplier: 0.92,
+    speedLimit: 0.68,
+    offRoadBrake: 9.0,
+  },
+  'dirt-offroad': {
+    id: 'dirt-offroad',
+    label: 'Fora da pista — estrada de terra',
+    grip: 2.0,
+    acceleration: 0.7,
+    drag: 2.2,
+    bump: 1.7,
+    steerMultiplier: 0.86,
+    speedLimit: 0.55,
+    offRoadBrake: 11.0,
+  },
+  'beach-offroad': {
+    id: 'beach-offroad',
+    label: 'Fora da pista — praia',
+    grip: 1.55,
+    acceleration: 0.6,
+    drag: 2.4,
+    bump: 0.95,
+    steerMultiplier: 0.8,
+    speedLimit: 0.5,
+    offRoadBrake: 12.0,
+  },
+};
+
+/** Ajustes globais dos efeitos de poeira (painel de debug e testes). */
+export const DUST_TUNING = {
+  enabled: true,
+  rateScale: 1,
+  sizeScale: 1,
+  alphaScale: 1,
+};
+
+/** Parâmetros das bifurcações procedurais. */
+export const FORK_TUNING = {
+  minLaneWidth: 5.5,
+  branchWidth: 6.4,
+  maxForks: 2,
+};
+
+/** Parâmetros dos obstáculos móveis. */
+export const HAZARD_TUNING = {
+  enabled: true,
+  zoneChance: 0.28,
+  maxPerRun: 3,
+  triggerDistance: 72,
+  minStartClearance: 130,
+  finishClearance: 90,
 };
 
 /**

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math';
+import { SCENARIOS, SCENARIO_IDS } from '../game/scenarios';
 import type { Track } from './Track';
 import { zoneBlendAt, type ZoneId } from './zones';
 
@@ -14,18 +15,15 @@ const EDGE_RIBBON_WIDTH = 0.45;
 const EDGE_LIFT = 0.025;
 const BAND_LIFT = 0.04;
 
-const ROAD_COLORS: Record<ZoneId, THREE.Color> = {
-  forest: new THREE.Color(0x57534a),
-  desert: new THREE.Color(0xd4b173),
-};
-const SHOULDER_COLORS: Record<ZoneId, THREE.Color> = {
-  forest: new THREE.Color(0x4c6436),
-  desert: new THREE.Color(0xd6ba85),
-};
-const EDGE_COLORS: Record<ZoneId, THREE.Color> = {
-  forest: new THREE.Color(0xdfe3cc),
-  desert: new THREE.Color(0xf4e7c3),
-};
+const ROAD_COLORS = Object.fromEntries(
+  SCENARIO_IDS.map((id) => [id, new THREE.Color(SCENARIOS[id].colors.road)]),
+) as Record<ZoneId, THREE.Color>;
+const SHOULDER_COLORS = Object.fromEntries(
+  SCENARIO_IDS.map((id) => [id, new THREE.Color(SCENARIOS[id].colors.shoulder)]),
+) as Record<ZoneId, THREE.Color>;
+const EDGE_COLORS = Object.fromEntries(
+  SCENARIO_IDS.map((id) => [id, new THREE.Color(SCENARIOS[id].colors.edge)]),
+) as Record<ZoneId, THREE.Color>;
 const BAND_DARK = new THREE.Color(0x232825);
 const BAND_LIGHT = new THREE.Color(0xf2eee0);
 const BAND_FINISH = new THREE.Color(0xc94f3b);

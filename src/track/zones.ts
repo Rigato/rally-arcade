@@ -1,7 +1,7 @@
 import { clamp } from '../core/math';
-import type { TrackZone } from '../game/types';
+import type { ScenarioId, TrackZone } from '../game/types';
 
-export type ZoneId = 'forest' | 'desert';
+export type ZoneId = ScenarioId;
 
 /** Mistura de paletas entre duas zonas vizinhas. */
 export interface ZoneBlend {

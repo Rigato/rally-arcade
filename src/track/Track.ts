@@ -1,7 +1,14 @@
 import * as THREE from 'three';
 import { clamp, lerp } from '../core/math';
-import type { SurfaceId, TrackDef, TrackZone } from '../game/types';
+import type {
+  ScenarioId,
+  SurfaceId,
+  TrackDef,
+  TrackZone,
+} from '../game/types';
 import { TRACK_01 } from './track01';
+import { TrackBranch } from './TrackBranch';
+import { offRoadHeightAt } from './terrainNoise';
 
 const SAMPLE_STEP = 1;
 /**
@@ -19,12 +26,8 @@ const VALIDATION_SELF_INTERSECTION_WINDOW = 40;
 const KICKER_LANDING_CHECK = 20;
 const KICKER_STRAIGHT_LIMIT = 0.35;
 const DEFAULT_START_S = 22;
-/** Distância em que o relevo fora da pista aparece (transição suave). */
-const OFFROAD_BLEND_RANGE = 2;
-/** Distância em que a amplitude do fora de pista atinge o máximo (ombro). */
-const OFFROAD_FULL_DISTANCE = 12;
 
-export type TrackZoneId = 'forest' | 'desert';
+export type TrackZoneId = ScenarioId;
 
 export interface TrackSample {
   s: number;
@@ -44,6 +47,19 @@ export interface TrackProjection {
   u: number;
   /** Distância horizontal até o centro da pista. */
   distance: number;
+}
+
+/** Projeção escolhendo a pista principal ou um ramo de bifurcação. */
+export interface TrackNearestProjection {
+  /** -1 = pista principal; >= 0 = índice em `branches`. */
+  pathId: number;
+  /** `s` dentro do caminho escolhido (principal ou ramo). */
+  pathS: number;
+  /** `s` equivalente na pista principal (para cronômetro/parciais). */
+  mainS: number;
+  u: number;
+  distance: number;
+  width: number;
 }
 
 export interface TrackPose {
@@ -71,6 +87,8 @@ export class Track {
   readonly sampleCount: number;
   readonly startS: number;
   readonly startPose: TrackPose;
+  /** Ramos alternativos de bifurcação, na ordem do `TrackDef`. */
+  readonly branches: readonly TrackBranch[];
 
   private readonly px: Float32Array;
   private readonly py: Float32Array;
@@ -96,6 +114,14 @@ export class Track {
   };
   private readonly projection: TrackProjection = { s: 0, u: 0, distance: 0 };
   private readonly heightProjection: TrackProjection = { s: 0, u: 0, distance: 0 };
+  private readonly nearestProjection: TrackNearestProjection = {
+    pathId: -1,
+    pathS: 0,
+    mainS: 0,
+    u: 0,
+    distance: 0,
+    width: 0,
+  };
 
   constructor(def: TrackDef = TRACK_01) {
     this.def = def;
@@ -150,6 +176,19 @@ export class Track {
       ),
       heading: Math.atan2(start.tangent.x, start.tangent.z),
     };
+
+    this.branches = (def.forks ?? []).flatMap((fork) =>
+      fork.branches.map((branch) => {
+        const zone = this.zoneDefAt(branch.startS);
+        const fallbackOffroad: SurfaceId =
+          zone.id === 'forest' ? 'forest-offroad' : 'desert-offroad';
+        return new TrackBranch(
+          branch,
+          zone.surface,
+          zone.offroad ?? fallbackOffroad,
+        );
+      }),
+    );
 
     this.validate();
   }
@@ -252,7 +291,7 @@ export class Track {
       return baseY + kicker;
     }
 
-    return baseY + kicker + this.offRoadHeightAt(clamped, u, distance);
+    return baseY + kicker + offRoadHeightAt(clamped, u, distance);
   }
 
   /** Distância lateral além da borda da pista (0 quando está na pista). */
@@ -284,12 +323,145 @@ export class Track {
       return zone.surface;
     }
 
+    if (zone.offroad) {
+      return zone.offroad;
+    }
+
+    // Fallback histórico da pista fixa congelada.
     return zone.id === 'forest' ? 'forest-offroad' : 'desert-offroad';
   }
 
   surfaceAtWorld(x: number, z: number, hintS?: number): SurfaceId {
     this.projectInto(x, z, hintS, this.heightProjection);
     return this.surfaceAt(this.heightProjection.s, this.heightProjection.u);
+  }
+
+  /** Largura do caminho escolhido (-1 = principal). */
+  widthAtPath(pathId: number, s: number): number {
+    const branch = this.branches[pathId];
+    return branch ? branch.widthAt(s) : this.widthAt(s);
+  }
+
+  heightAtPath(pathId: number, s: number, u: number): number {
+    const branch = this.branches[pathId];
+    return branch ? branch.heightAt(s, u) : this.heightAt(s, u);
+  }
+
+  surfaceAtPath(pathId: number, s: number, u: number): SurfaceId {
+    const branch = this.branches[pathId];
+    return branch ? branch.surfaceAt(s, u) : this.surfaceAt(s, u);
+  }
+
+  /**
+   * Projeta um ponto escolhendo a pista principal ou o ramo mais próximo.
+   * `preferredPathId` dá histerese para o carro não trocar de caminho quando
+   * os dois se sobrepõem no início/fim da bifurcação.
+   */
+  projectNearest(
+    x: number,
+    z: number,
+    hintMainS: number,
+    preferredPathId = -1,
+    hintBranchS?: number,
+  ): TrackNearestProjection {
+    const main = this.project(x, z, hintMainS);
+    const out = this.nearestProjection;
+
+    out.pathId = -1;
+    out.pathS = main.s;
+    out.mainS = main.s;
+    out.u = main.u;
+    out.distance = main.distance;
+    out.width = this.widthAt(main.s);
+
+    let bestScore = main.distance - (preferredPathId === -1 ? 1.5 : 0);
+
+    for (let index = 0; index < this.branches.length; index += 1) {
+      const branch = this.branches[index];
+      const preferred = preferredPathId === index;
+      if (
+        !preferred &&
+        (hintMainS < branch.startS - 12 || hintMainS > branch.endS + 12)
+      ) {
+        continue;
+      }
+
+      const mappedHint = this.branchSForMainS(branch, hintMainS);
+      const branchHint = preferred && hintBranchS !== undefined
+        ? hintBranchS
+        : mappedHint;
+      const projection = branch.project(x, z, branchHint);
+      const score = projection.distance - (preferred ? 1.5 : 0);
+
+      if (score >= bestScore) {
+        continue;
+      }
+
+      const ratio = branch.length > 1e-6
+        ? clamp(projection.s / branch.length, 0, 1)
+        : 0;
+      out.pathId = index;
+      out.pathS = projection.s;
+      out.mainS = lerp(branch.startS, branch.endS, ratio);
+      out.u = projection.u;
+      out.distance = projection.distance;
+      out.width = branch.widthAt(projection.s);
+      bestScore = score;
+    }
+
+    return out;
+  }
+
+  /** Altura do caminho mais próximo (principal ou ramo). */
+  heightAtWorldMulti(
+    x: number,
+    z: number,
+    hintMainS: number,
+    preferredPathId = -1,
+    hintBranchS?: number,
+  ): number {
+    const nearest = this.projectNearest(
+      x,
+      z,
+      hintMainS,
+      preferredPathId,
+      hintBranchS,
+    );
+    return this.heightAtPath(nearest.pathId, nearest.pathS, nearest.u);
+  }
+
+  /** Piso do caminho mais próximo (principal ou ramo). */
+  surfaceAtWorldMulti(
+    x: number,
+    z: number,
+    hintMainS: number,
+    preferredPathId = -1,
+    hintBranchS?: number,
+  ): SurfaceId {
+    const nearest = this.projectNearest(
+      x,
+      z,
+      hintMainS,
+      preferredPathId,
+      hintBranchS,
+    );
+    return this.surfaceAtPath(nearest.pathId, nearest.pathS, nearest.u);
+  }
+
+  /** Distância horizontal até o ramo mais próximo (debug/obstáculos). */
+  distanceToBranches(x: number, z: number): number {
+    let best = Infinity;
+    for (const branch of this.branches) {
+      const projection = branch.project(x, z);
+      best = Math.min(best, projection.distance);
+    }
+    return best;
+  }
+
+  private branchSForMainS(branch: TrackBranch, mainS: number): number {
+    const span = Math.max(1e-6, branch.endS - branch.startS);
+    const ratio = clamp((mainS - branch.startS) / span, 0, 1);
+    return ratio * branch.length;
   }
 
   /**
@@ -302,7 +474,8 @@ export class Track {
 
     console.info(
       `[Track] ${this.def.id}: ${this.length.toFixed(1)} m, ` +
-        `${this.def.points.length} pontos, ${this.def.zones.length} zonas.`,
+        `${this.def.points.length} pontos, ${this.def.zones.length} zonas, ` +
+        `${this.branches.length} ramo(s), ${this.def.hazards?.length ?? 0} hazard(s).`,
     );
   }
 
@@ -335,38 +508,9 @@ export class Track {
   /**
    * Relevo determinístico do ombro/fora da pista.
    *
-   * Duas escalas: ondulações finas (λ ≈ 4–8 m em s, 2–5 m em u) e "costelas"
-   * mais grossas, que fazem o carro subir/descer e eventualmente decolar.
-   * A amplitude cresce com a distância da borda; a mistura de 1,5 m mantém a
-   * derivada contínua na emenda porque o smoothstep começa com inclinação zero.
+   * Fica em `terrainNoise.ts` para ser compartilhado com os ramos de
+   * bifurcação, mantendo a mesma física no asfalto e no desvio.
    */
-  private offRoadHeightAt(s: number, u: number, distance: number): number {
-    const growth = Math.min(distance / OFFROAD_FULL_DISTANCE, 1);
-    const blend = smoothstep01(distance / OFFROAD_BLEND_RANGE);
-
-    // Amplitude moderada: o ombro deve tremer e eventualmente tirar o carro
-    // do chão, não virar uma parede. Ondulações longas (λ 8–27 m) para o
-    // carro não ser arremessado a cada metro.
-    const fineAmplitude = 0.04 + 0.08 * growth;
-    const coarseAmplitude = 0.08 + 0.12 * growth;
-    const crossAmplitude = 0.01 + 0.02 * growth;
-
-    const fine =
-      Math.sin(s * 0.55 + u * 1.1) * 0.6 +
-      Math.sin(s * 0.31 - u * 0.8 + 1.9) * 0.4;
-    const coarse =
-      Math.sin(s * 0.37 + u * 0.5 + 0.6) * 0.55 +
-      Math.sin(s * 0.23 - u * 0.7 + 3.1) * 0.45;
-    const cross = Math.sin(u * 1.3 + s * 0.18 + 0.9);
-
-    return (
-      blend *
-      (fineAmplitude * fine +
-        coarseAmplitude * coarse +
-        crossAmplitude * cross)
-    );
-  }
-
   private kickerHeightAt(s: number): number {
     let total = 0;
 
@@ -588,11 +732,6 @@ export class Track {
       }
     }
   }
-}
-
-function smoothstep01(t: number): number {
-  const clamped = clamp(t, 0, 1);
-  return clamped * clamped * (3 - 2 * clamped);
 }
 
 function shortestAngle(from: number, to: number): number {

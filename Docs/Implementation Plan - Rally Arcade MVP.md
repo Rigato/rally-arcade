@@ -769,3 +769,67 @@ O playtest aprovou o hairpin extremo de 14–15 m, mas pediu mais um pouco de ap
 - Confirmar o ouro +3 s (fixa 39; procedurais 45,2–48,2) e as parciais.
 - Avaliar se a poeira v7 está no ponto ou exagerada; ajustar `MAX_RATE`/tamanho.
 - Confirmar que abrir `/` em procedural aleatória é o comportamento desejado no uso diário.
+
+## 30. Cenários, bifurcações, menu, velocímetro e hazards v8 (Oct 28, 2026)
+
+Esta rodada implementa o pacote de conteúdo/UX pedido no playtest: novos cenários, poeira por piso, caminhos alternativos, velocímetro, menu de seeds e obstáculos móveis. A pista fixa `track01-v3` permaneceu intocada.
+
+### Cenários e pisos
+
+- `ScenarioId` separado de `SurfaceId`; registro central em `src/game/scenarios.ts` com label, paleta de pista/ombro/borda/terreno, ambiente, poeira, portal, obstáculos e hazards.
+- Seis cenários: **floresta/cascalho, deserto/areia, neve, vilarejo/asfalto, estrada de terra e praia/areia de praia**.
+- Pistas procedurais usam **4 setores distintos** do pool de 6, sem repetir cenário consecutivo.
+- Pisos novos:
+  - neve: grip 2,35, aceleração 0,82, arrasto 1,15, bump 0,35, limite 0,95;
+  - asfalto: grip 6,1, aceleração 1,08, arrasto 0,90, bump 0,22, limite 1,0;
+  - terra: grip 3,55, aceleração 0,92, arrasto 1,15, bump 1,0, limite 0,96;
+  - praia: grip 2,55, aceleração 0,82, arrasto 1,30, bump 0,65, limite 0,90.
+- Off-roads por cenário com caps de 50–68% e freios extras de 9–12 m/s².
+- Scenery ganhou casas/celeiros, cercas, postes, fardos, palmeiras, guarda-sóis, snow pines e montes de neve, todos instanciados; Obstacles ganhou variantes `snowpine` e `palm`. Gates usam o label/cores do registro.
+- A pista fixa continua com floresta/deserto e os mesmos visuais.
+
+### Poeira por piso
+
+- `DUST_PROFILES` por `SurfaceId`, com cor primária/secundária, taxa, tamanho, alpha, vida, subida e gravidade.
+- `DriftDust` passou a pool 112, escolhe cor primária/secundária por partícula e respeita o perfil do piso; o deserto foi escurecido para contrastar com a areia.
+- Painel **Poeira** com `Ativa`, `Taxa ×`, `Tamanho ×` e `Alpha ×`; valores persistem no tuning.
+
+### Bifurcações
+
+- `TrackFork`/`TrackForkBranch` no `TrackDef`; 1–2 por pista procedural, em retas longas e dentro do mesmo setor.
+- O ramo é uma spline própria que sai da pista principal, abre 14–26 m e retorna; tem `TrackBranch` com sample/project/height/surface, `ForkMesh` com asfalto/ombros/bordas e ombros que somem nas pontas para não pintar sobre a pista principal.
+- `Track.projectNearest` escolhe principal ou ramo com histerese; o Game mantém `activePathId`, `activePathS` e `activeBranchS`, usa a altura/piso/largura do caminho ativo e mapeia o progresso do ramo para o `s` principal.
+- `Scenery` e `Obstacles` evitam o corredor dos ramos. Rampas, hazards e powerups também respeitam a bifurcação.
+- A pista fixa não tem forks.
+
+### Obstáculos móveis
+
+- `TrackHazard` no `TrackDef`; 1–3 por pista procedural, com chance de 28% por setor, mínimo garantido de 1 e máximo de 3.
+- Tipos por cenário: camelo (deserto), cervo (floresta), rena (neve), carro/caminhão (vilarejo), trator/vaca (terra), buggy (praia).
+- `Hazards` cria modelos low poly, espera o carro chegar a ~72 m, faz a travessia e resolve colisão com push-out/ricochete. O começo da run (130 m), rampas, hairpin extremo e bifurcações ficam preservados.
+- `?hazards=0` desliga; o painel Debug tem **Hazards ativos** e **→ Próximo hazard**; a telemetria mostra total/ativos/ON-OFF e o caminho ativo.
+- A pista fixa não tem hazards.
+
+### Menu e velocímetro
+
+- `TrackMenu` (`src/ui/TrackMenu.ts`) com grade 1–100, melhor tempo por seed via `localStorage['rally.best.proc-N.v1']`, campo de seed, **SORTEAR**, **PISTA FIXA** e **FECHAR**.
+- Botão **☰ PISTAS** no HUD; **🎲 NOVA** continua como atalho. O menu abre durante a corrida e pausa simulação/cronômetro; `ESCOLHER PISTA` aparece no resultado.
+- Navegação preserva `debug`/`touch`, remove `s` e usa `?track=proc&seed=N` ou `?track=fixed`.
+- Velocímetro digital em km/h com barra, no canto inferior, espelhado conforme o lado do stack MÃO.
+
+### Testes
+
+- `npm run typecheck`, `npm run build` e `npm run validate:track` passam; pista fixa continua 1096,8 m e 39/45/51.
+- 100/100 seeds válidas; comprimento 1518,3–1623,7 m; raio 12,6–13,8 m; largura 4,6–15,0 m; **1–2 bifurcações** e **1–3 hazards** por seed.
+- Distribuição de hazards em 100 seeds: 1 → 78, 2 → 15, 3 → 7; todos os 8 tipos aparecem.
+- Headless mobile 390×844: GO/auto-throttle, 5 botões, velocímetro, menu abre/fecha, pausa congela o timer e retoma, seed navega, pista fixa navega, resultado abre menu.
+- Bifurcação: `__rallyPath.pathId=0` confirmou o carro no ramo; hazard: colisão de 13,1 m/s confirmada com queda de velocidade; `?hazards=0` confirmou `enabled=false`.
+- Console limpo nos testes.
+
+### Pendências
+
+- Playtest no celular real: sentir grip de neve/asfalto/terra/praia e calibrar valores.
+- Avaliar legibilidade da escolha de bifurcação; se o ramo for óbvio demais, aumentar variação de curvatura/comprimento ou colocar obstáculos/hazards diferentes.
+- Calibrar frequência/timing dos hazards e a justiça da colisão.
+- Validar poeira em neve/praia em movimento e performance de cenários no celular.
+- Recalibrar medalhas/parciais com os novos pisos, se o playtest pedir.

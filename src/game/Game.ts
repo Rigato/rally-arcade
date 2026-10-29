@@ -6,7 +6,9 @@ import { Loop } from '../core/Loop';
 import { DriftDust, type DriftDustState } from '../fx/DriftDust';
 import { clamp } from '../core/math';
 import { Input } from '../input/Input';
+import { ForkMesh } from '../track/ForkMesh';
 import { Gates } from '../track/Gates';
+import { Hazards } from '../track/Hazards';
 import { Obstacles } from '../track/Obstacles';
 import { Powerups } from '../track/Powerups';
 import { Track } from '../track/Track';
@@ -15,12 +17,14 @@ import { TRACK_01 } from '../track/track01';
 import { generateProceduralTrack } from '../track/procedural/ProceduralTrack';
 import { Hud, type HudDebugInfo } from '../ui/Hud';
 import { Results } from '../ui/Results';
+import { TrackMenu } from '../ui/TrackMenu';
 import { TuningPanel } from '../ui/TuningPanel';
 import { Environment } from '../world/Environment';
 import { Scenery } from '../world/Scenery';
 import {
   CAMERA_TUNING,
   CAR_TUNING,
+  HAZARD_TUNING,
   INPUT_TUNING,
   RACE_TUNING,
   RENDER_SETTINGS,
@@ -29,6 +33,7 @@ import {
 } from './config';
 import { isDebugMode } from './debug';
 import { Race } from './Race';
+import { SCENARIOS, scenarioLabel } from './scenarios';
 import type { CarState, ForcedSurface, RaceState, SurfaceId } from './types';
 
 const FPS_SMOOTHING_TAU = 0.5;
@@ -56,9 +61,11 @@ export class Game {
   private readonly scene = new THREE.Scene();
   private readonly track: Track;
   private readonly trackMesh: TrackMesh;
+  private readonly forkMesh: ForkMesh;
   private readonly gates: Gates;
   private readonly scenery: Scenery;
   private readonly obstacles: Obstacles;
+  private readonly hazards: Hazards;
   private readonly powerups: Powerups;
   private readonly environment: Environment;
   private readonly car: Car;
@@ -69,6 +76,7 @@ export class Game {
   private readonly race: Race;
   private readonly hud: Hud;
   private readonly results: Results;
+  private readonly trackMenu: TrackMenu;
   private readonly tuningPanel: TuningPanel | null;
   private readonly loop: Loop;
   private readonly resizeObserver: ResizeObserver | null;
@@ -113,6 +121,8 @@ export class Game {
   private started = false;
   private disposed = false;
   private pausedByVisibility = false;
+  /** Menu de pistas aberto: congela simulação e cronômetro. */
+  private menuOpen = false;
 
   /** Apresentação da chegada: carro parado, resultado abre após um respiro. */
   private resultPending = false;
@@ -131,6 +141,12 @@ export class Game {
   private forcedSurface: ForcedSurface = 'auto';
   /** Piso efetivamente usado no último passo fixo. */
   private currentSurfaceId: SurfaceId = 'gravel';
+  /** Caminho ativo: -1 pista principal, >= 0 ramo de bifurcação. */
+  private activePathId = -1;
+  /** `s` dentro do caminho ativo (principal ou ramo). */
+  private activePathS = 0;
+  /** Histerese do ramo ativo para não piscar no início/fim da bifurcação. */
+  private activeBranchS = 0;
   /** FPS suavizado exibido na telemetria. */
   private fps = 0;
   /** Intensidade da última colisão com obstáculo (m/s), para a telemetria. */
@@ -161,12 +177,17 @@ export class Game {
     RACE_TUNING.medals.bronze = trackDef.medals.bronze;
     this.trackMesh = new TrackMesh(this.track);
     this.scene.add(this.trackMesh.group);
+    this.forkMesh = new ForkMesh(this.track);
+    this.scene.add(this.forkMesh.group);
     this.gates = new Gates(this.track);
     this.scene.add(this.gates.group);
     this.scenery = new Scenery(this.track);
     this.scene.add(this.scenery.group);
     this.obstacles = new Obstacles(this.track);
     this.scene.add(this.obstacles.group);
+    this.hazards = new Hazards(this.track, readHazardsEnabled());
+    HAZARD_TUNING.enabled = this.hazards.isEnabled();
+    this.scene.add(this.hazards.group);
     this.powerups = new Powerups(this.track);
     this.scene.add(this.powerups.group);
     this.environment = new Environment(this.scene, this.track.def.zones);
@@ -180,12 +201,27 @@ export class Game {
     });
 
     this.car = new Car(CAR_TUNING);
-    this.heightAt = (x, z) => this.track.heightAtWorld(x, z, this.car.state.trackS);
-    this.cameraGroundAt = (x, z) => this.track.heightAtWorld(x, z, this.car.state.trackS);
+    this.heightAt = (x, z) =>
+      this.track.heightAtWorldMulti(
+        x,
+        z,
+        this.car.state.trackS,
+        this.activePathId,
+        this.activeBranchS,
+      );
+    this.cameraGroundAt = (x, z) =>
+      this.track.heightAtWorldMulti(
+        x,
+        z,
+        this.car.state.trackS,
+        this.activePathId,
+        this.activeBranchS,
+      );
 
     this.car.reset(this.track.startPose.position, this.track.startPose.heading);
     this.car.state.trackS = this.track.startS;
     this.car.state.trackU = 0;
+    this.resetPathTracking(this.car.state.trackS);
     this.currentSurfaceId = this.track.surfaceAt(this.track.startS, 0);
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.scene.add(this.carView.root);
@@ -197,6 +233,7 @@ export class Game {
 
     this.hud = new Hud(hudRoot, {
       debug: isDebugMode(),
+      onMenu: this.openMenu,
       track: {
         startS: this.track.startS,
         finishS: this.race.finishS,
@@ -206,10 +243,18 @@ export class Game {
     this.hud.setState(this.state);
     this.hud.setTime(0);
     this.hud.setBest(this.race.bestTime);
+    this.hud.setTrackLabel(this.trackLabel());
     this.hud.onReset(this.reset);
+
+    this.trackMenu = new TrackMenu(document.body);
+    this.trackMenu.onSelectSeed((seed) => this.navigateToTrack('proc', seed));
+    this.trackMenu.onSelectFixed(() => this.navigateToTrack('fixed'));
+    this.trackMenu.onRandom(() => this.navigateToTrack('proc', randomTrackSeed()));
+    this.trackMenu.onClose(this.handleMenuClosed);
 
     this.results = new Results(hudRoot);
     this.results.onRetry(this.reset);
+    this.results.onChooseTrack(this.openMenu);
 
     this.input = new Input(this.renderer.domElement, {
       tuning: INPUT_TUNING,
@@ -255,13 +300,82 @@ export class Game {
     // headless sem alterar a API pública do jogo.
     if (isDebugMode()) {
       const dust = this.driftDust;
+      const hazards = this.hazards;
+      const currentCarS = (): number => this.car.state.trackS;
+      const currentPathId = (): number => this.activePathId;
+      const currentPathS = (): number => this.activePathS;
+      const currentTrackU = (): number => this.car.state.trackU;
       (
         window as Window & {
           __rallyDust?: { readonly activeCount: number };
+          __rallyHazards?: {
+            readonly count: number;
+            readonly activeCount: number;
+            readonly enabled: boolean;
+            readonly nextS: number | null;
+          };
+          __rallyPath?: {
+            readonly pathId: number;
+            readonly pathS: number;
+            readonly mainS: number;
+            readonly u: number;
+          };
         }
       ).__rallyDust = {
         get activeCount(): number {
           return dust.activeCount;
+        },
+      };
+      (
+        window as Window & {
+          __rallyHazards?: {
+            readonly count: number;
+            readonly activeCount: number;
+            readonly enabled: boolean;
+            readonly nextS: number | null;
+          };
+          __rallyPath?: {
+            readonly pathId: number;
+            readonly pathS: number;
+            readonly mainS: number;
+            readonly u: number;
+          };
+        }
+      ).__rallyHazards = {
+        get count(): number {
+          return hazards.getCount();
+        },
+        get activeCount(): number {
+          return hazards.getActiveCount();
+        },
+        get enabled(): boolean {
+          return hazards.isEnabled();
+        },
+        get nextS(): number | null {
+          return hazards.getNextS(currentCarS());
+        },
+      };
+      (
+        window as Window & {
+          __rallyPath?: {
+            readonly pathId: number;
+            readonly pathS: number;
+            readonly mainS: number;
+            readonly u: number;
+          };
+        }
+      ).__rallyPath = {
+        get pathId(): number {
+          return currentPathId();
+        },
+        get pathS(): number {
+          return currentPathS();
+        },
+        get mainS(): number {
+          return currentCarS();
+        },
+        get u(): number {
+          return currentTrackU();
         },
       };
     }
@@ -274,6 +388,64 @@ export class Game {
 
     this.started = true;
     this.loop.start();
+  }
+
+  /** Abre o menu de pistas; congela simulação e cronômetro. */
+  private readonly openMenu = (): void => {
+    if (this.menuOpen || this.disposed) {
+      return;
+    }
+
+    this.menuOpen = true;
+    this.hud.setMenuOpen(true);
+    this.trackMenu.open(this.currentTrackInfo());
+
+    if (this.state === 'RUNNING' || this.state === 'RECOVERING') {
+      this.input.cancelAll();
+      this.input.setRaceActive(false);
+    }
+  };
+
+  private readonly handleMenuClosed = (): void => {
+    if (!this.menuOpen) {
+      return;
+    }
+
+    this.menuOpen = false;
+    this.hud.setMenuOpen(false);
+
+    if (this.state === 'RUNNING') {
+      this.input.setRaceActive(true);
+    }
+  };
+
+  private currentTrackInfo(): { id: string; seed: number | null; label: string } {
+    const match = /^proc-(\d+)$/.exec(this.track.def.id);
+    return {
+      id: this.track.def.id,
+      seed: match ? Number(match[1]) : null,
+      label: this.trackLabel(),
+    };
+  }
+
+  private trackLabel(): string {
+    const scenarios = this.track.def.zones
+      .map((zone) => SCENARIOS[zone.id].shortLabel)
+      .join(' · ');
+    return `${this.track.def.id} · ${scenarios}`;
+  }
+
+  private navigateToTrack(mode: 'proc' | 'fixed', seed?: number): void {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('s');
+    url.searchParams.delete('seed');
+    url.searchParams.set('track', mode === 'fixed' ? 'fixed' : 'proc');
+
+    if (mode === 'proc' && seed !== undefined) {
+      url.searchParams.set('seed', String(clamp(Math.round(seed), 1, 100)));
+    }
+
+    window.location.assign(url.toString());
   }
 
   /** Piso escolhido no painel de debug (`auto` = piso da zona da pista). */
@@ -304,6 +476,29 @@ export class Game {
 
   getObstacleCount(): number {
     return this.obstacles.getCount();
+  }
+
+  getHazardCount(): number {
+    return this.hazards.getCount();
+  }
+
+  areHazardsEnabled(): boolean {
+    return this.hazards.isEnabled();
+  }
+
+  setHazardsEnabled(enabled: boolean): void {
+    HAZARD_TUNING.enabled = enabled;
+    this.hazards.setEnabled(enabled);
+  }
+
+  /** Teleporta para ~70 m antes do próximo hazard e retorna o `s` dele. */
+  teleportToNextHazard(): number | null {
+    const s = this.hazards.getNextS(this.car.state.trackS);
+    if (s === null) {
+      return null;
+    }
+    this.teleportToS(Math.max(0, s - 70));
+    return s;
   }
 
   /** Wireframe dos colisores (debug, desligado por padrão). */
@@ -349,10 +544,12 @@ export class Game {
     this.car.reset(this.teleportPosition, heading);
     this.car.state.trackS = target;
     this.car.state.trackU = 0;
+    this.resetPathTracking(this.car.state.trackS);
     this.currentSurfaceId = this.track.surfaceAt(target, 0);
     this.carView.reset();
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.driftDust.reset();
+    this.hazards.reset();
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.environment.update(target);
     this.powerups.reset();
@@ -388,12 +585,15 @@ export class Game {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     this.resizeObserver?.disconnect();
     this.results.dispose();
+    this.trackMenu.dispose();
     this.hud.dispose();
 
     this.trackMesh.dispose();
+    this.forkMesh.dispose();
     this.gates.dispose();
     this.scenery.dispose();
     this.obstacles.dispose();
+    this.hazards.dispose();
     this.powerups.dispose();
     this.driftDust.dispose();
 
@@ -423,6 +623,13 @@ export class Game {
     this.hud.setState(this.state);
   };
 
+  /** Volta a física para a pista principal em `s`. */
+  private resetPathTracking(s: number): void {
+    this.activePathId = -1;
+    this.activePathS = s;
+    this.activeBranchS = 0;
+  }
+
   private readonly reset = (): void => {
     this.cancelRecovery();
     this.input.reset();
@@ -430,10 +637,12 @@ export class Game {
     this.car.reset(this.track.startPose.position, this.track.startPose.heading);
     this.car.state.trackS = this.track.startS;
     this.car.state.trackU = 0;
+    this.resetPathTracking(this.car.state.trackS);
     this.currentSurfaceId = this.track.surfaceAt(this.track.startS, 0);
     this.carView.reset();
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.driftDust.reset();
+    this.hazards.reset();
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.environment.update(this.track.startS);
     this.powerups.reset();
@@ -453,6 +662,11 @@ export class Game {
   };
 
   private readonly update = (fixedDt: number): void => {
+    // Menu aberto: o render continua, mas simulação e cronômetro congelam.
+    if (this.menuOpen) {
+      return;
+    }
+
     // Na chegada a física para; só corre o respiro antes de abrir o resultado.
     if (this.state === 'FINISHED') {
       this.updateFinishPresentation(fixedDt);
@@ -480,8 +694,24 @@ export class Game {
     }
 
     const state = this.car.state;
-    const before = this.track.project(state.position.x, state.position.z, state.trackS);
-    const trackSurface = this.track.surfaceAt(before.s, before.u);
+    if (this.state === 'RUNNING') {
+      this.hazards.update(fixedDt, state.trackS);
+    }
+    const before = this.track.projectNearest(
+      state.position.x,
+      state.position.z,
+      state.trackS,
+      this.activePathId,
+      this.activeBranchS,
+    );
+    this.activePathId = before.pathId;
+    this.activePathS = before.pathS;
+    this.activeBranchS = before.pathS;
+    const trackSurface = this.track.surfaceAtPath(
+      before.pathId,
+      before.pathS,
+      before.u,
+    );
     const surfaceId = this.forcedSurface === 'auto' ? trackSurface : this.forcedSurface;
     this.currentSurfaceId = surfaceId;
 
@@ -496,7 +726,9 @@ export class Game {
     // Colisão com obstáculos sólidos: push-out + ricochete. Acontece antes da
     // projeção em (s,u), então a recuperação e a telemetria já leem a posição
     // corrigida. O carro não é teletransportado: só sai da sobreposição.
-    const impact = this.obstacles.resolveCollisions(this.car);
+    const obstacleImpact = this.obstacles.resolveCollisions(this.car);
+    const hazardImpact = this.hazards.resolveCollisions(this.car);
+    const impact = Math.max(obstacleImpact, hazardImpact);
     if (impact > 0) {
       this.lastImpact = impact;
       this.chaseCamera.addShake(clamp(impact / 25, 0.05, 0.35));
@@ -515,25 +747,30 @@ export class Game {
       }
     }
 
-    const after = this.track.project(
+    const after = this.track.projectNearest(
       state.position.x,
       state.position.z,
-      before.s,
+      before.mainS,
+      before.pathId,
+      before.pathS,
     );
-    state.trackS = after.s;
+    this.activePathId = after.pathId;
+    this.activePathS = after.pathS;
+    this.activeBranchS = after.pathS;
+    state.trackS = after.mainS;
     state.trackU = after.u;
 
     this.environment.update(state.trackS);
     this.updateRumble();
 
     if (this.state === 'RUNNING') {
-      let split = this.race.checkSplit(after.s);
+      let split = this.race.checkSplit(after.mainS);
       while (split) {
         this.hud.showSplit(split);
-        split = this.race.checkSplit(after.s);
+        split = this.race.checkSplit(after.mainS);
       }
 
-      if (this.race.checkFinish(after.s)) {
+      if (this.race.checkFinish(after.mainS)) {
         this.finishRace();
         return;
       }
@@ -556,6 +793,7 @@ export class Game {
     this.input.cancelAll();
     this.input.setRaceActive(false);
     this.driftDust.reset();
+    this.hazards.reset();
     this.chaseCamera.setRumble(0);
     this.powerups.clearEffects();
     this.chaseCamera.setFovBoost(0);
@@ -617,6 +855,7 @@ export class Game {
 
     this.state = 'RECOVERING';
     this.driftDust.reset();
+    this.hazards.reset();
     this.recoveryElapsed = 0;
     this.recoveryTeleported = false;
     this.recoveryFaded = false;
@@ -702,10 +941,12 @@ export class Game {
     this.car.reset(this.teleportPosition, heading);
     this.car.state.trackS = target;
     this.car.state.trackU = 0;
+    this.resetPathTracking(this.car.state.trackS);
     this.currentSurfaceId = this.track.surfaceAt(target, 0);
     this.carView.reset();
     this.carView.setPose(this.car.state.position, this.car.state.heading);
     this.driftDust.reset();
+    this.hazards.reset();
     this.chaseCamera.snapTo(this.car.state.position, this.car.state.heading);
     this.chaseCamera.setRumble(0);
     this.environment.update(target);
@@ -721,7 +962,7 @@ export class Game {
    */
   private updateRumble(): void {
     const state = this.car.state;
-    const half = this.track.widthAt(state.trackS) * 0.5;
+    const half = this.track.widthAtPath(this.activePathId, this.activePathS) * 0.5;
     const offRoad = Math.max(0, Math.abs(state.trackU) - half);
     const surfaceBump = SURFACES[this.currentSurfaceId].bump;
     const bumpFactor = clamp(0.7 + 0.25 * surfaceBump, 0.7, 1.2);
@@ -745,7 +986,7 @@ export class Game {
     }
 
     const state = this.car.state;
-    const half = this.track.widthAt(state.trackS) * 0.5;
+    const half = this.track.widthAtPath(this.activePathId, this.activePathS) * 0.5;
     const beyondEdge = Math.abs(state.trackU) - half;
 
     if (beyondEdge > RACE_TUNING.offTrackLimit || state.trackS < BEHIND_START_S) {
@@ -778,10 +1019,12 @@ export class Game {
       this.car.state.terrainPitch,
       this.car.state.terrainRoll,
     );
-    const groundY = this.track.heightAtWorld(
+    const groundY = this.track.heightAtWorldMulti(
       pose.position.x,
       pose.position.z,
       this.car.state.trackS,
+      this.activePathId,
+      this.activeBranchS,
     );
     const landingImpact = frameDt > 0 ? this.car.consumeLandingImpact() : 0;
 
@@ -836,6 +1079,7 @@ export class Game {
     this.chaseCamera.update(frameDt, this.cameraState);
 
     this.hud.setTime(this.race.elapsed);
+    this.hud.setSpeed(this.state === 'FINISHED' ? 0 : this.car.telemetry.speed * 3.6);
     this.hud.setProgress(
       this.state === 'FINISHED' ? this.race.finishS : this.car.state.trackS,
     );
@@ -859,9 +1103,17 @@ export class Game {
       s: state.trackS,
       u: state.trackU,
       y: state.position.y,
-      zone: this.track.zoneAt(state.trackS) === 'forest' ? 'FLORESTA' : 'DESERTO',
+      zone: scenarioLabel(this.track.zoneAt(state.trackS)).toUpperCase(),
       offRoad: this.track.offTrackDistance(state.trackS, state.trackU),
       obstacles: this.obstacles.getCount(),
+      hazards:
+        `${this.hazards.getCount()} total · ` +
+        `${this.hazards.getActiveCount()} ativo(s) · ` +
+        `${this.hazards.isEnabled() ? 'ON' : 'OFF'}`,
+      path:
+        this.activePathId < 0
+          ? 'principal'
+          : `ramo ${this.activePathId + 1} (${this.activePathS.toFixed(0)} m)`,
       impact: this.lastImpact,
       powerups: this.describePowerups(),
     };
@@ -960,6 +1212,18 @@ function parseTrackSeed(raw: string | null): number | null {
 
 function randomTrackSeed(): number {
   return TRACK_SEED_MIN + Math.floor(Math.random() * (TRACK_SEED_MAX - TRACK_SEED_MIN + 1));
+}
+
+/**
+ * `?hazards=0` desliga os obstáculos móveis; `1`/ausente liga.
+ * `force` liga e é tratado como modo de QA (a telemetria expõe os hazards).
+ */
+function readHazardsEnabled(): boolean {
+  const raw = new URLSearchParams(window.location.search).get('hazards');
+  if (raw === '0' || raw === 'off' || raw === 'false') {
+    return false;
+  }
+  return true;
 }
 
 /**

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math';
-import type { SurfaceId } from '../game/types';
+import { DUST_PROFILES } from '../game/scenarios';
+import { DUST_TUNING } from '../game/config';
+import type { DustProfile, SurfaceId } from '../game/types';
 
 /** Estado mínimo de telemetria necessário para a poeira. */
 export interface DriftDustState {
@@ -14,20 +16,11 @@ export interface DriftDustState {
   surfaceId: SurfaceId;
 }
 
-const POOL_SIZE = 96;
+const POOL_SIZE = 112;
 const MAX_RATE = 55;
-const SLIP_START_DEG = 4;
-const SLIP_RANGE_DEG = 20;
 const SPEED_START = 5;
 const SPEED_RANGE = 20;
 const RAD_TO_DEG = 180 / Math.PI;
-
-const COLORS: Record<SurfaceId, number> = {
-  gravel: 0xc9b48b,
-  sand: 0xd8c08a,
-  'forest-offroad': 0xa89a7c,
-  'desert-offroad': 0xc9a76a,
-};
 
 const VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
@@ -71,12 +64,17 @@ const FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
+interface DustColors {
+  primary: THREE.Color;
+  secondary: THREE.Color;
+}
+
 /**
  * Poeira de derrapagem em um único `THREE.Points` com pool fixo.
  *
- * Nada é alocado durante o frame: os atributos vivem em typed arrays e são
- * reenviados inteiros (96 partículas é um custo desprezível). A emissão só
- * acontece com o carro no chão, acima de 5 m/s e com slip acima de 4°.
+ * Cada piso tem um perfil próprio: cor, taxa, tamanho, vida, subida e
+ * gravidade. Nada é alocado durante o frame; os atributos vivem em typed
+ * arrays e são reenviados inteiros.
  */
 export class DriftDust {
   readonly points: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
@@ -96,21 +94,28 @@ export class DriftDust {
   private readonly baseSizes = new Float32Array(POOL_SIZE);
   private readonly growths = new Float32Array(POOL_SIZE);
   private readonly baseAlphas = new Float32Array(POOL_SIZE);
+  private readonly gravities = new Float32Array(POOL_SIZE);
   private readonly alive = new Uint8Array(POOL_SIZE);
 
-  private readonly surfaceColors: Record<SurfaceId, THREE.Color>;
+  private readonly surfaceColors: Record<SurfaceId, DustColors>;
 
   private cursor = 0;
   private emitAccumulator = 0;
   private activeParticles = 0;
 
   constructor() {
-    this.surfaceColors = {
-      gravel: new THREE.Color(COLORS.gravel),
-      sand: new THREE.Color(COLORS.sand),
-      'forest-offroad': new THREE.Color(COLORS['forest-offroad']),
-      'desert-offroad': new THREE.Color(COLORS['desert-offroad']),
-    };
+    this.surfaceColors = Object.fromEntries(
+      (Object.keys(DUST_PROFILES) as SurfaceId[]).map((id) => {
+        const profile = DUST_PROFILES[id];
+        return [
+          id,
+          {
+            primary: new THREE.Color(profile.color),
+            secondary: new THREE.Color(profile.secondaryColor),
+          },
+        ];
+      }),
+    ) as Record<SurfaceId, DustColors>;
 
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute(
@@ -170,23 +175,36 @@ export class DriftDust {
       this.advance(step);
     }
 
+    const profile = DUST_PROFILES[state.surfaceId] ?? DUST_PROFILES.gravel;
     const slipDegrees = Math.abs(state.slipAngle) * RAD_TO_DEG;
+
     if (
       step > 0 &&
+      DUST_TUNING.enabled &&
       state.grounded &&
       state.speed > SPEED_START &&
-      slipDegrees > SLIP_START_DEG
+      slipDegrees > profile.slipStartDeg
     ) {
-      const slipFactor = clamp((slipDegrees - SLIP_START_DEG) / SLIP_RANGE_DEG, 0, 1);
+      const slipFactor = clamp(
+        (slipDegrees - profile.slipStartDeg) / Math.max(1, profile.slipRangeDeg),
+        0,
+        1,
+      );
       const speedFactor = clamp((state.speed - SPEED_START) / SPEED_RANGE, 0, 1);
-      this.emitAccumulator += MAX_RATE * slipFactor * speedFactor * step;
+      this.emitAccumulator +=
+        MAX_RATE *
+        profile.rateMultiplier *
+        DUST_TUNING.rateScale *
+        slipFactor *
+        speedFactor *
+        step;
     } else {
       this.emitAccumulator = 0;
     }
 
     while (this.emitAccumulator >= 1) {
       this.emitAccumulator -= 1;
-      this.emit(state);
+      this.emit(state, profile);
     }
 
     this.flushDynamicAttributes();
@@ -200,6 +218,7 @@ export class DriftDust {
       this.alphas[i] = 0;
       this.ages[i] = 0;
       this.lives[i] = 0;
+      this.gravities[i] = 0;
       this.positions[i * 3 + 1] = -1000;
     }
 
@@ -234,7 +253,8 @@ export class DriftDust {
 
       const v = i * 3;
       this.velocities[v] *= drag;
-      this.velocities[v + 1] = this.velocities[v + 1] * verticalDrag - 0.20 * dt;
+      this.velocities[v + 1] =
+        this.velocities[v + 1] * verticalDrag - this.gravities[i] * dt;
       this.velocities[v + 2] *= drag;
 
       this.positions[v] += this.velocities[v] * dt;
@@ -249,7 +269,7 @@ export class DriftDust {
     }
   }
 
-  private emit(state: DriftDustState): void {
+  private emit(state: DriftDustState, profile: DustProfile): void {
     const index = this.cursor;
     this.cursor = (this.cursor + 1) % POOL_SIZE;
 
@@ -277,19 +297,31 @@ export class DriftDust {
     const forwardJitter = (Math.random() * 2 - 1) * 0.15;
     this.velocities[v] =
       -state.velocity.x * 0.12 + rightX * lateralJitter + forwardX * forwardJitter;
-    this.velocities[v + 1] = 1.3 + Math.random() * 1.2;
+    this.velocities[v + 1] =
+      profile.riseMin + Math.random() * (profile.riseMax - profile.riseMin);
     this.velocities[v + 2] =
       -state.velocity.z * 0.12 + rightZ * lateralJitter + forwardZ * forwardJitter;
 
     this.ages[index] = 0;
-    this.lives[index] = 0.60 + Math.random() * 0.50;
-    this.baseSizes[index] = 0.40 + Math.random() * 0.45;
+    this.lives[index] = (0.60 + Math.random() * 0.50) * profile.lifeMultiplier;
+    this.baseSizes[index] =
+      (0.40 + Math.random() * 0.45) *
+      profile.sizeMultiplier *
+      DUST_TUNING.sizeScale;
     this.growths[index] = 1.6 + Math.random() * 0.6;
-    this.baseAlphas[index] = 0.34 + Math.random() * 0.31;
+    this.baseAlphas[index] = clamp(
+      (0.34 + Math.random() * 0.31) *
+        profile.alphaMultiplier *
+        DUST_TUNING.alphaScale,
+      0,
+      0.95,
+    );
     this.sizes[index] = this.baseSizes[index];
     this.alphas[index] = this.baseAlphas[index];
+    this.gravities[index] = profile.gravity;
 
-    const color = this.surfaceColors[state.surfaceId] ?? this.surfaceColors.gravel;
+    const palette = this.surfaceColors[state.surfaceId] ?? this.surfaceColors.gravel;
+    const color = Math.random() < 0.55 ? palette.primary : palette.secondary;
     this.colors[v] = color.r;
     this.colors[v + 1] = color.g;
     this.colors[v + 2] = color.b;

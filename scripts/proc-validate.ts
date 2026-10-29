@@ -132,6 +132,8 @@ function printTable(items: readonly Row[]): void {
     'ouro',
     'sep',
     'larg→cheg',
+    'bif',
+    'haz',
     'ms',
     'ok',
   ];
@@ -155,8 +157,10 @@ function printTable(items: readonly Row[]): void {
       header[14].padStart(5),
       header[15].padStart(5),
       header[16].padStart(9),
-      header[17].padStart(6),
+      header[17].padStart(3),
       header[18].padStart(3),
+      header[19].padStart(6),
+      header[20].padStart(3),
     ].join(' '),
   );
   console.log('-'.repeat(140));
@@ -186,6 +190,8 @@ function printTable(items: readonly Row[]): void {
         `${row.gold.toFixed(1)}`.padStart(5),
         `${s.minSectionDistance.toFixed(0)}m`.padStart(5),
         `${s.startToFinish.toFixed(0)}m`.padStart(9),
+        String(s.forks ?? 0).padStart(3),
+        String(s.hazards ?? 0).padStart(3),
         row.elapsedMs.toFixed(0).padStart(6),
         row.validation.ok ? 'yes' : 'NO',
       ].join(' '),
@@ -223,6 +229,10 @@ function printSummary(items: readonly Row[], errors: readonly string[]): void {
       `Obstáculos: ${range(valid.map((row) => row.validation.stats.obstacles))} | ` +
         `powerups: ${range(valid.map((row) => row.validation.stats.powerups))} | ` +
         `kickers: ${range(valid.map((row) => row.validation.stats.kickers))}`,
+    );
+    console.log(
+      `Bifurcações: ${range(valid.map((row) => row.validation.stats.forks ?? 0))} | ` +
+        `hazards: ${range(valid.map((row) => row.validation.stats.hazards ?? 0))}`,
     );
     console.log(
       `Faixas planas: ${range(valid.map((row) => row.validation.stats.flatFraction * 100))}% | ` +
@@ -338,6 +348,10 @@ function writePreview(def: TrackDef, path: string): void {
   const zoneColors: Record<string, string> = {
     forest: '#3f7a4b',
     desert: '#c9a25e',
+    snow: '#d7e6ee',
+    village: '#7a7d6a',
+    dirt: '#9a6b42',
+    beach: '#e0c58c',
   };
 
   const parts: string[] = [];

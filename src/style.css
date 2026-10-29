@@ -299,6 +299,102 @@ body {
   outline-offset: 2px;
 }
 
+/* Abre o menu de pistas; levemente destacado em relação aos demais. */
+.hud__track-button--menu {
+  border-color: rgba(255, 203, 71, 0.4);
+  color: var(--text);
+}
+
+/* Rótulo da pista atual, truncado para não empurrar os botões. */
+.hud__track-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: clamp(0.46rem, 2vw, 0.54rem);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+
+.hud__track-label[hidden] {
+  display: none;
+}
+
+/*
+ * Velocímetro: canto inferior esquerdo por padrão; espelha para a direita
+ * quando o stack de toque está à esquerda. Não captura toque.
+ */
+.hud__speedo {
+  position: absolute;
+  left: calc(var(--safe-left) + 12px);
+  bottom: calc(var(--safe-bottom) + 16px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 88px;
+  padding: 7px 10px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.hud[data-controls-side='left'] .hud__speedo {
+  right: calc(var(--safe-right) + 12px);
+  left: auto;
+}
+
+.hud__speedo-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.hud__speedo-value {
+  min-width: 2.6ch;
+  color: var(--text);
+  font-size: clamp(1.4rem, 6.2vw, 1.9rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  text-align: right;
+}
+
+.hud__speedo-unit {
+  color: var(--muted);
+  font-size: clamp(0.42rem, 1.9vw, 0.5rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1;
+}
+
+.hud__speedo-bar {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(6, 10, 12, 0.8);
+}
+
+.hud__speedo-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c58f2d, var(--accent));
+  box-shadow: 0 0 6px rgba(255, 203, 71, 0.45);
+  transition: width 90ms linear;
+}
+
 /*
  * Overlay central de largada. O véu não captura pointer (um toque em qualquer
  * ponto do canvas inicia); só o botão GO! é clicável.
@@ -1237,6 +1333,40 @@ body {
   outline-offset: 3px;
 }
 
+/* Ação secundária: menos proeminente que CORRER DE NOVO. */
+.results__choose {
+  width: 100%;
+  min-height: 46px;
+  margin-top: -2px;
+  padding: 0 18px;
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: clamp(0.7rem, 3.1vw, 0.84rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background-color 120ms ease,
+    transform 90ms ease;
+}
+
+.results__choose:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.results__choose:active {
+  transform: scale(0.98);
+}
+
+.results__choose:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 @keyframes results-in {
   from {
     opacity: 0;
@@ -1276,7 +1406,336 @@ body {
   .results__retry {
     min-height: 50px;
   }
+
+  .results__choose {
+    min-height: 42px;
+  }
 }
+
+/*
+ * Menu de pistas: overlay acima do Results e do painel de tuning (z-index 40).
+ * O painel rola por dentro, a grade de seeds tem scroll próprio e o véu fecha
+ * ao clique.
+ */
+.track-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding:
+    calc(var(--safe-top) + 12px) calc(var(--safe-right) + 12px)
+    calc(var(--safe-bottom) + 12px) calc(var(--safe-left) + 12px);
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(8, 14, 17, 0.34) 0%, rgba(4, 8, 10, 0.82) 74%),
+    linear-gradient(rgba(4, 8, 10, 0.3), rgba(4, 8, 10, 0.72));
+  pointer-events: auto;
+  touch-action: none;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.track-menu[hidden] {
+  display: none;
+}
+
+.track-menu__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(430px, 100%);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
+  padding: clamp(14px, 4vw, 20px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(226, 238, 230, 0.22);
+  border-radius: 22px;
+  background: rgba(12, 19, 22, 0.98);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.58);
+  pointer-events: auto;
+  touch-action: pan-y;
+  animation: results-in 220ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.track-menu__title {
+  margin: 0;
+  color: var(--accent);
+  font-size: clamp(0.78rem, 3.4vw, 0.94rem);
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  line-height: 1;
+  text-align: center;
+}
+
+.track-menu__current {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.track-menu__current-label {
+  color: var(--muted);
+  font-size: 0.48rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+}
+
+.track-menu__current-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: clamp(0.78rem, 3.3vw, 0.92rem);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-menu__current-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: clamp(0.52rem, 2.2vw, 0.6rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  max-height: min(32dvh, 250px);
+  padding: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.track-menu__seed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-height: 42px;
+  padding: 4px 2px;
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.15;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.track-menu__seed:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.track-menu__seed:active {
+  transform: scale(0.97);
+}
+
+.track-menu__seed:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.track-menu__seed.is-current {
+  border-color: var(--accent);
+  background: rgba(255, 203, 71, 0.16);
+  color: var(--accent);
+}
+
+.track-menu__seed-number {
+  font-size: clamp(0.58rem, 2.5vw, 0.66rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.track-menu__seed-best {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: clamp(0.42rem, 1.8vw, 0.5rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-menu__seed.is-current .track-menu__seed-best {
+  color: var(--accent);
+}
+
+.track-menu__form {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.track-menu__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(6, 10, 12, 0.9);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  touch-action: manipulation;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.track-menu__input::placeholder {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.track-menu__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.track-menu__input[aria-invalid='true'] {
+  border-color: #ff7b6c;
+}
+
+.track-menu__play {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 203, 71, 0.65);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffd35f, #eeb32b);
+  color: #171205;
+  font: inherit;
+  font-size: clamp(0.66rem, 2.9vw, 0.78rem);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.track-menu__play:active {
+  filter: brightness(0.94);
+}
+
+.track-menu__play:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.track-menu__error {
+  margin: -2px 0 0;
+  color: #ff9a8d;
+  font-size: clamp(0.56rem, 2.4vw, 0.66rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+}
+
+.track-menu__error[hidden] {
+  display: none;
+}
+
+.track-menu__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.track-menu__action,
+.track-menu__close {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font: inherit;
+  font-size: clamp(0.6rem, 2.6vw, 0.7rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background-color 120ms ease,
+    transform 90ms ease;
+}
+
+.track-menu__action--random {
+  border-color: rgba(255, 203, 71, 0.42);
+  color: var(--accent);
+}
+
+.track-menu__action:hover,
+.track-menu__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.track-menu__action:active,
+.track-menu__close:active {
+  transform: scale(0.98);
+}
+
+.track-menu__action:focus-visible,
+.track-menu__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.track-menu__close {
+  width: 100%;
+  min-height: 40px;
+  background: transparent;
+  color: var(--muted);
+}
+
+@media (max-width: 359px) {
+  .track-menu__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-height: 680px) {
+  .track-menu__panel {
+    gap: 6px;
+    padding: 12px;
+  }
+
+  .track-menu__grid {
+    max-height: min(28dvh, 210px);
+  }
+
+  .track-menu__seed {
+    min-height: 40px;
+  }
+}
+
 
 .hud__debug {
   position: absolute;
@@ -1485,6 +1944,12 @@ html[data-touch='true'][data-controls-side='left'] #tuning-panel.lil-gui {
   outline-offset: 3px;
 }
 
+@media (max-width: 360px) {
+  .hud__track-label {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hud__reset,
   .hud__control,
@@ -1494,8 +1959,13 @@ html[data-touch='true'][data-controls-side='left'] #tuning-panel.lil-gui {
   }
 
   .hud__split.is-active,
-  .results__panel {
+  .results__panel,
+  .track-menu__panel {
     animation: none;
+  }
+
+  .hud__speedo-fill {
+    transition: none;
   }
 
   .hud__powerup-flash.is-active {

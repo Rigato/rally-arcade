@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math';
+import { SCENARIOS } from '../game/scenarios';
 import type { Car } from '../car/Car';
 import type { Track, TrackZoneId } from './Track';
 
@@ -13,7 +14,14 @@ import type { Track, TrackZoneId } from './Track';
  */
 
 export type ObstacleType = 'rock' | 'tree' | 'log';
-export type ObstacleVariant = 'rock-dodeca' | 'rock-icosa' | 'pine' | 'cactus' | 'log';
+export type ObstacleVariant =
+  | 'rock-dodeca'
+  | 'rock-icosa'
+  | 'pine'
+  | 'snowpine'
+  | 'cactus'
+  | 'palm'
+  | 'log';
 
 /** Informação pública de um obstáculo (debug, validação e testes). */
 export interface ObstacleInfo {
@@ -66,11 +74,6 @@ const MAX_PLACEMENT_ATTEMPTS = 320;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const ROCK_RADIUS = 0.9;
-const FOREST_ROCK_COLORS = [0x9aa09a, 0x767d76, 0xb6b8ae, 0x616864];
-const DESERT_ROCK_COLORS = [0xd0c09b, 0xb09d79, 0xdfd2b1, 0x978767];
-const PINE_CROWN_COLORS = [0x2f5a38, 0x356440, 0x294f32, 0x3b6b45];
-const CACTUS_COLORS = [0x4f7d4b, 0x5b8a54, 0x457145, 0x648f5c];
-const LOG_COLORS = [0x6a4a30, 0x755235, 0x5d4029, 0x7d5839];
 
 const KIND_DEBUG_COLORS: Record<ObstacleType, number> = {
   rock: 0xff5da8,
@@ -105,6 +108,7 @@ export class Obstacles {
       ...this.buildRockMeshes(),
       ...this.buildPineMeshes(),
       ...this.buildCactusMeshes(),
+      ...this.buildPalmMeshes(),
       ...this.buildLogMeshes(),
     );
 
@@ -487,6 +491,11 @@ export class Obstacles {
     const u = side * (sample.width * 0.5 + offset);
     const x = sample.position.x + sample.right.x * u;
     const z = sample.position.z + sample.right.z * u;
+
+    if (this.track.distanceToBranches(x, z) < 14) {
+      return;
+    }
+
     const groundY = this.track.heightAt(s, u);
 
     for (const other of this.items) {
@@ -511,7 +520,7 @@ export class Obstacles {
       yaw: rng() * Math.PI * 2,
       scale: dimensions.scale,
       length: dimensions.length,
-      color: this.pickColor(type, zone, dimensions.variant, rng),
+      color: this.pickColor(type, zone, rng),
     });
   }
 
@@ -543,11 +552,19 @@ export class Obstacles {
   private pickType(zone: TrackZoneId, rng: () => number): ObstacleType {
     const roll = rng();
 
-    if (zone === 'forest') {
-      return roll < 0.38 ? 'tree' : roll < 0.74 ? 'rock' : 'log';
+    switch (SCENARIOS[zone].family) {
+      case 'forest':
+        return roll < 0.38 ? 'tree' : roll < 0.74 ? 'rock' : 'log';
+      case 'desert':
+        return roll < 0.3 ? 'tree' : roll < 0.72 ? 'rock' : 'log';
+      case 'beach':
+        return roll < 0.36 ? 'tree' : roll < 0.7 ? 'rock' : 'log';
+      case 'snow':
+      case 'village':
+      case 'dirt':
+      default:
+        return roll < 0.34 ? 'tree' : roll < 0.72 ? 'rock' : 'log';
     }
-
-    return roll < 0.3 ? 'tree' : roll < 0.72 ? 'rock' : 'log';
   }
 
   private pickDimensions(
@@ -595,6 +612,42 @@ export class Obstacles {
       };
     }
 
+    if (SCENARIOS[zone].family === 'snow') {
+      const scale = 0.85 + rng() * 0.35;
+      return {
+        variant: 'snowpine',
+        radius: 0.62 + rng() * 0.24,
+        height: 6.4 * scale,
+        scale,
+        length: 0,
+      };
+    }
+
+    if (SCENARIOS[zone].family === 'beach') {
+      const scale = 0.8 + rng() * 0.3;
+      return {
+        variant: 'palm',
+        radius: 0.6 + rng() * 0.22,
+        height: 5.6 * scale,
+        scale,
+        length: 0,
+      };
+    }
+
+    if (
+      SCENARIOS[zone].family === 'village' ||
+      SCENARIOS[zone].family === 'dirt'
+    ) {
+      const scale = 0.82 + rng() * 0.32;
+      return {
+        variant: 'pine',
+        radius: 0.6 + rng() * 0.24,
+        height: 6.0 * scale,
+        scale,
+        length: 0,
+      };
+    }
+
     const scale = 0.85 + rng() * 0.3;
     return {
       variant: 'cactus',
@@ -608,25 +661,19 @@ export class Obstacles {
   private pickColor(
     type: ObstacleType,
     zone: TrackZoneId,
-    variant: ObstacleVariant,
     rng: () => number,
   ): THREE.Color {
+    const colors = SCENARIOS[zone].colors;
+
     if (type === 'rock') {
-      const palette = zone === 'forest' ? FOREST_ROCK_COLORS : DESERT_ROCK_COLORS;
-      return new THREE.Color(palette[Math.floor(rng() * palette.length)]);
+      return new THREE.Color(pickFrom(colors.rock, rng));
     }
 
     if (type === 'log') {
-      return new THREE.Color(LOG_COLORS[Math.floor(rng() * LOG_COLORS.length)]);
+      return new THREE.Color(pickFrom(colors.log, rng));
     }
 
-    if (variant === 'cactus') {
-      return new THREE.Color(CACTUS_COLORS[Math.floor(rng() * CACTUS_COLORS.length)]);
-    }
-
-    return new THREE.Color(
-      PINE_CROWN_COLORS[Math.floor(rng() * PINE_CROWN_COLORS.length)],
-    );
+    return new THREE.Color(pickFrom(colors.tree, rng));
   }
 
   private buildRockMeshes(): THREE.Object3D[] {
@@ -667,7 +714,9 @@ export class Obstacles {
   }
 
   private buildPineMeshes(): THREE.Object3D[] {
-    const pines = this.items.filter((item) => item.variant === 'pine');
+    const pines = this.items.filter(
+      (item) => item.variant === 'pine' || item.variant === 'snowpine',
+    );
     if (pines.length === 0) {
       return [];
     }
@@ -806,6 +855,77 @@ export class Obstacles {
     });
 
     for (const mesh of [trunk, arms, joints]) {
+      this.finishInstances(mesh);
+      meshes.push(mesh);
+    }
+
+    return meshes;
+  }
+
+  private buildPalmMeshes(): THREE.Object3D[] {
+    const palms = this.items.filter((item) => item.variant === 'palm');
+    if (palms.length === 0) {
+      return [];
+    }
+
+    const LEAVES = 5;
+    const meshes: THREE.Object3D[] = [];
+    const trunkGeometry = new THREE.CylinderGeometry(0.17, 0.32, 4.2, 6);
+    trunkGeometry.translate(0, 2.1, 0);
+    const leafGeometry = new THREE.ConeGeometry(0.36, 1.9, 4);
+    leafGeometry.translate(0, 0.95, 0);
+    leafGeometry.scale(1, 1, 0.4);
+
+    const trunkMaterial = this.standardMaterial();
+    const leafMaterial = this.standardMaterial();
+    const trunks = this.instanced(
+      'obstacle-palm-trunks',
+      trunkGeometry,
+      trunkMaterial,
+      palms.length,
+    );
+    const leaves = this.instanced(
+      'obstacle-palm-leaves',
+      leafGeometry,
+      leafMaterial,
+      palms.length * LEAVES,
+    );
+
+    const baseMatrix = new THREE.Matrix4();
+    const localMatrix = new THREE.Matrix4();
+    const finalMatrix = new THREE.Matrix4();
+    const crownMatrix = new THREE.Matrix4();
+    const fanMatrix = new THREE.Matrix4();
+    const droopMatrix = new THREE.Matrix4().makeRotationZ(-1.9);
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+
+    palms.forEach((palm, index) => {
+      position.set(palm.x, palm.groundY, palm.z);
+      quaternion.setFromAxisAngle(UP, palm.yaw);
+      scale.setScalar(palm.scale);
+      baseMatrix.compose(position, quaternion, scale);
+
+      trunks.setMatrixAt(index, baseMatrix);
+      trunks.setColorAt(
+        index,
+        new THREE.Color(SCENARIOS[this.track.zoneAt(palm.s)].colors.log[0]),
+      );
+
+      crownMatrix.makeTranslation(0, 4.05, 0);
+      for (let leaf = 0; leaf < LEAVES; leaf += 1) {
+        fanMatrix.makeRotationY((leaf / LEAVES) * Math.PI * 2);
+        localMatrix.multiplyMatrices(crownMatrix, fanMatrix);
+        localMatrix.multiply(droopMatrix);
+        finalMatrix.multiplyMatrices(baseMatrix, localMatrix);
+        const leafIndex = index * LEAVES + leaf;
+        leaves.setMatrixAt(leafIndex, finalMatrix);
+        leaves.setColorAt(leafIndex, palm.color);
+      }
+    });
+
+    for (const mesh of [trunks, leaves]) {
       this.finishInstances(mesh);
       meshes.push(mesh);
     }
@@ -967,6 +1087,11 @@ function pushColor(colors: number[], color: THREE.Color, times: number): void {
   for (let i = 0; i < times; i += 1) {
     colors.push(color.r, color.g, color.b);
   }
+}
+
+/** Sorteia um elemento de uma paleta do registro de cenários. */
+function pickFrom<T>(values: readonly T[], rng: () => number): T {
+  return values[Math.floor(rng() * values.length)] ?? values[0];
 }
 
 /** PRNG determinística (mulberry32), igual à do cenário. */

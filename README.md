@@ -1,12 +1,12 @@
 # Rally Arcade
 
-Protótipo de corrida arcade de rally para celular em **portrait**, com controles de toque simples. O carro derrapa, os pisos mudam o grip e cada corrida termina com tempo, três parciais e medalha.
+Protótipo de corrida arcade de rally para celular em **portrait**, com controles de toque simples. O carro derrapa, seis tipos de cenário/piso mudam o grip, e cada corrida termina com tempo, três parciais e medalha.
 
 Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), UI em DOM/CSS sobre o canvas.
 
 **Jogue agora:** <https://rigato.github.io/rally-arcade/>
 
-> Status: **MVP completo — M5, com powerups (M5b), controles touch de uma mão, pista A→B e ajustes v7 de default/hairpin/medalhas/poeira**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. **Ao abrir, o jogo sorteia uma pista procedural**; a fixa fica no botão **FIXA**. As pistas aleatórias têm sete tipos de curva, setores longos, platôs e chokes, com um **hairpin extremo de 13–14 m** por pista. Medalhas e poeira foram recalibradas no playtest. O conjunto está em playtest para calibrar o hairpin e os tempos.
+> Status: **MVP completo — M5, com powerups (M5b), controles touch de uma mão, pista A→B, cenários de floresta, deserto, neve, vilarejo, estrada de terra e praia, bifurcações procedurais, obstáculos móveis, menu de pistas e velocímetro**. O ciclo largada → 3 parciais → chegada → medalha → reinício está fechado. **Ao abrir, o jogo sorteia uma pista procedural**; o menu **PISTAS** permite escolher uma seed ou a pista fixa. As pistas aleatórias têm sete tipos de curva, setores longos, platôs, chokes, 1–2 bifurcações e 1–3 obstáculos móveis.
 
 ## Screenshots
 
@@ -16,9 +16,19 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 ![Menu de mão](Docs/screenshots/touch-hand-menu.png)
 
+![Menu de pistas](Docs/screenshots/track-menu.png)
+
+| Neve | Vilarejo |
+| --- | --- |
+| ![Neve](Docs/screenshots/scenario-snow.png) | ![Vilarejo](Docs/screenshots/scenario-village.png) |
+
+| Estrada de terra | Praia |
+| --- | --- |
+| ![Estrada de terra](Docs/screenshots/scenario-dirt.png) | ![Praia](Docs/screenshots/scenario-beach.png) |
+
 ## Documentação
 
-- [`Docs/Mini GDD - Rally Arcade v2.md`](Docs/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — GDD oficial v2.1
+- [`Docs/Mini GDD - Rally Arcade v2.md`](Docs/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — GDD oficial v2.2
 - [`Docs/Implementation Plan - Rally Arcade MVP.md`](Docs/Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md)
 - [`Docs/Handoff - Rally Arcade.md`](Docs/Handoff%20-%20Rally%20Arcade.md)
 - [`Docs/bak_old/Mini GDD - Rally Arcade v2.md`](Docs/bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2
@@ -26,12 +36,12 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 ## O loop
 
-1. O jogo abre em uma **pista procedural aleatória** (seed 1–100) com o carro parado em `s = 22 m`; o botão **GO!** central (ou um toque na tela) inicia o cronômetro. Depois disso o carro **acelera sozinho**. Para a pista fixa, use **FIXA** no topo.
+1. O jogo abre em uma **pista procedural aleatória** (seed 1–100) com o carro parado em `s = 22 m`; o botão **GO!** central (ou um toque na tela) inicia o cronômetro. Depois disso o carro **acelera sozinho**. O menu **PISTAS** troca para outra seed ou para a pista fixa.
 2. Dirigir, derrapar, pular e escolher a linha. Sair da pista custa tempo; a recuperação automática mantém o relógio correndo.
-3. A pista é **A→B**, com 4 setores intercalados (floresta → deserto → floresta → deserto). Na pista fixa, as **parciais 1, 2 e 3** ficam em `s = 250`, `500` e `750 m`, com alvos **8,9 / 17,9 / 26,8 s**. Nas pistas aleatórias os setores têm **340–470 m** e as parciais ficam em 25/50/75% do traçado, no ritmo do ouro.
+3. A pista é **A→B**, com 4 setores sorteados do pool de seis cenários (floresta, deserto, neve, vilarejo, estrada de terra e praia), sem repetir o mesmo cenário em setores consecutivos. Na pista fixa, as **parciais 1, 2 e 3** ficam em `s = 250`, `500` e `750 m`, com alvos **8,9 / 17,9 / 26,8 s**. Nas pistas aleatórias as parciais ficam em 25/50/75% do traçado, no ritmo do ouro.
 4. Na pista fixa, ao cruzar a faixa em `s ≈ 1093 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s. A largada e a chegada ficam em pontos distintos; nas pistas aleatórias a chegada fica no fim do traçado de ~1,5 km.
 5. Na pista fixa, a medalha vem do tempo final: **ouro ≤ 39 s**, **prata ≤ 45 s**, **bronze ≤ 51 s**. Sem medalha, o resultado mostra quantos segundos faltaram para o bronze.
-6. **CORRER DE NOVO** (ou o botão ↺ / tecla **R**) recoloca o carro na largada em menos de 1 s. O melhor tempo continua no topo do HUD.
+6. **CORRER DE NOVO** (ou o botão ↺ / tecla **R**) recoloca o carro na largada em menos de 1 s. **ESCOLHER PISTA** no resultado abre o menu de seeds. O melhor tempo continua no topo do HUD.
 
 ## Controles
 
@@ -45,27 +55,29 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 | Lado do stack | Menu **MÃO**: DIREITA ou ESQUERDA, persistido | — |
 | Freio de mão | Sem botão no touch por enquanto | Espaço |
 | Reiniciar | Botão no topo da tela | R |
-| Pista | 🎲 NOVA (seed 1–100) / FIXA | Mesmos botões na tela |
+| Pista | Menu **☰ PISTAS** (seed 1–100, aleatória ou fixa) / 🎲 NOVA | Mesmos botões na tela |
+| Velocímetro | Canto inferior esquerdo (km/h) | Mesmo |
 | Telemetria (debug) | — | H |
-| Pausa | Auto-pause ao trocar de aba | — |
+| Pausa | Auto-pause ao trocar de aba; menu PISTAS pausa a corrida | — |
 
 O carro fica parado no READY. O GO libera a largada e liga a auto-aceleração; soltar o freio volta a acelerar. O stack touch tem **5 botões**: a linha de cima é ◀/▶ puro, a linha do meio é **◀F/▶F** (esterço + freio no mesmo dedo) e embaixo fica o **FREIO** largo. Assim dá para frear e virar com um polegar, ou usar dois dedos nos botões puros. O menu **MÃO** acima do stack escolhe o lado (DIREITA/ESQUERDA) e a escolha fica em `localStorage['rally.controls.side.v1']`.
 
 No PC o stack, o gatilho MÃO e o menu não aparecem; o GO mostra “CLIQUE OU ENTER” e o teclado continua funcionando. O freio de mão segue disponível no Espaço, mas não há botão de freio de mão no touch.
 
-Os botões **🎲 NOVA** e **FIXA** no topo trocam entre uma pista procedural aleatória (seed 1–100) e a pista fixa A→B. Como o boot já abre em uma procedural aleatória, **FIXA** é o caminho para a pista de teste fixa.
+Os botões **☰ PISTAS** e **🎲 NOVA** no topo controlam a pista. O menu PISTAS mostra a pista atual, uma grade de seeds 1–100 com melhor tempo, campo para digitar seed, **SORTEAR** e **PISTA FIXA**. O boot já abre em uma procedural aleatória; **NOVA** é o atalho para sortear outra sem abrir o menu. Com o menu aberto durante a corrida, simulação e cronômetro ficam pausados.
 
 ## HUD e resultado
 
 - **Topo esquerdo:** melhor tempo da pista (`MELHOR --:--.---` até a primeira corrida).
 - **Topo central:** cronômetro `mm:ss.mmm`, parado em READY e FINISHED.
 - **Topo direito:** reinício imediato.
-- **Botões de pista:** `🎲 NOVA` gera uma seed procedural 1–100; `FIXA` carrega a pista A→B. **Ao abrir, o jogo já começa em uma procedural aleatória.**
+- **Velocímetro:** canto inferior esquerdo em km/h, com barra de velocidade; espelha para a direita quando o menu MÃO deixa os controles à esquerda.
+- **Menu de pistas:** **☰ PISTAS** abre a seleção de seed, **SORTEAR** e **PISTA FIXA**. 🎲 **NOVA** é o atalho aleatório. **Ao abrir, o jogo já começa em uma procedural aleatória.**
 - **Barra de progresso:** distância percorrida, um marcador por parcial (250/500/750 m na fixa; 25/50/75% nas procedurais) e ponto do carro no fim do preenchimento.
 - **GO!:** overlay central no READY; inicia a corrida e a auto-aceleração.
 - **Controles touch:** stack de 5 botões no canto inferior direito — ◀/▶ puros, ◀F/▶F com freio e FREIO largo embaixo. O menu **MÃO** escolhe o lado; no PC todo o stack fica oculto.
 - **Banner de parcial:** nome, tempo e delta (`+0,42` em vermelho, `-0,31` em verde) por ~2,5 s.
-- **Resultado:** tempo total, medalha, tempos-alvo, as **3 parciais** (tempo e delta), melhor tempo, selo `NOVO RECORDE` quando aplicável e o botão grande **CORRER DE NOVO**. O overlay escuro só intercepta toque no painel/botão; escondido, não bloqueia o canvas.
+- **Resultado:** tempo total, medalha, tempos-alvo, as **3 parciais** (tempo e delta), melhor tempo, selo `NOVO RECORDE` quando aplicável, **CORRER DE NOVO** e **ESCOLHER PISTA**. O overlay escuro só intercepta toque no painel/botão; escondido, não bloqueia o canvas.
 - **Powerups (topo esquerdo):** chips com nome, tempo restante e barra de duração, atualizados a ~10 Hz. Ao coletar, o nome do powerup sobe e some em ~0,75 s.
 
 O melhor tempo fica em `localStorage['rally.best.track01-v3.v1']` para a pista fixa e em `rally.best.proc-N.v1` para cada procedural (uma chave por `track.def.id`). Se o storage estiver bloqueado, o recorde vale só para a sessão e o jogo continua normalmente.
@@ -84,12 +96,21 @@ Dois tipos no MVP, com ativação imediata:
 - A coleta só vale em **RUNNING**; READY, RECOVERING e FINISHED não coletam. Na recuperação os timers ficam congelados.
 - O turbo não altera saltos, colisão, freio ou rampa: só velocidade, aceleração e o FOV da câmera (`CAMERA_TUNING.turboFovBoost`). O grip extra age só no grip lateral.
 
+## Cenários, bifurcações e obstáculos móveis
+
+- **Seis cenários:** floresta/cascalho, deserto/areia, neve, vilarejo/asfalto, estrada de terra e praia/areia de praia. As pistas procedurais sorteiam **4 setores sem repetir o mesmo cenário em sequência**.
+- **Pisos com comportamento próprio:** cada cenário tem grip, aceleração, arrasto, bump, limite de velocidade e off-road no painel **Pisos**. A neve solta mais a traseira, o asfalto do vilarejo agarra mais, a terra fica entre cascalho e areia e a praia puxa para fora.
+- **Poeira por piso:** cor primária/secundária, taxa, tamanho, alpha, vida, subida e gravidade mudam por cenário. O deserto usa um tom mais escuro para contrastar com a areia; a neve usa spray branco-azulado.
+- **Bifurcações:** 1–2 por pista procedural. Em uma reta longa, um ramo sai da pista principal, abre 14–26 m, ganha relevo próprio e volta a se juntar. O jogador escolhe o lado sem saber qual é melhor; não há recompensa exclusiva. A pista fixa continua sem bifurcação.
+- **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor e pelo menos um garantido. Cada evento tem um tipo do cenário (camelo, cervo, rena, carro, caminhão, trator, vaca ou buggy), começa a atravessar quando o carro se aproxima e colide como os obstáculos sólidos. O começo da run fica preservado.
+- **Toggle de debug:** `?hazards=0` desliga os obstáculos móveis; o painel de debug tem **Hazards ativos** e **→ Próximo hazard**.
+
 ## Carro, escape e poeira
 
 - **Velocidade/aceleração/freio:** 39,1 m/s (~141 km/h), 11,5 m/s² e 13,8 m/s² — +15% sobre a versão anterior.
-- **Fora de pista:** o carro fica limitado a **65%** da velocidade máxima na floresta e **62%** no deserto, com freio extra de 10/8 m/s². Na prática, entrar a 141 km/h estabiliza em ~91/87 km/h em ~2,1 s, sem corte instantâneo.
+- **Fora de pista:** cada cenário tem seu próprio cap e freio extra. Floresta 65% / 10 m/s², deserto 62% / 8, neve 50% / 12, vilarejo 68% / 9, terra 55% / 11 e praia 50% / 12. Na prática, entrar a 141 km/h estabiliza em ~87–96 km/h nos pisos mais soltos, sem corte instantâneo.
 - **Trepidação:** o rumble da câmera sobe para 0,15 m e é escalado pelo `bump` do piso; fora de pista sacode mais.
-- **Poeira:** pool de **96 partículas** emitidas nas rodas traseiras quando há slip (>4°) e velocidade (>5 m/s), a até **55/s**. A quantidade cresce com o slip (pouca derrapagem = quase nada; 24°+ = poeira clara), as partículas são maiores (0,40–0,85 m), sobem **1,3–2,5 m/s** e duram 0,60–1,10 s; a cor segue o piso.
+- **Poeira:** pool de **112 partículas** emitidas nas rodas traseiras quando há slip e velocidade acima do limiar do piso. Cada piso define taxa, tamanho, alpha, vida, subida, gravidade e duas cores; a neve usa spray branco-azulado e o deserto um tom mais escuro para contrastar com a areia. O painel **Poeira** permite ligar/desligar e ajustar taxa/tamanho/alpha.
 - O tuning salvo usa `localStorage['rally.tuning.v4']`; valores antigos da v3 são ignorados.
 
 ## Painel de ajuste e debug
@@ -104,10 +125,11 @@ https://rigato.github.io/rally-arcade/?track=proc&seed=1&debug=1
 ```
 
 - **Sem `track`** (raiz ou `?debug=1`) o jogo sorteia uma **procedural** com seed 1–100 a cada abertura/reload.
-- **`?track=fixed`** carrega a pista fixa; **`?track=proc&seed=N`** carrega uma procedural determinística (1–100). **FIXA** no topo leva para `?track=fixed`.
+- **`?track=fixed`** carrega a pista fixa; **`?track=proc&seed=N`** carrega uma procedural determinística (1–100). O menu **PISTAS** navega para essas URLs.
 - **`?s=<metros>`** teleporta o carro para o centro da pista e volta a corrida para READY, preservando o melhor tempo. Use junto de `track=fixed` ou `track=proc&seed=N` para uma pista estável; sozinho ele teleporta em uma procedural aleatória.
-- **H** alterna a telemetria no desktop; no painel, a pasta **Debug** também controla piso forçado, colisores, reposicionar e ir para um `s`.
-- O painel cobre **Carro**, **Carroceria**, **Câmera**, **Input**, **Pisos**, **Powerups / Corrida** e **Debug**. O Input agora só tem as suavizações de esterço/freio; os parâmetros de derrapagem ficam em **Carro**.
+- **`?hazards=0`** desliga os obstáculos móveis; sem o parâmetro eles ficam ligados. O painel Debug também tem o checkbox e um atalho para o próximo hazard.
+- **H** alterna a telemetria no desktop; no painel, a pasta **Debug** também controla piso forçado, colisores, hazards, reposicionar e ir para um `s`.
+- O painel cobre **Carro**, **Carroceria**, **Câmera**, **Input**, **Pisos**, **Poeira**, **Powerups / Corrida** e **Debug**. O Input agora só tem as suavizações de esterço/freio; os parâmetros de derrapagem ficam em **Carro**.
 - Todo ajuste vale na hora porque física, câmera, input e corrida leem os mesmos objetos mutáveis de `src/game/config.ts`.
 - Alterações são salvas em `localStorage['rally.tuning.v4']` com debounce de ~200 ms. **Resetar tuning** volta aos defaults e apaga a chave.
 - **Copiar JSON** exporta o tuning atual; se o clipboard for bloqueado, abre um textarea para copiar manualmente.
@@ -135,6 +157,7 @@ src/
 │   ├── Game.ts          # renderer, cena, loop, estados e orquestração da corrida
 │   ├── Race.ts          # relógio, parcial, medalhas, melhor tempo e snapshot
 │   ├── config.ts        # defaults tipados de tuning (objetos mutáveis)
+│   ├── scenarios.ts     # registro de cenários, pisos, paletas, poeira e hazards
 │   ├── types.ts         # tipos compartilhados (estado, tuning, pista)
 │   ├── tuningStore.ts   # localStorage, merge, reset e export JSON
 │   └── debug.ts         # detecção de ?debug=1 / #debug
@@ -151,19 +174,23 @@ src/
 │   └── Input.ts         # GO, auto-throttle, 5 botões, teclado e multi-touch
 ├── track/
 │   ├── track01.ts       # pista fixa A→B (seed 91, ~1097 m, 4 setores)
-│   ├── Track.ts         # spline, sampler, altura e validação
+│   ├── Track.ts         # spline, sampler, altura, superfícies e ramos
+│   ├── TrackBranch.ts   # sampler de um ramo de bifurcação
 │   ├── TrackMesh.ts     # pista, ombros, placas e portais
+│   ├── ForkMesh.ts      # malha dos ramos de bifurcação
 │   ├── Gates.ts         # portais em cada troca de setor + chegada
 │   ├── zones.ts         # mistura de paletas nos limites das zonas
 │   ├── Obstacles.ts     # obstáculos sólidos e colisão
+│   ├── Hazards.ts       # obstáculos móveis, travessia e colisão
 │   ├── Powerups.ts      # pickups de turbo/grip, timers e efeitos na física
 │   └── procedural/      # gerador por seed e validação do protótipo
 ├── world/
-│   ├── Scenery.ts       # cenário instanciado por setor (floresta/deserto)
+│   ├── Scenery.ts       # cenário instanciado por setor (6 famílias)
 │   └── Environment.ts   # céu, névoa e luz multi-zona
 └── ui/
     ├── Hud.ts           # cronômetro, melhor, progresso, parcial, recuperação e debug
-    ├── Results.ts       # overlay de chegada, medalha e retry
+    ├── TrackMenu.ts     # menu de seeds, aleatória e pista fixa
+    ├── Results.ts       # overlay de chegada, medalha, retry e escolher pista
     ├── format.ts        # formatação de tempo e delta
     └── TuningPanel.ts   # lil-gui em ?debug=1
 ```
@@ -177,14 +204,16 @@ O gerador de pistas por seed fica em `src/track/procedural/`:
 - `generateProceduralTrack(seed)` usa uma **gramática de segmentos**: retas de ~20–90 m e curvas sorteadas entre **sete categorias** — longa (R≈70–110 m), média (45–65 m), curta (28–38 m), cotovelo (26–31 m), **hairpin normal (20–23 m)**, **hairpin extremo (13–14 m)** e **mudança de rota / kink (R≈140–220 m, sweep 6–15°)**. Cada seed usa **exatamente 1 hairpin extremo**, 0–1 normal, 1–3 kinks e pelo menos quatro categorias, com curvas nos dois sentidos.
 - O **hairpin extremo** tem sweep 170–185°, largura local **5,2–6,2 m**, aproximação reta de 45–60 m e saída de 35–60 m; fica a ≥80 m da largada/chegada. É o ponto que exige frear de verdade.
 - Candidatos são rejeitados se trechos não vizinhos ficarem a menos de **40 m** entre centros (as duas pernas do próprio hairpin extremo são a exceção), se o layout passar de ~650×650 m ou se a chegada ficar a menos de **100 m** da largada. O resultado é sempre uma pista **A→B**.
-- **Setores mais longos:** cada um tem **340–470 m** (35–65% acima dos ~250–290 m anteriores) e a pista total fica em **1518–1625 m**. São 6–8 powerups, 50–75 obstáculos e 1–2 rampas.
+- **Setores:** 4 setores de **340–470 m** sorteados do pool de seis cenários, sem repetir o mesmo em sequência; pista total **1518–1625 m**. São 6–8 powerups, 50–75 obstáculos, 1–2 rampas e **1–2 bifurcações**.
 - **Relevo:** amplitudes ~20% maiores, com 2–3 **platôs planos** de 70–150 m cobrindo 20–25% da pista.
 - **Largura agressiva:** base 10,5–12 m, trechos largos 13–15 m, longos estreitos 5,5–7 m e **chokes de 4,6–5,4 m**. O sampler (`Track.ts`) aceita **4,4–15,2 m**.
+- **Bifurcações:** em retas longas, um ramo de 14–26 m de deslocamento lateral sai e volta à pista principal. O ramo tem spline, altura, largura, ombros e piso próprios; a pista principal continua como a outra opção. As duas pontas ficam no mesmo setor para não misturar pisos.
+- **Hazards:** 1–3 por seed, com chance por setor; o tipo vem do cenário (camelo, cervo, rena, carro, caminhão, trator, vaca ou buggy). O gerador preserva os primeiros 130 m, rampas, hairpin extremo e bifurcações.
 - **Medalhas procedurais:** ouro **39 s em 1.300 m → 49 s em 1.650 m** (linear, clampado); nas pistas atuais de 1.518–1.624 m fica **45,2–48,3 s**. Prata = ouro + 6 s; bronze = ouro + 12 s. As parciais usam o ritmo do ouro.
-- `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, separação, rampas, splits, powerups e obstáculos.
+- `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, separação, rampas, splits, powerups, obstáculos, bifurcações e hazards.
 - `generateLegacyProceduralTrack(seed)` preserva a serpentina antiga de 4 pernas, usada para reproduzir a pista fixa `track01-v3`. As pistas aleatórias usam o gerador novo.
 
-Validação atual: **100/100 seeds** (1–100), comprimento **1518,3–1623,7 m**, setores ~**354–438 m**, raio mínimo **12,7–13,8 m**, largura **4,6–15,0 m**, separação mínima **40,0 m**, A→B **108,2–788,0 m**, 20–25% de pista plana e exatamente **1 hairpin extremo por seed**.
+Validação atual: **100/100 seeds** (1–100), comprimento **1518,3–1623,7 m**, setores ~**354–438 m**, raio mínimo **12,6–13,8 m**, largura **4,6–15,0 m**, separação mínima **41,2 m**, A→B **109,2–787,9 m**, 20–25% de pista plana, exatamente **1 hairpin extremo por seed**, **1–2 bifurcações** e **1–3 hazards** por seed.
 
 ![12 seeds procedurais](Docs/screenshots/proc-variety.png)
 
@@ -203,7 +232,7 @@ npx --yes tsx scripts/proc-validate.ts --svg /tmp/opencode/pista.svg
 npx --yes tsx scripts/proc-diversity.ts --count 12 --svg /tmp/opencode/proc-sheet.svg
 ```
 
-A integração está pronta: `?track=proc&seed=1` (com ou sem `?debug=1`) carrega a pista gerada com os mesmos sistemas de cenário, splits, powerups e obstáculos. Na tela, **🎲 NOVA** sorteia uma seed 1–100 e **FIXA** volta à pista A→B. Ainda não há menu para escolher seed nem editor de pista; o objetivo é validar o gerador.
+A integração está pronta: `?track=proc&seed=1` (com ou sem `?debug=1`) carrega a pista gerada com os mesmos sistemas de cenário, splits, powerups, obstáculos, bifurcações e hazards. Na tela, **☰ PISTAS** abre o menu de seeds 1–100, **🎲 NOVA** sorteia uma seed e **PISTA FIXA** (dentro do menu) volta à pista A→B. O editor de pista continua fora do escopo.
 
 ## Deploy
 
@@ -227,10 +256,15 @@ O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O dep
 - **Controles v4** (em playtest): 5 botões touch com combos ◀F/▶F, menu MÃO à esquerda/direita e stack oculto no PC.
 - **Pista A→B** (em playtest): seed 91 congelada, 1096,8 m, 4 setores, raio mínimo 30,2 m, 2 rampas baixas, 3 parciais e 50 obstáculos.
 - **Física v5** (em playtest): aceleração/velocidade/freio +15%, off-road com cap de 65%/62% e desaceleração suave, rumble mais forte.
-- **Poeira v7** (em playtest): pool 96, emissão até 55/s, partículas maiores e mais altas, dissipação em ~0,8–1,0 s.
+- **Poeira v8** (em playtest): pool 112, perfis por piso, partículas maiores/mais altas, dissipação em ~0,8–1,0 s e contraste melhorado no deserto.
 - **Hairpin extremo v7** (em playtest): 1 por pista, 13–14 m, aproximação/saída retas e largura 5,2–6,2 m.
+- **Cenários v8** (em playtest): floresta, deserto, neve, vilarejo, estrada de terra e praia; 4 setores sorteados por pista, com pisos e poeira próprios.
+- **Bifurcações v8** (em playtest): 1–2 ramos com spline/altura/largura próprios por pista; a pista principal continua como a outra opção.
+- **Hazards v8** (em playtest): 1–3 obstáculos móveis por pista, com tipo por cenário, travessia e colisão; `?hazards=0` desliga.
+- **Menu de pistas v8** (em playtest): grade de seeds 1–100 com melhor tempo, campo de seed, SORTEAR e PISTA FIXA; pausa a corrida enquanto aberto.
+- **Velocímetro v8** (em playtest): km/h e barra de velocidade no canto inferior, espelhado conforme o lado dos controles.
 - **Medalhas v7** (em playtest): fixa 39/45/51 s; procedurais 45,2–48,3 s de ouro, com parciais no ritmo do ouro.
-- **Default procedural** (em playtest): abrir `/` sorteia uma seed 1–100; `?track=fixed` / botão FIXA carrega a pista fixa.
-- **Protótipo procedural v5** (em playtest): sete tipos de curva (incluindo hairpin extremo 13–14 m e kink), setores de 340–470 m, platôs e chokes de 4,6 m; 100/100 seeds.
+- **Default procedural** (em playtest): abrir `/` sorteia uma seed 1–100; `?track=fixed` / menu PISTAS carrega a pista fixa.
+- **Protótipo procedural v8** (em playtest): sete tipos de curva (incluindo hairpin extremo 13–14 m e kink), setores de 340–470 m, platôs, chokes, seis cenários, bifurcações e hazards; 100/100 seeds.
 
-Fora do MVP: progressão, loja, menu/editor de pistas procedurais, áudio e cenários extras.
+Fora do MVP: progressão, loja, editor de pistas, áudio e multiplayer.

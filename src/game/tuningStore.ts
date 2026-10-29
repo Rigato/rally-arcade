@@ -2,6 +2,7 @@ import {
   BODY_TUNING,
   CAMERA_TUNING,
   CAR_TUNING,
+  DUST_TUNING,
   INPUT_TUNING,
   POWERUP_TUNING,
   RACE_TUNING,
@@ -27,6 +28,7 @@ interface TuningSnapshot {
   camera: CameraTuning;
   input: InputTuning;
   surfaces: Record<SurfaceId, SurfaceDef>;
+  dust: typeof DUST_TUNING;
   powerups: PowerupTuning;
   race: RaceTuning;
 }
@@ -47,6 +49,7 @@ const DEFAULTS: TuningSnapshot = structuredClone({
   camera: CAMERA_TUNING,
   input: INPUT_TUNING,
   surfaces: SURFACES,
+  dust: DUST_TUNING,
   powerups: POWERUP_TUNING,
   race: RACE_TUNING,
 });
@@ -59,6 +62,7 @@ function currentSnapshot(): TuningSnapshot {
     camera: CAMERA_TUNING,
     input: INPUT_TUNING,
     surfaces: SURFACES,
+    dust: DUST_TUNING,
     powerups: POWERUP_TUNING,
     race: RACE_TUNING,
   });
@@ -103,6 +107,10 @@ function applySnapshot(data: unknown): void {
   applyNumericFields(INPUT_TUNING, DEFAULTS.input, root.input);
   applyNumericFields(POWERUP_TUNING, DEFAULTS.powerups, root.powerups);
   applyNumericFields(RACE_TUNING, DEFAULTS.race, root.race);
+  applyNumericFields(DUST_TUNING, DEFAULTS.dust, root.dust);
+  if (isRecord(root.dust) && typeof root.dust.enabled === 'boolean') {
+    DUST_TUNING.enabled = root.dust.enabled;
+  }
   applyNumericFields(
     RACE_TUNING.medals,
     DEFAULTS.race.medals,

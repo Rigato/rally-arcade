@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math';
+import { SCENARIOS } from '../game/scenarios';
 import { createBannerTexture } from '../world/canvasText';
 import type { Track } from './Track';
 
@@ -17,20 +18,6 @@ interface PortalStyle {
   checker?: boolean;
 }
 
-const DESERT_STYLE: PortalStyle = {
-  text: 'DESERTO',
-  background: '#22392a',
-  foreground: '#f4e0ae',
-  border: '#d3a765',
-};
-
-const FOREST_STYLE: PortalStyle = {
-  text: 'FLORESTA',
-  background: '#1f3326',
-  foreground: '#dceccd',
-  border: '#7fa06a',
-};
-
 const FINISH_STYLE: PortalStyle = {
   text: 'CHEGADA',
   background: '#202624',
@@ -40,10 +27,10 @@ const FINISH_STYLE: PortalStyle = {
 };
 
 /**
- * Portais visuais sem colisão: um em cada troca de setor (floresta ↔ deserto)
- * e outro na chegada.
+ * Portais visuais sem colisão: um em cada troca de setor e outro na chegada.
  *
- * Os postes ficam fora da pista e o banner aponta para o carro que chega
+ * Cada portal usa o rótulo curto e as cores de `SCENARIOS[zone.id]`. Os
+ * postes ficam fora da pista e o banner aponta para o carro que chega
  * (normal no sentido contrário à tangente), com material DoubleSide. O texto
  * vem de uma textura de canvas, sem depender de fonte externa.
  */
@@ -60,8 +47,14 @@ export class Gates {
     let transitionIndex = 0;
     for (let i = 1; i < track.def.zones.length; i += 1) {
       const zone = track.def.zones[i];
+      const scenario = SCENARIOS[zone.id];
       transitionIndex += 1;
-      const style = zone.id === 'desert' ? DESERT_STYLE : FOREST_STYLE;
+      const style: PortalStyle = {
+        text: scenario.shortLabel,
+        background: scenario.gate.background,
+        foreground: scenario.gate.foreground,
+        border: scenario.gate.border,
+      };
       this.group.add(
         this.buildPortal(
           track,
