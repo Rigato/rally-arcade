@@ -1,8 +1,10 @@
 # Implementation Plan — Rally Arcade MVP
 
-Oct 27, 2026 · Baseado no `Mini GDD - Rally Arcade v2.md`
+Oct 27, 2026 · atualizado Oct 30, 2026 · Baseado no `Mini GDD - Rally Arcade v2.md` (hoje v2.5)
 
-Este documento é a referência de implementação do MVP. Se uma nova sessão começar, leia primeiro o GDD e depois este plano.
+Este documento é a referência de implementação do MVP e um registro histórico das decisões. Se uma nova sessão começar, leia primeiro o GDD, depois o **Handoff** e use este plano para entender o porquê das escolhas.
+
+> **Nota de leitura:** as seções 1–24 são histórico do MVP. A seção 25 registra a integração do gerador v3 e o estado atual; as seções 26–30 preservam o histórico das rodadas v5–v8. Métricas antigas (pistas de ~1,5 km, 6–8 powerups, 1–3 hazards, 1 hairpin) descrevem versões anteriores e **não** o estado atual.
 
 ## 1. Objetivo do MVP
 
@@ -475,7 +477,7 @@ A integração de debug está pronta: `?debug=1&track=proc&seed=1` carrega a pis
 
 ### Integração final
 
-- `?debug=1&track=proc&seed=N` carrega a pista procedural; a pista fixa v2 é o padrão.
+- `?debug=1&track=proc&seed=N` carrega a pista procedural; naquele momento a pista fixa v2 era o padrão (hoje o padrão é a procedural v3).
 - Track id fixo atualizado para `track01-v2`, resetando o melhor tempo antigo.
 - `RACE_TUNING.medals` recebe as medalhas da pista no boot; o painel ainda ajusta em runtime.
 - Deploy atual: commit `e7d041b`, Pages verde, smoke test live em fixed e `proc seed=1` sem erros de console.
@@ -858,6 +860,15 @@ Esta rodada implementa o pacote de conteúdo/UX pedido no playtest: novos cenár
 - Parciais: 3, somente em fronteiras comuns de blocos. As bandeiras físicas mostram apenas **SPLIT** (sem nome de bioma).
 - Validação: 100/100 seeds v3; 50 seeds com 1 split e 50 com 2; comprimento 2.692–3.798 m; rotas 612–820 m; largura 4,6–15,0 m; raio mínimo 9,9 m; 1–2 hairpins em 99/100; 1–5 kickers; 2–4 hazards; 12–16 powerups; sem autointerseção no eixo; `typecheck`, build e pista fixa OK. Entrada/saída de rota com `maxAir=0` no teste headless.
 - Debug: `?gen=v3` (padrão), `?gen=v2`, `?gen=v1`, `?branch=0&bt=0.9`; `scripts/proc-validate-v3.ts` gera relatório e SVG top-down.
+
+### Passe de densidade e estado atual (Oct 30, 2026)
+
+- O comprimento foi preservado e as rotas longas foram adensadas em vez de encurtadas: mais curva, choke, largo, platô, rampa, powerup, hazard e cenário.
+- Métricas finais: **2.692–3.798 m**; 5–6 blocos; **1 split em 50 seeds e 2 em 50**; rotas **612–820 m** e **5,5–9,0 m** de largura; **1–2 hairpins em 99/100** (41 com 2; seed 61 sem); **1–5 rampas**, **2–4 hazards**, **12–16 powerups**; ~100 obstáculos no main + 30–40 por rota; **0 avisos**.
+- Densidade: ~13,1 rad/km no main, ~14,5 rad/km nas rotas longas, ~2,0 chokes/km, ~1,56 trechos largos/km, ~27% de pista plana, amplitude de elevação ~22 m e subida acumulada ~38 m/km.
+- Medalhas procedurais: ouro **80,4–113,4 s** (1:20–1:53), prata +12%, bronze +24%; parciais nas fronteiras de bloco mais próximas de 25/50/75%.
+- Pista fixa: **1096,8 m**, ouro/prata/bronze **39/45/51 s**, parciais **8,9/17,9/26,8 s**.
+- Rollback: v1 e v2 continuam 100/100; v3 cai para v2 se todas as tentativas falharem (não observado nas seeds 1–100).
 
 ### Pendências
 

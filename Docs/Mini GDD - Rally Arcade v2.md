@@ -1,8 +1,8 @@
 # Mini GDD - Rally Arcade v2.5
 
-Oct 29, 2026 · @George
+Oct 30, 2026 · @George
 
-> **Revisão 2.5 (Oct 29, 2026).** O gerador procedural ganhou uma **v3 por blocos de cenário**: a pista é uma sequência de 5–6 blocos, e 1–2 deles já nascem com um split entre duas rotas completas (~612–820 m cada), com cenário, largura, elevação, postes, hazards, obstáculos e powerups próprios. A v2 e a v1 continuam intactas em `?gen=v2` e `?gen=v1`. O restante do documento reflete o protótipo v8: seis cenários, poeira por piso, obstáculos móveis, menu de pistas/seeds e velocímetro. O GDD v2.4 está no histórico; o v2 original continua em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
+> **Revisão 2.5 (Oct 30, 2026).** O gerador procedural ganhou uma **v3 por blocos de cenário**: a pista é uma sequência de 5–6 blocos, e 1–2 deles já nascem com um split entre duas rotas completas (~612–820 m cada), com cenário, largura, elevação, postes, hazards, obstáculos e powerups próprios. O passe final de densidade manteve o comprimento e adensou curvas, chokes, largos, platôs, rampas, powerups, hazards e cenário; as rotas longas continuam sendo pistas completas. A v2 e a v1 continuam intactas em `?gen=v2` e `?gen=v1`. O restante do documento reflete o protótipo atual: seis cenários, poeira por piso, obstáculos móveis, menu de pistas/seeds e velocímetro. O GDD v2.4 está no histórico; o v2 original continua em [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md); a v1 está em [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md).
 
 ## Ficha e High Concept
 
@@ -36,13 +36,13 @@ O jogo é leve e divertido, e errar não condena a corrida: dá para sair da pis
 
 ## 3. Core Gameplay Loop
 
-A corrida dura de 30 a 60 s e termina em uma medalha, o que leva o jogador a tentar de novo. Nas pistas procedurais atuais (~1,5 km), as corridas ficam mais perto de 45–60 s; a pista fixa de ~1,1 km tem ouro em 39 s.
+A corrida termina em uma medalha, o que leva o jogador a tentar de novo. Nas pistas procedurais atuais (~3,2 km em média), o alvo de ouro fica em **1:20–1:53** (80,4–113,4 s); a pista fixa de ~1,1 km tem ouro em 39 s. O formato longo é intencional: o jogador atravessa 5–6 blocos de cenário e 1–2 splits por corrida.
 
 **Loop da corrida**
 
 1. Acelerar, esterçar e derrapar pela pista, escolhendo a linha e o quanto desacelerar antes de cada curva.
 2. Enfrentar o risco do momento: curva fechada, pista que estreita, obstáculo, piso ruim fora da pista, salto.
-3. Receber feedback imediato: powerup pego, carro salvo fora da pista, tempo parcial a cada troca de cenário.
+3. Receber feedback imediato: powerup pego, carro salvo fora da pista, tempo parcial nas fronteiras de bloco.
 4. Chegar ao fim, ver o tempo contra os tempos-alvo e a medalha, e reiniciar na hora para melhorar.
 
 **Loop de progressão (fora do MVP)**
@@ -97,8 +97,8 @@ Terceira pessoa, por trás do carro, em ângulo alto, quase top-down, para mostr
 - **Default:** abrir `/` sorteia uma procedural; **NOVA** gera outra; o menu **PISTAS** escolhe seed ou pista fixa.
 - A pista tem subidas e descidas; pontos íngremes criam saltos.
 - **Bifurcações (v3):** 1–2 por pista. Cada split é um bloco de cenário mais longo com entrada/saída comuns e **duas rotas completas** de ~612–820 m. Cada rota tem spline, largura, elevação, ombros/bordas dos dois lados, cenário dos dois lados, postes, hazards, obstáculos, powerups e kickers próprios. O miolo é paisagem (morro, mata ou vale); a escolha pode ser simétrica (linha) ou assimétrica (distância/velocidade/dificuldade). As parciais ficam só nas fronteiras comuns dos blocos. A pista fixa continua sem bifurcação. Rollback em `?gen=v2`/`?gen=v1`.
-- **Elementos de pista (v3):** cada pista tem **1–2 hairpins** de switchback (extremo 13–14 m ou normal 20–23 m; 41% das seeds com 2), chokes de 4,6–5,4 m, estreitos, largos de 12–15 m, platôs de elevação, curvas longa/média/curta/cotovelo/kink e **1–5 rampas**. A densidade média ficou em **~13 rad/km de curvatura**, **~2 chokes/km** e **~4,3 powerups/km**; as rotas longas têm ~14,9 rad/km e 5,7–8,4 m de largura.
-- **Obstáculos móveis:** 2–4 por pista procedural, com chance por setor. Cada evento é um animal/veículo do cenário que atravessa a pista quando o carro se aproxima e colide. A travessia é rápida (4,8–10,5 m/s) para exigir uma reação curta. O começo da run fica preservado.
+- **Elementos de pista (v3):** cada pista tem **1–2 hairpins** de switchback (extremo 13–14 m ou normal 20–23 m; 41% das seeds com 2), chokes de 4,6–5,4 m, estreitos, largos de 12–15 m, platôs de elevação, curvas longa/média/curta/cotovelo/kink e **1–5 rampas**. A densidade média ficou em **~13,1 rad/km de curvatura**, **~2 chokes/km** e **~4,3 powerups/km**; as rotas longas têm ~14,5 rad/km e 5,5–9,0 m de largura.
+- **Obstáculos móveis:** 2–4 por pista procedural (faixa observada nas 100 seeds), com chance por bloco. Cada evento é um animal/veículo do cenário que atravessa a pista quando o carro se aproxima e colide. A travessia é rápida (4,8–10,5 m/s) para exigir uma reação curta. O começo da run fica preservado.
 - **Fora da pista dá para se recuperar.** O piso acidentado desacelera, trepida e pode tirar o carro do chão; obstáculos sólidos dão ricochete. Se não bater, o jogador pode voltar à pista.
 - **Limite do mundo:** além de ~12 m da borda, o carro é recuperado automaticamente perdendo tempo.
 - **Caminhos alternativos/linhas de risco-recompensa:** a bifurcação v3 implementa a escolha de caminho com rotas completas e conteúdo próprio; linhas de risco/recompensa assimétricas continuam em aberto.
@@ -120,8 +120,8 @@ O powerup é pego e ativa na hora; nada fica guardado. Pegar o mesmo powerup de 
 
 - **Vitória:** chegar ao fim da pista. A medalha vem do tempo.
   - **Pista fixa:** ouro **39 s**, prata **45 s**, bronze **51 s**; parciais **8,9 / 17,9 / 26,8 s**.
-  - **Procedurais:** ouro **45,2–48,2 s**, prata +6 s, bronze +12 s; parciais no ritmo do ouro.
-- **Tempos parciais:** marcados a cada troca de cenário; a diferença para o alvo aparece nas parciais.
+  - **Procedurais:** ouro **80,4–113,4 s** (1:20–1:53), prata = ouro +12%, bronze = ouro +24%; 3 parciais nas fronteiras de bloco mais próximas de 25/50/75%, no ritmo do ouro.
+- **Tempos parciais:** 3, nas fronteiras de bloco mais próximas de 25/50/75%; a diferença para o alvo aparece nas parciais.
 - **Derrota:** não há game over. Errar custa tempo. As medalhas graduais e o reinício instantâneo permitem que quem errou ainda ganhe alguma coisa.
 - **Ideia a explorar:** público ajudando a "salvar" um carro que saiu da pista, ao custo de tempo parado. **Não implementado.**
 
@@ -157,11 +157,11 @@ O MVP existe para testar se dirigir é gostoso, antes de investir em arte e fase
 - [x] Dois cenários com pisos diferentes: floresta com cascalho e deserto com areia.
 - [x] **Além do MVP:** mais quatro cenários (neve, vilarejo, estrada de terra e praia) com pisos, paletas, poeira e obstáculos próprios.
 - [x] **Além do MVP:** 1–2 bifurcações procedurais v3 por pista, com duas rotas completas de cenário/conteúdo próprios.
-- [x] **Além do MVP:** 1–3 obstáculos móveis por pista, com tipo por cenário e toggle de debug.
+- [x] **Além do MVP:** 2–4 obstáculos móveis por pista, com tipo por cenário e toggle de debug.
 - [x] **Além do MVP:** menu de pistas/seeds e velocímetro.
 - [x] Uma pista fixa de 30–60 s com subidas, descidas, largura variável e ao menos um salto.
 - [x] Fora da pista recuperável, com obstáculos, piso acidentado, ricochete e limite do mundo.
-- [x] Cronômetro, distância percorrida e tempo parcial a cada troca de cenário.
+- [x] Cronômetro, distância percorrida e 3 tempos parciais nas fronteiras de bloco.
 - [x] Medalhas de ouro, prata e bronze e botão de reinício no topo.
 - [x] **Além do MVP:** gerador procedural determinístico, pista procedural aleatória por default, 7 tipos de curva, hairpin extremo, poeira dinâmica e menu de lado dos controles.
 
@@ -179,24 +179,24 @@ O MVP existe para testar se dirigir é gostoso, antes de investir em arte e fase
 Depois de validar o feeling, a ideia é crescer em progressão, variedade e profundidade de mecânicas.
 
 - **Progressão fora da corrida:** cada medalha rende dinheiro para tunar o carro e comprar outros, com vários modelos de rally. Certas fases/mundos só abrem com determinado carro. **Não iniciado.**
-- **Mais cenários:** neve, vilarejo, estrada de terra e praia **implementados no protótipo v8**; asfalto/variações adicionais continuam possíveis.
+- **Mais cenários:** neve, vilarejo, estrada de terra e praia **implementados no protótipo atual**; asfalto/variações adicionais continuam possíveis.
 - **Dificuldade crescente:** mais mudanças de cenário e composições mais difíceis, com desafios a cada X tempos. **Não iniciado.**
 - **Suspensão** influenciando o comportamento lateral do carro, além do visual. **Não iniciado.**
 - **Saltos:** manobras e controle no ar/aterrissagem. **Não iniciado.**
 - **Público** ajudando a recolocar o carro na pista. **Não iniciado.**
 - **Áudio completo** (Rally House, motor, escapamento, derrapagem por piso). **Não iniciado.**
 - **Procedural como produto:** menu de seeds **implementado**; histórico/favoritos, compartilhar seed, daily challenge e editor continuam pendentes.
-- **Caminhos alternativos/linhas de risco-recompensa:** bifurcação v1 implementada sem recompensa assimétrica; linhas de risco/recompensa continuam em aberto.
-- **Obstáculos móveis:** 1–3 por pista com tipo por cenário **implementados**; variedade de modelos e comportamento por cenário podem crescer.
+- **Caminhos alternativos/linhas de risco-recompensa:** bifurcação v3 implementada com duas rotas completas, mas ainda sem recompensa assimétrica explícita; linhas de risco/recompensa continuam em aberto.
+- **Obstáculos móveis:** 2–4 por pista com tipo por cenário **implementados**; variedade de modelos e comportamento por cenário podem crescer.
 
 ## 9. Pontos em aberto para testar
 
 - **Freio de mão no touch:** 6º botão, gesto, combo ou manter teclado-only? O hairpin extremo atual exige freio normal.
-- **Medalhas:** o +3 s melhorou; continuar testando ouro/prata/bronze e as parciais, agora com pisos variados.
+- **Medalhas:** o modelo atual usa ouro = comprimento / 33,5, prata = ouro +12% e bronze = ouro +24%; continuar testando os alvos e as parciais com pisos variados e corridas mais longas.
 - **Poeira:** perfis por piso implementados; validar contraste em neve/praia em movimento.
 - **Hairpin extremo:** 13–14 m foi aprovado; se ainda estiver fácil, testar 12–13 m com ombro local menor.
 - **Bifurcações:** a v3 usa blocos com duas rotas completas; testar se a escolha é legível, se o miolo parece paisagem e se cada rota parece uma pista normal. Comparar com `?gen=v2` e `?gen=v1`. Caminhos com recompensas assimétricas ficam para depois.
-- **Obstáculos móveis:** testar frequência (1–3), timing de travessia e se a colisão é justa; ajustar por cenário.
+- **Obstáculos móveis:** testar frequência (2–4), timing de travessia e se a colisão é justa; ajustar por cenário.
 - **Cenários:** calibrar grip/aceleração de neve, asfalto, terra e praia no celular.
 - **Default procedural:** o menu PISTAS mostra a seed e permite repetir a pista.
 - **Limite do mundo:** calibrar os 12 m e o tempo perdido na recuperação.
@@ -206,7 +206,7 @@ Depois de validar o feeling, a ideia é crescer em progressão, variedade e prof
 ## 10. Documentos relacionados
 
 - [`../README.md`](../README.md) — quickstart, comandos, controles, deploy.
-- [`Implementation Plan - Rally Arcade MVP.md`](Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md) — decisões de implementação e histórico v1–v8.
+- [`Implementation Plan - Rally Arcade MVP.md`](Implementation%20Plan%20-%20Rally%20Arcade%20MVP.md) — decisões de implementação e histórico do MVP ao gerador v3.
 - [`Handoff - Rally Arcade.md`](Handoff%20-%20Rally%20Arcade.md) — estado atual, gaps do GDD e agenda da próxima sessão de plan.
 - [`bak_old/Mini GDD - Rally Arcade v2.md`](bak_old/Mini%20GDD%20-%20Rally%20Arcade%20v2.md) — backup do GDD v2 antes da revisão v2.1.
 - [`old_Mini GDD - Rally Arcade v1.md`](old_Mini%20GDD%20-%20Rally%20Arcade%20v1.md) — GDD v1 original.

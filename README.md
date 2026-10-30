@@ -45,8 +45,8 @@ Stack: **Vite + TypeScript estrito + Three.js**, física própria (sem engine), 
 
 1. O jogo abre em uma **pista procedural aleatória** (seed 1–100) com o carro parado em `s = 22 m`; o botão **GO!** central (ou um toque na tela) inicia o cronômetro. Depois disso o carro **acelera sozinho**. O menu **PISTAS** troca para outra seed ou para a pista fixa.
 2. Dirigir, derrapar, pular e escolher a linha. Sair da pista custa tempo; a recuperação automática mantém o relógio correndo.
-3. A pista é **A→B**, com 4 setores sorteados do pool de seis cenários (floresta, deserto, neve, vilarejo, estrada de terra e praia), sem repetir o mesmo cenário em setores consecutivos. Na pista fixa, as **parciais 1, 2 e 3** ficam em `s = 250`, `500` e `750 m`, com alvos **8,9 / 17,9 / 26,8 s**. Nas pistas aleatórias as parciais ficam em 25/50/75% do traçado, no ritmo do ouro.
-4. Na pista fixa, ao cruzar a faixa em `s ≈ 1093 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s. A largada e a chegada ficam em pontos distintos; nas pistas aleatórias a chegada fica no fim do traçado de ~1,5 km.
+3. A pista é **A→B**, com 5–6 blocos de cenário sorteados do pool de seis (floresta, deserto, neve, vilarejo, estrada de terra e praia), sem repetir o mesmo bioma. Na pista fixa, as **parciais 1, 2 e 3** ficam em `s = 250`, `500` e `750 m`, com alvos **8,9 / 17,9 / 26,8 s**. Nas pistas aleatórias as **3 parciais** ficam nas fronteiras de bloco mais próximas de 25/50/75% do traçado, no ritmo do ouro.
+4. Na pista fixa, ao cruzar a faixa em `s ≈ 1093 m`, o relógio para, o carro congela e a tela de resultado abre após ~0,5 s. A largada e a chegada ficam em pontos distintos; nas pistas aleatórias a chegada fica no fim do traçado de ~2,7–3,8 km.
 5. Na pista fixa, a medalha vem do tempo final: **ouro ≤ 39 s**, **prata ≤ 45 s**, **bronze ≤ 51 s**. Sem medalha, o resultado mostra quantos segundos faltaram para o bronze.
 6. **CORRER DE NOVO** (ou o botão ↺ / tecla **R**) recoloca o carro na largada em menos de 1 s. **ESCOLHER PISTA** no resultado abre o menu de seeds. O melhor tempo continua no topo do HUD.
 
@@ -80,7 +80,7 @@ Os botões **☰ PISTAS** e **🎲 NOVA** no topo controlam a pista. O menu PIST
 - **Topo direito:** reinício imediato.
 - **Velocímetro:** canto inferior esquerdo em km/h, com barra de velocidade; espelha para a direita quando o menu MÃO deixa os controles à esquerda.
 - **Menu de pistas:** **☰ PISTAS** abre a seleção de seed, **SORTEAR** e **PISTA FIXA**. 🎲 **NOVA** é o atalho aleatório. **Ao abrir, o jogo já começa em uma procedural aleatória.**
-- **Barra de progresso:** distância percorrida, um marcador por parcial (250/500/750 m na fixa; 25/50/75% nas procedurais) e ponto do carro no fim do preenchimento.
+- **Barra de progresso:** distância percorrida, um marcador por parcial (250/500/750 m na fixa; fronteiras de bloco mais próximas de 25/50/75% nas procedurais) e ponto do carro no fim do preenchimento.
 - **GO!:** overlay central no READY; inicia a corrida e a auto-aceleração.
 - **Controles touch:** stack de 5 botões no canto inferior direito — ◀/▶ puros, ◀F/▶F com freio e FREIO largo embaixo. O menu **MÃO** escolhe o lado; no PC todo o stack fica oculto.
 - **Banner de parcial:** nome, tempo e delta (`+0,42` em vermelho, `-0,31` em verde) por ~2,5 s.
@@ -98,20 +98,20 @@ Dois tipos no MVP, com ativação imediata:
 | **Turbo** | velocidade máxima e aceleração × 1,3 + boost de FOV | 2,0 s | anel laranja |
 | **Grip extra** | grip lateral × 1,8 | 10 s | anel azul |
 
-- **4 pickups** autorados em `src/track/track01.ts`, distribuídos pela pista: turbo em `s ≈ 426,7`, grip em `s ≈ 475,7`, turbo em `s ≈ 800,6` e turbo em `s ≈ 1048,5`; nenhum imediatamente antes das rampas. Nas pistas aleatórias são **6–8 pickups**.
+- **4 pickups** autorados em `src/track/track01.ts`, distribuídos pela pista: turbo em `s ≈ 426,7`, grip em `s ≈ 475,7`, turbo em `s ≈ 800,6` e turbo em `s ≈ 1048,5`; nenhum imediatamente antes das rampas. Nas pistas aleatórias são **12–16 pickups**.
 - Pegar o mesmo tipo de novo **renova o timer** (nunca acumula); **tipos diferentes coexistem**. Cada pickup some ao ser coletado e volta no reinício (R), no retry e no teleporte `?s=`.
 - A coleta só vale em **RUNNING**; READY, RECOVERING e FINISHED não coletam. Na recuperação os timers ficam congelados.
 - O turbo não altera saltos, colisão, freio ou rampa: só velocidade, aceleração e o FOV da câmera (`CAMERA_TUNING.turboFovBoost`). O grip extra age só no grip lateral.
 
 ## Cenários, bifurcações e obstáculos móveis
 
-- **Seis cenários:** floresta/cascalho, deserto/areia, neve, vilarejo/asfalto, estrada de terra e praia/areia de praia. As pistas procedurais sorteiam **4 setores sem repetir o mesmo cenário em sequência**.
+- **Seis cenários:** floresta/cascalho, deserto/areia, neve, vilarejo/asfalto, estrada de terra e praia/areia de praia. As pistas procedurais sorteiam **5–6 blocos de cenário, sem repetir o mesmo bioma**.
 - **Pisos com comportamento próprio:** cada cenário tem grip, aceleração, arrasto, bump, limite de velocidade e off-road no painel **Pisos**. A neve solta mais a traseira, o asfalto do vilarejo agarra mais, a terra fica entre cascalho e areia e a praia puxa para fora.
 - **Poeira por piso:** cor primária/secundária, taxa, tamanho, alpha, vida, subida e gravidade mudam por cenário. O deserto usa um tom mais escuro para contrastar com a areia; a neve usa spray branco-azulado.
 - **Bifurcações v3:** 1–2 por pista. Cada split é um **bloco de cenário** mais longo: entrada comum, duas rotas completas (A e B) e saída comum. As duas rotas têm spline, largura, elevação, ombros/bordas dos dois lados, cenário dos dois lados, postes, hazards, obstáculos, powerups e kickers próprios; o miolo é uma paisagem (morro, mata ou vale), não um canteiro plano. A escolha pode ser simétrica (linha) ou assimétrica (distância/velocidade/dificuldade). A pista fixa continua sem bifurcação.
 - **Elementos do v1 no v3:** cada pista tem **1–2 hairpins de switchback** (13–14 m extremo ou 20–23 m normal, com aproximação/saída), chokes de 4,6–5,4 m, trechos estreitos, trechos largos de 12–15 m, platôs de elevação, curvas longa/média/curta/cotovelo/kink e **1–5 rampas**. As rotas dos splits também têm alargamentos/estreitamentos e relevo próprio.
-- **Blocos de cenário:** 5–6 por pista, 2,5–3,8 km no total. Cada bloco tem um bioma; as trocas de cenário/piso acontecem nas fronteiras comuns. As parciais ficam só nessas fronteiras, nunca dentro de um split.
-- **Obstáculos móveis:** 1–3 por pista procedural, com chance por setor e pelo menos um garantido. Cada evento tem um tipo do cenário (camelo, cervo, rena, carro, caminhão, trator, vaca ou buggy), começa a atravessar quando o carro se aproxima e colide como os obstáculos sólidos. A travessia é rápida (4,8–10,5 m/s) para o desvio ser uma reação curta. O começo da run fica preservado.
+- **Blocos de cenário:** 5–6 por pista, 2,7–3,8 km no total. Cada bloco tem um bioma; as trocas de cenário/piso acontecem nas fronteiras comuns. As **3 parciais** ficam nas fronteiras mais próximas de 25/50/75%, nunca dentro de um split.
+- **Obstáculos móveis:** 2–4 por pista procedural (faixa observada nas 100 seeds), com chance por bloco. Cada evento tem um tipo do cenário (camelo, cervo, rena, carro, caminhão, trator, vaca ou buggy), começa a atravessar quando o carro se aproxima e colide como os obstáculos sólidos. A travessia é rápida (4,8–10,5 m/s) para o desvio ser uma reação curta. O começo da run fica preservado.
 - **Toggle de debug:** `?hazards=0` desliga os obstáculos móveis; o painel de debug tem **Hazards ativos** e **→ Próximo hazard**.
 
 ## Carro, escape e poeira
@@ -197,7 +197,7 @@ src/
 │   ├── Powerups.ts      # pickups de turbo/grip, timers e efeitos na física
 │   └── procedural/      # gerador por seed e validação do protótipo
 ├── world/
-│   ├── Scenery.ts       # cenário instanciado por setor (6 famílias)
+│   ├── Scenery.ts       # cenário instanciado por bloco/zona (6 famílias)
 │   └── Environment.ts   # céu, névoa e luz multi-zona
 └── ui/
     ├── Hud.ts           # cronômetro, melhor, progresso, parcial, recuperação e debug
@@ -220,14 +220,12 @@ O gerador padrão é o **v3** (`ProceduralTrackV3.ts`). A pista é uma sequênci
 - `generateProceduralTrack(seed)` (v1) usa uma **gramática de segmentos**: retas de ~20–90 m e curvas sorteadas entre **sete categorias** — longa (R≈70–110 m), média (45–65 m), curta (28–38 m), cotovelo (26–31 m), **hairpin normal (20–23 m)**, **hairpin extremo (13–14 m)** e **mudança de rota / kink (R≈140–220 m, sweep 6–15°)**. Cada seed usa **exatamente 1 hairpin extremo**, 0–1 normal, 1–3 kinks e pelo menos quatro categorias, com curvas nos dois sentidos.
 - O **hairpin extremo** tem sweep 170–185°, largura local **5,2–6,2 m**, aproximação reta de 45–60 m e saída de 35–60 m; fica a ≥80 m da largada/chegada. É o ponto que exige frear de verdade.
 - Candidatos são rejeitados se trechos não vizinhos ficarem a menos de **40 m** entre centros (as duas pernas do próprio hairpin extremo são a exceção), se o layout passar de ~650×650 m ou se a chegada ficar a menos de **100 m** da largada. O resultado é sempre uma pista **A→B**.
-- **Blocos v3:** 5–6 blocos de cenário, **2,7–3,8 km** no total. Blocos lineares têm 390–520 m; blocos com split têm 720–900 m de eixo. São **12–16 powerups**, obstáculos por caminho (**~100 no main + 30–40 por rota**), **1–2 hairpins** de switchback em 99/100 seeds (41 seeds com 2), **1–5 rampas**, **2–4 hazards** e **1–2 splits**.
-- **Densidade v3:** curvatura total **~13,0 rad/km** no main (v1 ~11,7), **~2,0 chokes/km**, **~1,56 trechos largos/km**, **27% de pista plana**, amplitude de elevação **~22 m** e subida acumulada **~38 m/km**. As rotas longas têm **~14,9 rad/km**, ~5,7–8,4 m de largura e ~29 m/km de subida.
-- **Largura e elevação:** base 9,5–11,2 m, chokes de **4,6–5,4 m**, estreitos de 5,5–7 m, largos de **12–15 m** nos blocos lineares; rotas de split com **5,5–10 m**, chokes e largos próprios. Elevação com ondas longa/média, cristas e **platôs de 70–150 m** cobrindo ~14–48% da pista; rotas com relevo e platôs próprios.
-- **Relevo:** amplitudes ~20% maiores nos blocos lineares, com platôs; nas rotas dos splits, elevação própria de até ~8 m e inclinação suave.
-- **Largura:** base 9,5–11,2 m nos blocos lineares, chokes de 4,6–5,4 m; rotas de split com **5,5–10 m**, podendo variar localmente.
+- **Blocos v3:** 5–6 blocos de cenário, **2,7–3,8 km** no total. Blocos lineares medem ~390–680 m (500–680 m quando têm hairpin); blocos com split medem ~755–976 m de eixo. São **12–16 powerups**, obstáculos por caminho (**~100 no main + 30–40 por rota**), **1–2 hairpins** de switchback em 99/100 seeds (41 seeds com 2; seed 61 sem hairpin), **1–5 rampas**, **2–4 hazards** e **1–2 splits**.
+- **Densidade v3:** curvatura total **~13,1 rad/km** no main (v1 ~11,7), **~2,0 chokes/km**, **~1,56 trechos largos/km**, **~27% de pista plana**, amplitude de elevação **~22 m** e subida acumulada **~38 m/km**. As rotas longas têm **~14,5 rad/km**, **5,5–9,0 m** de largura e ~29 m/km de subida.
+- **Largura e elevação:** base 9,5–11,2 m, chokes de **4,6–5,4 m**, estreitos de 5,5–7 m, largos de **12–15 m** nos blocos lineares; rotas de split com **5,5–9,0 m**, chokes e largos próprios. Elevação com ondas longa/média, cristas e **platôs de 70–150 m** cobrindo ~14–39% da pista; rotas com relevo próprio de ~3–11 m e platôs locais.
 - **Bifurcações v3:** 1–2 por pista. Cada split é um bloco mais longo com entrada/saída comuns e **duas rotas completas** de **~612–820 m**. As rotas têm curvas, largura, elevação, ombros/bordas dos dois lados, cenário dos dois lados, postes, hazards, obstáculos, powerups e kickers próprios. O miolo é paisagem (morro, mata ou vale), não um canteiro plano; a escolha pode ser simétrica ou assimétrica.
-- **Hazards:** 1–3 por seed, com tipo por cenário. O gerador preserva a largada/chegada, rampas e as pontas dos splits; hazards de uma rota só ativam nela.
-- **Medalhas procedurais:** ouro ≈ comprimento lógico / 33,5; prata = ouro + 12%; bronze = ouro + 24%. As parciais usam o ritmo do ouro e ficam só nas fronteiras comuns dos blocos.
+- **Hazards:** 2–4 por seed, com tipo por cenário. O gerador preserva a largada/chegada, rampas e as pontas dos splits; hazards de uma rota só ativam nela.
+- **Medalhas procedurais:** ouro ≈ comprimento lógico / 33,5 (nas 100 seeds, **80,4–113,4 s**); prata = ouro + 12%; bronze = ouro + 24%. As parciais usam o ritmo do ouro e ficam só nas fronteiras comuns dos blocos.
 - `validateProceduralTrack(def)` usa o mesmo `Track` do jogo e valida comprimento, raio mínimo, autointerseção, separação, rampas, splits, powerups, obstáculos, bifurcações e hazards.
 - `generateLegacyProceduralTrack(seed)` preserva a serpentina antiga de 4 pernas, usada para reproduzir a pista fixa `track01-v3`. As pistas aleatórias usam o gerador novo.
 
@@ -276,16 +274,16 @@ O `vite.config.ts` usa `base: './'` para funcionar no subcaminho do Pages. O dep
 - **Controles v4** (em playtest): 5 botões touch com combos ◀F/▶F, menu MÃO à esquerda/direita e stack oculto no PC.
 - **Pista A→B** (em playtest): seed 91 congelada, 1096,8 m, 4 setores, raio mínimo 30,2 m, 2 rampas baixas, 3 parciais e 50 obstáculos.
 - **Física v5** (em playtest): aceleração/velocidade/freio +15%, off-road com cap de 65%/62% e desaceleração suave, rumble mais forte.
-- **Poeira v8** (em playtest): pool 112, perfis por piso, partículas maiores/mais altas, dissipação em ~0,8–1,0 s e contraste melhorado no deserto.
-- **Hairpin extremo v7** (em playtest): 1 por pista, 13–14 m, aproximação/saída retas e largura 5,2–6,2 m.
-- **Cenários v8** (em playtest): floresta, deserto, neve, vilarejo, estrada de terra e praia; 4 setores sorteados por pista, com pisos e poeira próprios.
-- **Bifurcações v8** (em playtest): 1–2 ramos com spline/altura/largura próprios por pista; a pista principal continua como a outra opção.
-- **Hazards v8** (em playtest): 1–3 obstáculos móveis por pista, com tipo por cenário, travessia e colisão; `?hazards=0` desliga.
-- **Menu de pistas v8** (em playtest): grade de seeds 1–100 com melhor tempo, campo de seed, SORTEAR e PISTA FIXA; pausa a corrida enquanto aberto.
-- **Velocímetro v8** (em playtest): km/h e barra de velocidade no canto inferior, espelhado conforme o lado dos controles.
-- **Medalhas v7** (em playtest): fixa 39/45/51 s; procedurais 45,2–48,3 s de ouro, com parciais no ritmo do ouro.
+- **Poeira** (em playtest): pool 112, perfis por piso, partículas maiores/mais altas, dissipação em ~0,8–1,0 s e contraste melhorado no deserto.
+- **Hairpin extremo** (em playtest): 1–2 por pista, 13–14 m, aproximação/saída retas e largura 5,2–6,2 m.
+- **Cenários** (em playtest): floresta, deserto, neve, vilarejo, estrada de terra e praia; 5–6 blocos de cenário sorteados por pista, com pisos e poeira próprios.
+- **Bifurcações v3** (em playtest): 1–2 splits por pista, cada um com duas rotas completas de spline/altura/largura próprias; a pista fixa continua sem bifurcação.
+- **Hazards** (em playtest): 2–4 obstáculos móveis por pista, com tipo por cenário, travessia e colisão; `?hazards=0` desliga.
+- **Menu de pistas** (em playtest): grade de seeds 1–100 com melhor tempo, campo de seed, SORTEAR e PISTA FIXA; pausa a corrida enquanto aberto.
+- **Velocímetro** (em playtest): km/h e barra de velocidade no canto inferior, espelhado conforme o lado dos controles.
+- **Medalhas** (em playtest): fixa 39/45/51 s; procedurais com ouro em 80,4–113,4 s (1:20–1:53), prata +12% e bronze +24%, com parciais no ritmo do ouro.
 - **Default procedural** (em playtest): abrir `/` sorteia uma seed 1–100; `?track=fixed` / menu PISTAS carrega a pista fixa.
-- **Protótipo procedural v8** (em playtest): sete tipos de curva (incluindo hairpin extremo 13–14 m e kink), setores de 340–470 m, platôs, chokes, seis cenários, bifurcações e hazards; 100/100 seeds.
+- **Protótipo procedural por blocos** (em playtest): sete tipos de curva (incluindo hairpin extremo 13–14 m e kink), blocos lineares de ~390–680 m, blocos com split de ~755–976 m de eixo, platôs, chokes, seis cenários, bifurcações e hazards; 100/100 seeds.
 - **Gerador v2 de bifurcações** (em playtest): ramos com waypoints/curvas/relevo próprios, 190–345 m; `?gen=v1` mantém o gerador anterior para rollback.
 - **Gerador v3 por blocos** (em playtest): 5–6 blocos, 1–2 splits com duas rotas completas de ~612–820 m, cenário e conteúdo próprios, 1–2 hairpins de switchback, chokes/largos, platôs, 12–16 powerups e mais rampas; `?gen=v2`/`?gen=v1` mantêm as versões anteriores.
 
